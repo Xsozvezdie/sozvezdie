@@ -515,6 +515,10 @@ const STOPWORDS = new Set(['я','и','в','во','на','с','со','что','ч
 
 const GENERIC_FILLER = new Set(['помогает','помогло','начал','начала','начали','вижу','вижу','чувствую','кажется','стараюсь','пытаюсь','хочу','хочет','буду','будет','можно','нужно','нравится','стало','является','являются','можем','смогу','делаю','делает','говорю','говорит','думаю','думает','знаю','знает']);
 
+// Слова, которые формально совпадают с темой категории, но сами по себе — не тезис (просто глагол-самоотсылка).
+// Такие слова не должны становиться единственным словом узла — им всегда нужен сосед по смыслу.
+const WEAK_ANCHORS = new Set(['учусь','учится','работаю','работает','занимаюсь','занимается','увлекаюсь','увлекается','провожу','играю','смотрю','читаю','являюсь']);
+
 const CATEGORY_KEYWORDS = {
   'Работа и учёба': ['работ','учё','учус','проект','клиент','должност','карьер','профессионал','начальник','коллег','бизнес','продаж','юрист','подбор','производств','задач','менеджер','студент','универ','диплом'],
   'Увлечения': ['увлека','хобби','игра','играю','занима','трейдинг','шахмат','спорт','рисова','готов','путешеств','музык','творчеств','фотограф'],
@@ -532,13 +536,13 @@ function splitIntoClauses(text){
   let clauses = [];
   rawSentences.forEach(s=>{
     const wordCount = s.split(/\s+/).filter(Boolean).length;
-    if(wordCount > 8 && s.includes(',')){
+    if(wordCount > 14 && s.includes(',')){
       clauses.push(...s.split(',').map(c=>c.trim()).filter(Boolean));
     } else {
       clauses.push(s);
     }
   });
-  return clauses.filter(c => c.split(/\s+/).filter(Boolean).length >= 2);
+  return clauses.filter(c => c.split(/\s+/).filter(Boolean).length >= 3);
 }
 
 function categorize(clause){
@@ -585,12 +589,15 @@ function makeLabel(clause){
   const sorted = [...scored].sort((a,b) => (b.score - a.score) || (b.token.length - a.token.length));
   const top = sorted[0];
   const KEYWORD_THRESHOLD = 6;
+  const topIsWeak = WEAK_ANCHORS.has(top.token.toLowerCase());
 
   let chosenWords;
-  if(top.score >= KEYWORD_THRESHOLD){
+  if(top.score >= KEYWORD_THRESHOLD && !topIsWeak){
     chosenWords = [top];
+  } else if(sorted.length >= 2){
+    chosenWords = [sorted[0], sorted[1]].sort((a,b) => a.pos - b.pos);
   } else {
-    chosenWords = sorted.slice(0, 2).sort((a,b) => a.pos - b.pos);
+    chosenWords = [top];
   }
 
   const label = chosenWords.map(w => w.token).join(' ');
@@ -606,7 +613,7 @@ function extractGraphLocally(text){
   const clauses = splitIntoClauses(text);
   const usable = clauses.length ? clauses : [text];
 
-  const nodes = [];
+  const leafNodes = [];
   const seenLabels = new Set();
   usable.forEach((clause, i) => {
     const cluster = categorize(clause);
@@ -619,23 +626,28 @@ function extractGraphLocally(text){
     }
     seenLabels.add(uniqueLabel.toLowerCase());
     const weight = Math.min(3, 1 + Math.floor(clause.split(/\s+/).length / 8));
-    nodes.push({ id: 'n' + i, label: uniqueLabel, cluster, weight });
+    leafNodes.push({ id: 'n' + i, label: uniqueLabel, cluster, weight });
   });
 
-  const clusters = [...new Set(nodes.map(n => n.cluster))];
-
+  const clusters = [...new Set(leafNodes.map(n => n.cluster))];
+  const nodes = [];
   const edges = [];
-  for(let i = 1; i < nodes.length; i++){
-    edges.push({ source: nodes[i-1].id, target: nodes[i].id });
-  }
-  for(let i = 0; i < nodes.length; i++){
-    for(let j = i+2; j < nodes.length; j++){
-      if(nodes[i].cluster === nodes[j].cluster){
-        edges.push({ source: nodes[i].id, target: nodes[j].id });
-        break;
-      }
+
+  clusters.forEach((cluster, ci) => {
+    const members = leafNodes.filter(n => n.cluster === cluster);
+    if(members.length >= 2){
+      // Хаб — главная точка темы, к которой цепляются все её узлы.
+      const hubId = 'hub' + ci;
+      nodes.push({ id: hubId, label: cluster, cluster, weight: 3, isHub: true });
+      members.forEach(m => {
+        nodes.push(m);
+        edges.push({ source: hubId, target: m.id });
+      });
+    } else {
+      // Один узел в теме — хаб не нужен, он сам себе главная точка.
+      nodes.push(...members);
     }
-  }
+  });
 
   return { clusters, nodes, edges };
 }
@@ -735,15 +747,15 @@ function drawGraph(container, graph){
     .attr('width', '100%').attr('height', height)
     .attr('viewBox', `0 0 ${width} ${height}`);
 
-  const nodes = graph.nodes.map(n => ({ ...n, r: 8 + (n.weight||1)*4 }));
+  const nodes = graph.nodes.map(n => ({ ...n, r: n.isHub ? 20 : (8 + (n.weight||1)*4) }));
   const nodeIds = new Set(nodes.map(n=>n.id));
   const links = (graph.edges || []).filter(e => nodeIds.has(e.source) && nodeIds.has(e.target)).map(e => ({...e}));
 
   const sim = d3.forceSimulation(nodes)
-    .force('link', d3.forceLink(links).id(d=>d.id).distance(90).strength(0.5))
-    .force('charge', d3.forceManyBody().strength(-260))
+    .force('link', d3.forceLink(links).id(d=>d.id).distance(d => 70 + Math.max(d.source.label?.length||0, d.target.label?.length||0)*2.2).strength(0.6))
+    .force('charge', d3.forceManyBody().strength(d => d.isHub ? -520 : -300))
     .force('center', d3.forceCenter(width/2, height/2))
-    .force('collide', d3.forceCollide(d => d.r + 10));
+    .force('collide', d3.forceCollide(d => d.r + d.label.length * 3.6 + 6));
 
   const link = svg.append('g').selectAll('line')
     .data(links).enter().append('line')
@@ -754,9 +766,9 @@ function drawGraph(container, graph){
   const node = svg.append('g').selectAll('circle')
     .data(nodes).enter().append('circle')
     .attr('r', d => d.r)
-    .attr('fill', '#0f1424')
+    .attr('fill', d => d.isHub ? colorForCluster(d.cluster, graph.clusters) + '26' : '#0f1424')
     .attr('stroke', d => colorForCluster(d.cluster, graph.clusters))
-    .attr('stroke-width', 2.5)
+    .attr('stroke-width', d => d.isHub ? 3 : 2.5)
     .call(d3.drag()
       .on('start', (event,d)=>{ if(!event.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
       .on('drag', (event,d)=>{ d.fx=event.x; d.fy=event.y; })
@@ -764,7 +776,9 @@ function drawGraph(container, graph){
 
   const label = svg.append('g').selectAll('text')
     .data(nodes).enter().append('text')
-    .attr('font-size', 11)
+    .attr('font-size', d => d.isHub ? 13 : 11)
+    .attr('font-weight', d => d.isHub ? 700 : 400)
+    .attr('fill', d => d.isHub ? '#f5f7fc' : '#c3c9de')
     .attr('text-anchor','middle')
     .attr('dy', d => -(d.r + 8))
     .text(d => d.label);
