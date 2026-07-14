@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <title>Схема о себе</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
 
@@ -142,7 +144,7 @@
     border:1px solid var(--line); border-radius:999px;
     padding: 6px 12px;
   }
-  .dot{ width:9px; height:9px; border-radius:50%; display:inline-block; }
+  .dot{ width:9px; height:9px; border-radius:50%; display:inline-block; background: transparent; border: 2px solid; box-sizing: border-box; }
 
   .loading-wrap{
     display:flex; flex-direction:column; align-items:flex-start; gap:14px;
@@ -204,6 +206,57 @@
 <div id="root"></div>
 
 <script>
+// ---------------- backend (Firebase Firestore) ----------------
+// Вставь сюда свои ключи из консоли Firebase (Project settings -> General -> Your apps -> SDK setup).
+const firebaseConfig = {
+  apiKey: "AIzaSyAni9Eg6fIJoGPD_E5VDLCVuO8yYzCBMIc",
+  authDomain: "sozvezdie-3f7e6.firebaseapp.com",
+  projectId: "sozvezdie-3f7e6",
+  storageBucket: "sozvezdie-3f7e6.firebasestorage.app",
+  messagingSenderId: "845619165839",
+  appId: "1:845619165839:web:051ce4b807386aa8e38efa"
+};
+
+let db = null;
+let firebaseReady = false;
+try{
+  if(firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('ВСТАВЬ') === -1){
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    firebaseReady = true;
+  }
+}catch(e){
+  console.error('Firebase init failed', e);
+}
+
+function backendNotConfiguredError(){
+  return new Error('База данных не подключена: вставь конфиг Firebase в начало <script> (переменная firebaseConfig).');
+}
+
+async function isNameTaken(name){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const id = name.toLowerCase().trim();
+  const doc = await db.collection('users').doc(id).get();
+  return doc.exists;
+}
+
+async function saveUserGraph(name, text, graph){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const id = name.toLowerCase().trim();
+  const docRef = db.collection('users').doc(id);
+  const existing = await docRef.get();
+  if(existing.exists){
+    throw new Error('taken');
+  }
+  await docRef.set({ name, text, graph, ts: Date.now() });
+}
+
+async function fetchAllUsers(){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const snap = await db.collection('users').orderBy('ts', 'desc').get();
+  return snap.docs.map(d => d.data());
+}
+
 // ---------------- state ----------------
 const root = document.getElementById('root');
 let state = { screen: 'landing', name: '', text: '', graph: null, error: '' };
@@ -274,21 +327,15 @@ function renderNav(active){
 async function openPeople(){
   state.screen = 'people';
   state.peopleLoading = true;
+  state.peopleError = '';
   render();
-  let list = [];
   try{
-    const listRes = await window.storage.list('graph:', true);
-    const keys = listRes ? listRes.keys : [];
-    for(const k of keys){
-      try{
-        const r = await window.storage.get(k, true);
-        if(r && r.value) list.push(JSON.parse(r.value));
-      }catch(e){ /* skip broken entry */ }
-    }
+    state.people = await fetchAllUsers();
   }catch(e){
-    console.error('people list failed (storage may be unavailable outside the live artifact view)', e);
+    console.error('people list failed', e);
+    state.people = [];
+    state.peopleError = e.message;
   }
-  state.people = list.sort((a,b) => (b.ts||0) - (a.ts||0));
   state.peopleLoading = false;
   render();
 }
@@ -302,6 +349,8 @@ function renderPeople(){
   const card = el('div','card');
   if(state.peopleLoading){
     card.appendChild(el('div','footer-note','Загружаем…'));
+  } else if(state.peopleError){
+    card.appendChild(el('div','err', state.peopleError));
   } else if(!state.people || state.people.length === 0){
     card.appendChild(el('div','empty','Пока никого нет. Будь первой.'));
   } else {
@@ -337,7 +386,7 @@ function renderPersonView(){
   (p.graph.clusters || []).forEach(c=>{
     const item = el('div','legend-item');
     const dot = el('span','dot');
-    dot.style.background = colorForCluster(c, p.graph.clusters);
+    dot.style.borderColor = colorForCluster(c, p.graph.clusters);
     item.appendChild(dot);
     item.appendChild(el('span','', c));
     legend.appendChild(item);
@@ -372,16 +421,34 @@ function renderName(){
   w.appendChild(renderNav('mine'));
   w.appendChild(el('div','eyebrow','Шаг 1 из 2'));
   w.appendChild(el('h1','', 'Как тебя записать?'));
-  w.appendChild(el('p','lead','Имя или ник — под ним сохранится твой граф.'));
+  w.appendChild(el('p','lead','Имя или ник — под ним сохранится твой граф. Занятое имя занять второй раз нельзя.'));
   const card = el('div','card');
+  if(state.error) card.appendChild(el('div','err', state.error));
   const input = document.createElement('input');
   input.type='text'; input.placeholder='Никнейм';
   input.maxLength = 30;
+  input.value = state.name || '';
   card.appendChild(input);
   const btn = el('button','btn','Дальше →');
-  btn.onclick = () => {
+  btn.onclick = async () => {
     const val = input.value.trim();
     if(!val){ input.style.borderColor = '#ef6f8e'; return; }
+    state.error = '';
+    btn.disabled = true;
+    btn.textContent = 'Проверяем имя…';
+    try{
+      const taken = await isNameTaken(val);
+      if(taken){
+        state.error = 'Это имя уже занято — выбери другое.';
+        render();
+        return;
+      }
+    }catch(e){
+      console.error('name check failed', e);
+      state.error = e.message === 'taken' ? 'Это имя уже занято — выбери другое.' : e.message;
+      render();
+      return;
+    }
     state.name = val;
     state.screen = 'story';
     render();
@@ -510,18 +577,29 @@ function makeLabel(clause){
   const scored = rawWords.map((w, i) => ({ ...wordImportance(w), pos: i }))
     .filter(w => w.token && w.score >= 0);
 
-  let chosen;
   if(scored.length === 0){
-    chosen = rawWords.map(cleanToken).filter(Boolean).slice(0, 4);
-  } else {
-    chosen = scored.sort((a,b) => b.score - a.score).slice(0, 4)
-      .sort((a,b) => a.pos - b.pos)
-      .map(w => w.token);
+    const fallback = rawWords.map(cleanToken).filter(Boolean).slice(0, 2).join(' ');
+    return capitalizeLabel(fallback) || clause.slice(0, 30);
   }
 
-  let label = chosen.join(' ');
-  if(label.length > 0) label = label[0].toUpperCase() + label.slice(1);
-  return label || clause.slice(0, 30);
+  const sorted = [...scored].sort((a,b) => (b.score - a.score) || (b.token.length - a.token.length));
+  const top = sorted[0];
+  const KEYWORD_THRESHOLD = 6;
+
+  let chosenWords;
+  if(top.score >= KEYWORD_THRESHOLD){
+    chosenWords = [top];
+  } else {
+    chosenWords = sorted.slice(0, 2).sort((a,b) => a.pos - b.pos);
+  }
+
+  const label = chosenWords.map(w => w.token).join(' ');
+  return capitalizeLabel(label) || clause.slice(0, 30);
+}
+
+function capitalizeLabel(label){
+  if(!label) return label;
+  return label[0].toUpperCase() + label.slice(1);
 }
 
 function extractGraphLocally(text){
@@ -578,10 +656,19 @@ async function buildGraph(text){
   }
 
   state.graph = parsed;
+  state.saveStatus = 'saving';
+  render();
+
   try{
-    const key = 'graph:' + state.name.toLowerCase();
-    await window.storage.set(key, JSON.stringify({ name: state.name, text, graph: parsed, ts: Date.now() }), true);
-  }catch(e){ console.error('save failed (storage may be unavailable outside the live artifact view)', e); }
+    await saveUserGraph(state.name, text, parsed);
+    state.saveStatus = 'saved';
+  }catch(e){
+    console.error('save failed', e);
+    state.saveStatus = 'error';
+    state.saveError = e.message === 'taken'
+      ? 'Это имя заняли, пока ты писала текст — вернись назад и выбери другое.'
+      : e.message;
+  }
 
   state.screen = 'result';
   render();
@@ -604,12 +691,20 @@ function renderResult(){
   (state.graph.clusters || []).forEach(c=>{
     const item = el('div','legend-item');
     const dot = el('span','dot');
-    dot.style.background = colorForCluster(c, state.graph.clusters);
+    dot.style.borderColor = colorForCluster(c, state.graph.clusters);
     item.appendChild(dot);
     item.appendChild(el('span','', c));
     legend.appendChild(item);
   });
   w.appendChild(legend);
+
+  if(state.saveStatus === 'saving'){
+    w.appendChild(el('div','footer-note','Сохраняем…'));
+  } else if(state.saveStatus === 'saved'){
+    w.appendChild(el('div','footer-note','Сохранено ✓ — теперь твоя схема видна во вкладке «Люди».'));
+  } else if(state.saveStatus === 'error'){
+    w.appendChild(el('div','err','Не сохранилось: ' + state.saveError));
+  }
 
   const card = el('div','card');
   const svgWrap = document.createElement('div');
@@ -628,8 +723,6 @@ function renderResult(){
   row.appendChild(restartBtn);
   w.appendChild(row);
 
-  w.appendChild(el('div','footer-note','Твой граф сохранён. Когда графов станет несколько, добавим сравнение и процент совпадения между ними.'));
-
   root.appendChild(w);
   drawGraph(svgWrap, state.graph);
 }
@@ -637,11 +730,12 @@ function renderResult(){
 function drawGraph(container, graph){
   const width = container.clientWidth || 960;
   const height = 460;
+  const padding = 24;
   const svg = d3.select(container).append('svg')
     .attr('width', '100%').attr('height', height)
     .attr('viewBox', `0 0 ${width} ${height}`);
 
-  const nodes = graph.nodes.map(n => ({...n}));
+  const nodes = graph.nodes.map(n => ({ ...n, r: 8 + (n.weight||1)*4 }));
   const nodeIds = new Set(nodes.map(n=>n.id));
   const links = (graph.edges || []).filter(e => nodeIds.has(e.source) && nodeIds.has(e.target)).map(e => ({...e}));
 
@@ -649,7 +743,7 @@ function drawGraph(container, graph){
     .force('link', d3.forceLink(links).id(d=>d.id).distance(90).strength(0.5))
     .force('charge', d3.forceManyBody().strength(-260))
     .force('center', d3.forceCenter(width/2, height/2))
-    .force('collide', d3.forceCollide(d => 14 + (d.weight||1)*5));
+    .force('collide', d3.forceCollide(d => d.r + 10));
 
   const link = svg.append('g').selectAll('line')
     .data(links).enter().append('line')
@@ -659,8 +753,10 @@ function drawGraph(container, graph){
 
   const node = svg.append('g').selectAll('circle')
     .data(nodes).enter().append('circle')
-    .attr('r', d => 8 + (d.weight||1)*4)
-    .attr('fill', d => colorForCluster(d.cluster, graph.clusters))
+    .attr('r', d => d.r)
+    .attr('fill', '#0f1424')
+    .attr('stroke', d => colorForCluster(d.cluster, graph.clusters))
+    .attr('stroke-width', 2.5)
     .call(d3.drag()
       .on('start', (event,d)=>{ if(!event.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
       .on('drag', (event,d)=>{ d.fx=event.x; d.fy=event.y; })
@@ -670,10 +766,14 @@ function drawGraph(container, graph){
     .data(nodes).enter().append('text')
     .attr('font-size', 11)
     .attr('text-anchor','middle')
-    .attr('dy', d => -(12 + (d.weight||1)*4))
+    .attr('dy', d => -(d.r + 8))
     .text(d => d.label);
 
   sim.on('tick', () => {
+    nodes.forEach(d => {
+      d.x = Math.max(padding + d.r, Math.min(width - padding - d.r, d.x));
+      d.y = Math.max(padding + d.r + 14, Math.min(height - padding - d.r, d.y));
+    });
     link
       .attr('x1', d=>d.source.x).attr('y1', d=>d.source.y)
       .attr('x2', d=>d.target.x).attr('y2', d=>d.target.y);
