@@ -6,6 +6,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
 
@@ -200,6 +201,12 @@
   .person-row .name{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; }
   .person-row .meta{ font-size:12px; color: var(--ink-dim); margin-top:3px; }
   .person-row .arrow{ color: var(--ink-dim); font-size:18px; }
+
+  body.space{ background: #000000; }
+  body.space .nav-brand, body.space .nav-link{ color: #cfd6e8; }
+  body.space .nav-link:hover, body.space .nav-link.active{ color: #ffffff; }
+  body.space .eyebrow{ color: #7a83a0; }
+  body.space h1 span{ color: #ffffff; }
 </style>
 </head>
 <body>
@@ -218,11 +225,13 @@ const firebaseConfig = {
 };
 
 let db = null;
+let auth = null;
 let firebaseReady = false;
 try{
   if(firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('ВСТАВЬ') === -1){
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    auth = firebase.auth();
     firebaseReady = true;
   }
 }catch(e){
@@ -233,38 +242,76 @@ function backendNotConfiguredError(){
   return new Error('База данных не подключена: вставь конфиг Firebase в начало <script> (переменная firebaseConfig).');
 }
 
-async function isNameTaken(name){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  const id = name.toLowerCase().trim();
-  const doc = await db.collection('users').doc(id).get();
-  return doc.exists;
+// Логины у нас без email, но Firebase Auth умеет только email+пароль,
+// поэтому превращаем ник в служебный псевдо-адрес — пользователь его не видит.
+function hashUsername(name){
+  const s = name.toLowerCase().trim();
+  let h = 0;
+  for(let i = 0; i < s.length; i++){
+    h = (h * 31 + s.codePointAt(i)) >>> 0;
+  }
+  return h.toString(36) + s.length.toString(36);
+}
+function usernameToEmail(name){
+  return 'u' + hashUsername(name) + '@sozvezdie.local';
 }
 
-async function saveUserGraph(name, text, graph){
+async function registerUser(username, password){
   if(!firebaseReady) throw backendNotConfiguredError();
-  const id = name.toLowerCase().trim();
-  const docRef = db.collection('users').doc(id);
-  const existing = await docRef.get();
-  if(existing.exists){
-    throw new Error('taken');
+  const email = usernameToEmail(username);
+  let cred;
+  try{
+    cred = await auth.createUserWithEmailAndPassword(email, password);
+  }catch(e){
+    if(e.code === 'auth/email-already-in-use') throw new Error('Это имя уже занято — выбери другое.');
+    if(e.code === 'auth/weak-password') throw new Error('Пароль слишком короткий — минимум 6 символов.');
+    throw new Error(e.message);
   }
-  await docRef.set({ name, text, graph, ts: Date.now() });
+  await db.collection('users').doc(cred.user.uid).set({ name: username, ts: Date.now() });
+  return { uid: cred.user.uid, name: username };
+}
+
+async function loginUser(username, password){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const email = usernameToEmail(username);
+  let cred;
+  try{
+    cred = await auth.signInWithEmailAndPassword(email, password);
+  }catch(e){
+    if(e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password'){
+      throw new Error('Неверный логин или пароль.');
+    }
+    throw new Error(e.message);
+  }
+  const doc = await db.collection('users').doc(cred.user.uid).get();
+  const data = doc.exists ? doc.data() : {};
+  return { uid: cred.user.uid, name: data.name || username, graph: data.graph || null, text: data.text || '' };
+}
+
+function logoutUser(){
+  if(auth) auth.signOut();
+}
+
+async function saveUserGraph(uid, text, graph){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  await db.collection('users').doc(uid).set({ text, graph, ts: Date.now() }, { merge: true });
 }
 
 async function fetchAllUsers(){
   if(!firebaseReady) throw backendNotConfiguredError();
   const snap = await db.collection('users').orderBy('ts', 'desc').get();
-  return snap.docs.map(d => d.data());
+  return snap.docs.map(d => d.data()).filter(u => u.graph);
 }
 
 // ---------------- state ----------------
 const root = document.getElementById('root');
-let state = { screen: 'landing', name: '', text: '', graph: null, error: '' };
+let state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
 
 function render(){
   root.innerHTML = '';
+  document.body.classList.toggle('space', state.screen === 'landing');
   if(state.screen === 'landing') renderLanding();
-  else if(state.screen === 'name') renderName();
+  else if(state.screen === 'auth') renderAuth();
   else if(state.screen === 'story') renderStory();
   else if(state.screen === 'loading') renderLoading();
   else if(state.screen === 'result') renderResult();
@@ -280,25 +327,35 @@ function el(tag, cls, html){
 }
 
 function heroGraphSVG(){
-  return `<svg viewBox="0 0 700 200" class="hero-graph" xmlns="http://www.w3.org/2000/svg">
-    <g stroke="var(--edge)" stroke-width="1" opacity="0.7">
-      <line x1="120" y1="60" x2="260" y2="100"/>
-      <line x1="260" y1="100" x2="420" y2="50"/>
-      <line x1="260" y1="100" x2="380" y2="160"/>
-      <line x1="420" y1="50" x2="560" y2="90"/>
-      <line x1="380" y1="160" x2="560" y2="90"/>
-      <line x1="120" y1="60" x2="60" y2="140"/>
-      <line x1="380" y1="160" x2="490" y2="175"/>
-      <line x1="260" y1="100" x2="180" y2="150"/>
+  return `<svg viewBox="0 0 700 220" class="hero-graph" xmlns="http://www.w3.org/2000/svg">
+    <g stroke="#ffffff" stroke-width="1" opacity="0.35">
+      <line x1="120" y1="70" x2="260" y2="110"/>
+      <line x1="260" y1="110" x2="420" y2="55"/>
+      <line x1="260" y1="110" x2="380" y2="165"/>
+      <line x1="420" y1="55" x2="560" y2="95"/>
+      <line x1="380" y1="165" x2="560" y2="95"/>
+      <line x1="120" y1="70" x2="55" y2="145"/>
+      <line x1="380" y1="165" x2="495" y2="180"/>
+      <line x1="260" y1="110" x2="175" y2="160"/>
+      <line x1="560" y1="95" x2="640" y2="60"/>
+      <line x1="55" y1="145" x2="20" y2="80"/>
     </g>
-    <circle cx="120" cy="60" r="9" fill="#e8935c"/>
-    <circle cx="260" cy="100" r="13" fill="#f2c14e"/>
-    <circle cx="420" cy="50" r="8" fill="#ef6f8e"/>
-    <circle cx="380" cy="160" r="10" fill="#4fc9b8"/>
-    <circle cx="560" cy="90" r="9" fill="#e8935c"/>
-    <circle cx="60" cy="140" r="6" fill="#ef6f8e"/>
-    <circle cx="490" cy="175" r="7" fill="#4fc9b8"/>
-    <circle cx="180" cy="150" r="6" fill="#f2c14e"/>
+    <g fill="#ffffff">
+      <circle cx="120" cy="70" r="2.5" opacity="0.9"/>
+      <circle cx="260" cy="110" r="3.5" opacity="1"/>
+      <circle cx="420" cy="55" r="2" opacity="0.8"/>
+      <circle cx="380" cy="165" r="2.8" opacity="0.9"/>
+      <circle cx="560" cy="95" r="2.3" opacity="0.85"/>
+      <circle cx="55" cy="145" r="1.8" opacity="0.7"/>
+      <circle cx="495" cy="180" r="1.6" opacity="0.6"/>
+      <circle cx="175" cy="160" r="1.6" opacity="0.6"/>
+      <circle cx="640" cy="60" r="1.4" opacity="0.5"/>
+      <circle cx="20" cy="80" r="1.4" opacity="0.5"/>
+      <circle cx="610" cy="150" r="1.2" opacity="0.4"/>
+      <circle cx="320" cy="30" r="1.2" opacity="0.4"/>
+      <circle cx="30" cy="190" r="1.2" opacity="0.4"/>
+      <circle cx="470" cy="20" r="1.1" opacity="0.35"/>
+    </g>
   </svg>`;
 }
 
@@ -308,17 +365,30 @@ function renderNav(active){
   const brand = el('div','nav-brand','Схема о себе');
   brand.onclick = () => { state.screen='landing'; render(); };
   const links = el('div','nav-links');
-  const myLink = el('button','nav-link' + (active==='mine' ? ' active' : ''), state.graph ? 'Моя схема' : 'Начать');
-  myLink.onclick = () => {
-    if(state.graph){ state.screen='result'; }
-    else if(state.name){ state.screen='story'; }
-    else { state.screen='name'; }
-    render();
-  };
-  const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''), 'Люди');
-  peopleLink.onclick = () => { openPeople(); };
-  links.appendChild(myLink);
-  links.appendChild(peopleLink);
+
+  if(state.user){
+    const myLink = el('button','nav-link' + (active==='mine' ? ' active' : ''), state.graph ? 'Моя схема' : 'Написать о себе');
+    myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
+    const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''), 'Люди');
+    peopleLink.onclick = () => { openPeople(); };
+    const logoutLink = el('button','nav-link','Выйти');
+    logoutLink.onclick = () => {
+      logoutUser();
+      state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
+      render();
+    };
+    links.appendChild(myLink);
+    links.appendChild(peopleLink);
+    links.appendChild(logoutLink);
+  } else {
+    const loginLink = el('button','nav-link','Войти');
+    loginLink.onclick = () => { state.authMode = 'login'; state.error=''; state.screen='auth'; render(); };
+    const registerLink = el('button','nav-link','Регистрация');
+    registerLink.onclick = () => { state.authMode = 'register'; state.error=''; state.screen='auth'; render(); };
+    links.appendChild(loginLink);
+    links.appendChild(registerLink);
+  }
+
   nav.appendChild(brand);
   nav.appendChild(links);
   return nav;
@@ -344,7 +414,6 @@ function renderPeople(){
   const w = el('div','wrap');
   w.appendChild(renderNav('people'));
   w.appendChild(el('h1','', 'Люди'));
-  w.appendChild(el('p','lead','Схемы всех, кто уже прошёл — пока без сравнения, просто посмотреть.'));
 
   const card = el('div','card');
   if(state.peopleLoading){
@@ -410,51 +479,65 @@ function renderLanding(){
   const h = el('h1'); h.innerHTML = 'Опиши себя.<br>Получи <span>схему</span>.';
   w.appendChild(h);
   w.appendChild(el('div','', heroGraphSVG()));
-  const btn = el('button','btn','Начать →');
-  btn.onclick = () => { state.screen='name'; render(); };
+  const btn = el('button','btn', state.user ? 'Продолжить →' : 'Начать →');
+  btn.onclick = () => {
+    if(state.user){ state.screen = state.graph ? 'result' : 'story'; }
+    else { state.authMode = 'register'; state.screen = 'auth'; }
+    render();
+  };
   w.appendChild(btn);
   root.appendChild(w);
 }
 
-function renderName(){
+function renderAuth(){
   const w = el('div','wrap');
-  w.appendChild(renderNav('mine'));
-  w.appendChild(el('div','eyebrow','Шаг 1 из 2'));
-  w.appendChild(el('h1','', 'Как тебя записать?'));
-  w.appendChild(el('p','lead','Имя или ник — под ним сохранится твой граф. Занятое имя занять второй раз нельзя.'));
+  w.appendChild(renderNav('auth'));
+  const isLogin = state.authMode === 'login';
+  w.appendChild(el('h1','', isLogin ? 'Вход' : 'Регистрация'));
+
   const card = el('div','card');
   if(state.error) card.appendChild(el('div','err', state.error));
-  const input = document.createElement('input');
-  input.type='text'; input.placeholder='Никнейм';
-  input.maxLength = 30;
-  input.value = state.name || '';
-  card.appendChild(input);
-  const btn = el('button','btn','Дальше →');
+
+  const userInput = document.createElement('input');
+  userInput.type = 'text'; userInput.placeholder = 'Логин'; userInput.maxLength = 30;
+  card.appendChild(userInput);
+
+  const passInput = document.createElement('input');
+  passInput.type = 'password'; passInput.placeholder = 'Пароль';
+  card.appendChild(passInput);
+
+  const btn = el('button','btn', isLogin ? 'Войти →' : 'Зарегистрироваться →');
   btn.onclick = async () => {
-    const val = input.value.trim();
-    if(!val){ input.style.borderColor = '#ef6f8e'; return; }
-    state.error = '';
-    btn.disabled = true;
-    btn.textContent = 'Проверяем имя…';
-    try{
-      const taken = await isNameTaken(val);
-      if(taken){
-        state.error = 'Это имя уже занято — выбери другое.';
-        render();
-        return;
-      }
-    }catch(e){
-      console.error('name check failed', e);
-      state.error = e.message === 'taken' ? 'Это имя уже занято — выбери другое.' : e.message;
+    const username = userInput.value.trim();
+    const password = passInput.value;
+    if(!username || !password){
+      state.error = 'Заполни логин и пароль.';
       render();
       return;
     }
-    state.name = val;
-    state.screen = 'story';
-    render();
+    state.error = '';
+    btn.disabled = true;
+    btn.textContent = 'Подождите…';
+    try{
+      const user = isLogin ? await loginUser(username, password) : await registerUser(username, password);
+      state.user = { uid: user.uid, name: user.name };
+      state.graph = user.graph || null;
+      state.text = user.text || '';
+      state.screen = state.graph ? 'result' : 'story';
+      render();
+    }catch(e){
+      state.error = e.message;
+      render();
+    }
   };
-  input.addEventListener('keydown', e=>{ if(e.key==='Enter') btn.click(); });
+  passInput.addEventListener('keydown', e=>{ if(e.key==='Enter') btn.click(); });
   card.appendChild(btn);
+
+  const switchLink = el('button','nav-link', isLogin ? 'Ещё нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти');
+  switchLink.style.marginTop = '18px';
+  switchLink.onclick = () => { state.authMode = isLogin ? 'register' : 'login'; state.error=''; render(); };
+  card.appendChild(switchLink);
+
   w.appendChild(card);
   root.appendChild(w);
 }
@@ -462,9 +545,7 @@ function renderName(){
 function renderStory(){
   const w = el('div','wrap');
   w.appendChild(renderNav('mine'));
-  w.appendChild(el('div','eyebrow','Шаг 2 из 2'));
   w.appendChild(el('h1','', 'Теперь — о себе.'));
-  w.appendChild(el('p','lead','Пиши свободно, без структуры. Чем больше конкретики — тем точнее выйдет граф.'));
 
   const chips = el('div','prompts');
   ['работа и то, что в ней держит','увлечения и как проводишь свободное время','что читаешь / смотришь','ценности и то, что раздражает','отношения и люди рядом']
@@ -477,7 +558,7 @@ function renderStory(){
   ta.placeholder = 'Например: чем занимаюсь по работе или учёбе, что делаю в свободное время, что читаю или смотрю, что для меня важно в людях, а что раздражает...';
   ta.value = state.text;
   card.appendChild(ta);
-  const counter = el('div','counter','0 символов — пиши сколько нужно, но хотя бы пару абзацев для точного графа');
+  const counter = el('div','counter','0 символов');
   card.appendChild(counter);
   ta.addEventListener('input', ()=>{ counter.textContent = ta.value.length + ' символов'; });
 
@@ -502,11 +583,9 @@ function renderStory(){
 
 function renderLoading(){
   const w = el('div','wrap');
-  w.appendChild(el('div','eyebrow','Собираем граф'));
   w.appendChild(el('h1','', 'Читаем и раскладываем по темам…'));
   const lw = el('div','loading-wrap');
   lw.appendChild(el('div','spinner'));
-  lw.appendChild(el('p','lead','Обычно занимает несколько секунд.'));
   w.appendChild(lw);
   root.appendChild(w);
 }
@@ -672,14 +751,12 @@ async function buildGraph(text){
   render();
 
   try{
-    await saveUserGraph(state.name, text, parsed);
+    await saveUserGraph(state.user.uid, text, parsed);
     state.saveStatus = 'saved';
   }catch(e){
     console.error('save failed', e);
     state.saveStatus = 'error';
-    state.saveError = e.message === 'taken'
-      ? 'Это имя заняли, пока ты писала текст — вернись назад и выбери другое.'
-      : e.message;
+    state.saveError = e.message;
   }
 
   state.screen = 'result';
@@ -695,9 +772,8 @@ function colorForCluster(clusterName, clusters){
 function renderResult(){
   const w = el('div','wrap wide');
   w.appendChild(renderNav('mine'));
-  w.appendChild(el('div','eyebrow', `Граф — ${state.name}`));
+  w.appendChild(el('div','eyebrow', `Граф — ${state.user.name}`));
   w.appendChild(el('h1','', 'Вот из чего ты состоишь.'));
-  w.appendChild(el('p','lead','Можно потаскать узлы мышкой. Цвет — кластер темы, размер — насколько подробно об этом было сказано.'));
 
   const legend = el('div','legend');
   (state.graph.clusters || []).forEach(c=>{
@@ -729,10 +805,14 @@ function renderResult(){
   row.style.display='flex'; row.style.gap='12px'; row.style.marginTop='20px'; row.style.flexWrap='wrap';
   const editBtn = el('button','btn ghost','Переписать текст о себе');
   editBtn.onclick = () => { state.screen='story'; render(); };
-  const restartBtn = el('button','btn ghost','Начать заново под другим именем');
-  restartBtn.onclick = () => { state = { screen:'landing', name:'', text:'', graph:null, error:'' }; render(); };
+  const logoutBtn = el('button','btn ghost','Выйти');
+  logoutBtn.onclick = () => {
+    logoutUser();
+    state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
+    render();
+  };
   row.appendChild(editBtn);
-  row.appendChild(restartBtn);
+  row.appendChild(logoutBtn);
   w.appendChild(row);
 
   root.appendChild(w);
@@ -796,7 +876,23 @@ function drawGraph(container, graph){
   });
 }
 
-render();
+if(firebaseReady){
+  auth.onAuthStateChanged(async (fbUser) => {
+    if(fbUser && !state.user){
+      try{
+        const doc = await db.collection('users').doc(fbUser.uid).get();
+        const data = doc.exists ? doc.data() : {};
+        state.user = { uid: fbUser.uid, name: data.name || 'Без имени' };
+        state.graph = data.graph || null;
+        state.text = data.text || '';
+        if(state.screen === 'landing'){ state.screen = state.graph ? 'result' : 'story'; }
+      }catch(e){ console.error('session restore failed', e); }
+    }
+    render();
+  });
+} else {
+  render();
+}
 </script>
 </body>
 </html>
