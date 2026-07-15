@@ -232,6 +232,16 @@
     border-color: var(--gold);
     border-radius: 12px 12px 4px 12px;
   }
+  .chat-image{ max-width: 220px; border-radius: 8px; display:block; }
+
+  .icon-btn{
+    width: 30px; height: 30px; border-radius: 50%;
+    display:flex; align-items:center; justify-content:center;
+    background: var(--bg-soft); border: 1px solid var(--line);
+    font-size: 14px; cursor:pointer; padding:0;
+  }
+  .icon-btn:hover{ border-color: var(--gold); }
+  .icon-btn.disabled{ opacity:.5; cursor:default; }
 
   body.space{ background: #000000; }
   body.space .nav-brand, body.space .nav-link{ color: #cfd6e8; }
@@ -316,7 +326,7 @@ async function loginUser(username, password){
   }
   const doc = await db.collection('users').doc(cred.user.uid).get();
   const data = doc.exists ? doc.data() : {};
-  return { uid: cred.user.uid, name: data.name || username, graph: data.graph || null, text: data.text || '' };
+  return { uid: cred.user.uid, name: data.name || username, graph: data.graph || null, text: data.text || '', profile: data.profile || null };
 }
 
 function logoutUser(){
@@ -394,19 +404,58 @@ async function listFriends(){
 }
 
 // ---------------- сообщения ----------------
-async function sendMessage(toUid, toName, text){
+async function sendMessage(toUid, toName, text, imageData){
   if(!firebaseReady) throw backendNotConfiguredError();
   const me = state.user;
-  await db.collection('messages').add({
-    chatId: pairId(me.uid, toUid), fromUid: me.uid, fromName: me.name, toUid, toName, text, ts: Date.now()
+  const payload = {
+    chatId: pairId(me.uid, toUid), fromUid: me.uid, fromName: me.name, toUid, toName, ts: Date.now()
+  };
+  if(text) payload.text = text;
+  if(imageData) payload.imageData = imageData;
+  await db.collection('messages').add(payload);
+}
+
+async function markChatRead(chatId){
+  if(!state.user) return;
+  try{
+    await db.collection('users').doc(state.user.uid).update({ ['lastRead.' + chatId]: Date.now() });
+  }catch(e){ console.error('mark read failed', e); }
+}
+
+async function getUnreadChatsCount(){
+  if(!state.user) return 0;
+  const meDoc = await db.collection('users').doc(state.user.uid).get();
+  const lastRead = (meDoc.exists && meDoc.data().lastRead) || {};
+  const snap = await db.collection('messages').where('toUid','==',state.user.uid).get();
+  const latestByChat = {};
+  snap.docs.forEach(d => {
+    const m = d.data();
+    if(!latestByChat[m.chatId] || m.ts > latestByChat[m.chatId]) latestByChat[m.chatId] = m.ts;
   });
+  let count = 0;
+  Object.keys(latestByChat).forEach(chatId => {
+    if(latestByChat[chatId] > (lastRead[chatId] || 0)) count++;
+  });
+  return count;
+}
+
+async function refreshNotificationCounts(){
+  if(!state.user) return;
+  try{
+    const [incoming, unread] = await Promise.all([listIncomingRequests(), getUnreadChatsCount()]);
+    state.pendingRequestCount = incoming.length;
+    state.unreadChatsCount = unread;
+  }catch(e){ console.error('notif refresh failed', e); }
 }
 
 function listenToChat(otherUid, callback){
   const chatId = pairId(state.user.uid, otherUid);
-  return db.collection('messages').where('chatId','==',chatId).orderBy('ts','asc')
-    .onSnapshot(snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-                err => console.error('chat listen failed', err));
+  return db.collection('messages').where('chatId','==',chatId)
+    .onSnapshot(snap => {
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      msgs.sort((a,b) => (a.ts||0) - (b.ts||0));
+      callback(msgs);
+    }, err => console.error('chat listen failed', err));
 }
 
 // ---------------- state ----------------
@@ -477,13 +526,16 @@ function renderNav(active){
   if(state.user){
     const myLink = el('button','nav-link' + (active==='mine' ? ' active' : ''), state.graph ? 'Моя схема' : 'Написать о себе');
     myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
-    const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''), 'Люди');
+    const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''), 'Пользователи');
     peopleLink.onclick = () => { openPeople(); };
-    const friendsLink = el('button','nav-link' + (active==='friends' ? ' active' : ''), 'Друзья');
+    const notifCount = (state.pendingRequestCount||0) + (state.unreadChatsCount||0);
+    const friendsLink = el('button','nav-link' + (active==='friends' ? ' active' : ''),
+      'Друзья' + (notifCount > 0 ? ' •' + notifCount : ''));
     friendsLink.onclick = () => { openFriends(); };
     const logoutLink = el('button','nav-link','Выйти');
     logoutLink.onclick = () => {
       if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
+      stopNotificationPolling();
       logoutUser();
       state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
       render();
@@ -525,23 +577,48 @@ async function openPeople(){
 function renderPeople(){
   const w = el('div','wrap');
   w.appendChild(renderNav('people'));
-  w.appendChild(el('h1','', 'Люди'));
+  w.appendChild(el('h1','', 'Пользователи'));
   w.appendChild(el('p','lead', state.graph
     ? 'Отсортировано по тому, насколько ваши схемы похожи — сверху те, с кем совпадений больше.'
     : 'Заполни свою схему, и здесь появится сортировка по совместимости.'));
 
+  if(!state.peopleLoading && !state.peopleError && state.people && state.people.length){
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = 'Поиск по имени…';
+    searchInput.value = state.peopleSearch || '';
+    searchInput.style.marginBottom = '16px';
+    w.appendChild(searchInput);
+    searchInput.addEventListener('input', () => {
+      state.peopleSearch = searchInput.value;
+      renderGrid();
+    });
+  }
+
   const card = el('div','card');
-  if(state.peopleLoading){
-    card.appendChild(el('div','footer-note','Загружаем…'));
-  } else if(state.peopleError){
-    card.appendChild(el('div','err', state.peopleError));
-  } else if(!state.people || state.people.length === 0){
-    card.appendChild(el('div','empty','Пока никого нет. Будь первой.'));
-  } else {
-    const grid = el('div','people-grid');
-    const others = state.user ? state.people.filter(p => p.name.toLowerCase() !== state.user.name.toLowerCase()) : state.people;
+  w.appendChild(card);
+  root.appendChild(w);
+
+  function renderGrid(){
+    card.innerHTML = '';
+    if(state.peopleLoading){
+      card.appendChild(el('div','footer-note','Загружаем…'));
+      return;
+    }
+    if(state.peopleError){
+      card.appendChild(el('div','err', state.peopleError));
+      return;
+    }
+    if(!state.people || state.people.length === 0){
+      card.appendChild(el('div','empty','Пока никого нет. Будь первой.'));
+      return;
+    }
+    const query = (state.peopleSearch || '').trim().toLowerCase();
+    let others = state.user ? state.people.filter(p => p.name.toLowerCase() !== state.user.name.toLowerCase()) : state.people;
+    if(query){ others = others.filter(p => p.name.toLowerCase().includes(query)); }
     if(others.length === 0){
-      card.appendChild(el('div','empty','Кроме тебя пока никого нет.'));
+      card.appendChild(el('div','empty', query ? 'Никого не нашли по этому запросу.' : 'Кроме тебя пока никого нет.'));
+      return;
     }
     const withScores = others.map(p => ({
       p,
@@ -550,6 +627,7 @@ function renderPeople(){
     if(state.graph){
       withScores.sort((x, y) => y.compat.percent - x.compat.percent);
     }
+    const grid = el('div','people-grid');
     withScores.forEach(({ p, compat }) => {
       const row = el('div','person-row');
       const left = el('div');
@@ -562,10 +640,14 @@ function renderPeople(){
       row.appendChild(left);
 
       const right = el('div','');
-      right.style.display='flex'; right.style.alignItems='center'; right.style.gap='16px'; right.style.flexShrink='0';
+      right.style.display='flex'; right.style.alignItems='center'; right.style.gap='12px'; right.style.flexShrink='0';
       if(compat){
         right.appendChild(el('div','compat-badge', compat.percent + '%'));
       }
+      const iconsBox = el('div','');
+      iconsBox.style.display='flex'; iconsBox.style.gap='6px';
+      right.appendChild(iconsBox);
+      renderQuickIcons(iconsBox, p);
       right.appendChild(el('div','arrow','→'));
       row.appendChild(right);
 
@@ -574,15 +656,54 @@ function renderPeople(){
     });
     card.appendChild(grid);
   }
-  w.appendChild(card);
-  root.appendChild(w);
+
+  renderGrid();
+}
+
+// Компактные иконки "добавить в друзья" / "написать" прямо в списке пользователей.
+async function renderQuickIcons(container, p){
+  if(!state.user || !p.uid) return;
+  let req = null;
+  try{ req = await getFriendRequestBetween(state.user.uid, p.uid); }
+  catch(e){ return; }
+  container.innerHTML = '';
+
+  if(req && req.status === 'accepted'){
+    const msgIcon = el('button','icon-btn','✉️');
+    msgIcon.title = 'Написать';
+    msgIcon.onclick = (ev) => { ev.stopPropagation(); openChat(p.uid, p.name); };
+    container.appendChild(msgIcon);
+  } else if(req && req.status === 'pending' && req.fromUid === state.user.uid){
+    const pendingIcon = el('div','icon-btn disabled','⏳');
+    pendingIcon.title = 'Заявка отправлена';
+    container.appendChild(pendingIcon);
+  } else if(req && req.status === 'pending'){
+    const acceptIcon = el('button','icon-btn','✔');
+    acceptIcon.title = 'Принять заявку';
+    acceptIcon.onclick = async (ev) => {
+      ev.stopPropagation();
+      await respondFriendRequest(req.id, true);
+      renderQuickIcons(container, p);
+    };
+    container.appendChild(acceptIcon);
+  } else {
+    const addIcon = el('button','icon-btn','➕');
+    addIcon.title = 'Добавить в друзья';
+    addIcon.onclick = async (ev) => {
+      ev.stopPropagation();
+      addIcon.disabled = true;
+      await sendFriendRequest(p.uid, p.name);
+      renderQuickIcons(container, p);
+    };
+    container.appendChild(addIcon);
+  }
 }
 
 function renderPersonView(){
   const p = state.selectedPerson;
   const w = el('div','wrap wide');
   w.appendChild(renderNav('people'));
-  const back = el('button','btn ghost','← Ко всем людям');
+  const back = el('button','btn ghost','← Ко всем пользователям');
   back.style.marginBottom = '20px';
   back.onclick = () => { state.screen = 'people'; render(); };
   w.appendChild(back);
@@ -759,7 +880,39 @@ function renderFriends(){
   root.appendChild(w);
 }
 
+function compressImageToDataUrl(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const maxW = 480;
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 let chatUnsubscribe = null;
+let notifInterval = null;
+
+function startNotificationPolling(){
+  if(notifInterval) return;
+  notifInterval = setInterval(() => { refreshNotificationCounts().then(render); }, 20000);
+}
+function stopNotificationPolling(){
+  if(notifInterval){ clearInterval(notifInterval); notifInterval = null; }
+}
 
 function openChat(uid, name){
   if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
@@ -767,12 +920,22 @@ function openChat(uid, name){
   state.chatWith = { uid, name };
   state.chatMessages = [];
   render();
+  const chatId = pairId(state.user.uid, uid);
+  markChatRead(chatId).then(() => refreshNotificationCounts().then(() => {
+    if(state.screen === 'chat') renderChatNavOnly();
+  }));
   chatUnsubscribe = listenToChat(uid, (msgs) => {
     state.chatMessages = msgs;
     if(state.screen === 'chat' && state.chatWith && state.chatWith.uid === uid){
       renderChatMessages();
+      markChatRead(chatId);
     }
   });
+}
+
+function renderChatNavOnly(){
+  const oldNav = root.querySelector('.nav');
+  if(oldNav) oldNav.replaceWith(renderNav('friends'));
 }
 
 function renderChatMessages(){
@@ -781,7 +944,18 @@ function renderChatMessages(){
   box.innerHTML = '';
   state.chatMessages.forEach(m => {
     const bubble = el('div','chat-bubble' + (m.fromUid === state.user.uid ? ' mine' : ''));
-    bubble.textContent = m.text;
+    if(m.imageData){
+      const img = document.createElement('img');
+      img.src = m.imageData;
+      img.className = 'chat-image';
+      bubble.appendChild(img);
+    }
+    if(m.text){
+      const textEl = document.createElement('div');
+      textEl.textContent = m.text;
+      if(m.imageData) textEl.style.marginTop = '6px';
+      bubble.appendChild(textEl);
+    }
     box.appendChild(bubble);
   });
   box.scrollTop = box.scrollHeight;
@@ -807,7 +981,23 @@ function renderChat(){
   card.appendChild(box);
 
   const inputRow = el('div','');
-  inputRow.style.display='flex'; inputRow.style.gap='10px'; inputRow.style.marginTop='14px';
+  inputRow.style.display='flex'; inputRow.style.gap='10px'; inputRow.style.marginTop='14px'; inputRow.style.alignItems='center';
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.style.display = 'none';
+  const attachBtn = el('button','btn ghost','📎');
+  attachBtn.style.flexShrink = '0';
+  attachBtn.onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    const file = fileInput.files[0];
+    if(!file) return;
+    attachBtn.disabled = true; attachBtn.textContent = '…';
+    try{
+      const dataUrl = await compressImageToDataUrl(file);
+      await sendMessage(state.chatWith.uid, state.chatWith.name, null, dataUrl);
+    }catch(e){ console.error('image send failed', e); }
+    attachBtn.disabled = false; attachBtn.textContent = '📎';
+    fileInput.value = '';
+  };
   const input = document.createElement('input');
   input.type='text'; input.placeholder='Написать сообщение…';
   input.style.marginBottom = '0';
@@ -822,6 +1012,8 @@ function renderChat(){
   };
   sendBtn.onclick = doSend;
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') doSend(); });
+  inputRow.appendChild(attachBtn);
+  inputRow.appendChild(fileInput);
   inputRow.appendChild(input);
   inputRow.appendChild(sendBtn);
   card.appendChild(inputRow);
@@ -882,8 +1074,11 @@ function renderAuth(){
       state.user = { uid: user.uid, name: user.name };
       state.graph = user.graph || null;
       state.text = user.text || '';
+      state.profile = user.profile || null;
       state.screen = state.graph ? 'result' : 'story';
       render();
+      refreshNotificationCounts().then(render);
+      startNotificationPolling();
     }catch(e){
       state.error = e.message;
       render();
@@ -1201,6 +1396,42 @@ function renderResult(){
   w.appendChild(el('div','eyebrow', `Граф — ${state.user.name}`));
   w.appendChild(el('h1','', 'Вот из чего ты состоишь.'));
 
+  const profileCard = el('div','card');
+  profileCard.style.marginBottom = '20px';
+  profileCard.appendChild(el('div','top-tag','Профиль (по желанию)'));
+  const profileRow = el('div','');
+  profileRow.style.display='flex'; profileRow.style.gap='12px'; profileRow.style.flexWrap='wrap';
+
+  const ageInput = document.createElement('input');
+  ageInput.type='text'; ageInput.placeholder='Возраст'; ageInput.style.maxWidth='120px'; ageInput.style.marginBottom='0';
+  ageInput.value = state.profile?.age || '';
+
+  const cityInput = document.createElement('input');
+  cityInput.type='text'; cityInput.placeholder='Город'; cityInput.style.flex='1'; cityInput.style.marginBottom='0';
+  cityInput.value = state.profile?.city || '';
+
+  profileRow.appendChild(ageInput);
+  profileRow.appendChild(cityInput);
+  profileCard.appendChild(profileRow);
+
+  const saveProfileBtn = el('button','btn ghost','Сохранить профиль');
+  saveProfileBtn.style.marginTop = '12px';
+  saveProfileBtn.onclick = async () => {
+    saveProfileBtn.disabled = true; saveProfileBtn.textContent = 'Сохраняем…';
+    const profile = { age: ageInput.value.trim(), city: cityInput.value.trim() };
+    try{
+      await db.collection('users').doc(state.user.uid).update({ profile });
+      state.profile = profile;
+      saveProfileBtn.textContent = 'Сохранено ✓';
+    }catch(e){
+      saveProfileBtn.textContent = 'Не сохранилось';
+      console.error('profile save failed', e);
+    }
+    setTimeout(() => { saveProfileBtn.disabled = false; saveProfileBtn.textContent = 'Сохранить профиль'; }, 1500);
+  };
+  profileCard.appendChild(saveProfileBtn);
+  w.appendChild(profileCard);
+
   const legend = el('div','legend');
   (state.graph.clusters || []).forEach(c=>{
     const item = el('div','legend-item');
@@ -1234,6 +1465,7 @@ function renderResult(){
   const logoutBtn = el('button','btn ghost','Выйти');
   logoutBtn.onclick = () => {
     if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
+    stopNotificationPolling();
     logoutUser();
     state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
     render();
@@ -1312,7 +1544,10 @@ if(firebaseReady){
         state.user = { uid: fbUser.uid, name: data.name || 'Без имени' };
         state.graph = data.graph || null;
         state.text = data.text || '';
+        state.profile = data.profile || null;
         if(state.screen === 'landing'){ state.screen = state.graph ? 'result' : 'story'; }
+        refreshNotificationCounts().then(render);
+        startNotificationPolling();
       }catch(e){ console.error('session restore failed', e); }
     }
     render();
