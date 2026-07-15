@@ -108,7 +108,7 @@
   }
   textarea:focus{ outline:none; border-color: var(--gold); }
 
-  input[type=text]{
+  input[type=text], input[type=password]{
     width:100%;
     background: var(--bg-soft);
     border:1px solid var(--line);
@@ -117,9 +117,10 @@
     border-radius: 10px;
     font-size: 16px;
     font-family:'Inter',sans-serif;
-    margin-bottom: 18px;
+    margin-bottom: 14px;
+    display: block;
   }
-  input[type=text]:focus{ outline:none; border-color: var(--gold); }
+  input[type=text]:focus, input[type=password]:focus{ outline:none; border-color: var(--gold); }
 
   .counter{ font-size:12px; color: var(--ink-dim); margin-bottom: 18px; }
 
@@ -201,6 +202,13 @@
   .person-row .name{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; }
   .person-row .meta{ font-size:12px; color: var(--ink-dim); margin-top:3px; }
   .person-row .arrow{ color: var(--ink-dim); font-size:18px; }
+  .compat-badge{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--gold);
+  }
+  .meta{ font-size:12px; color: var(--ink-dim); margin-top:4px; }
 
   body.space{ background: #000000; }
   body.space .nav-brand, body.space .nav-link{ color: #cfd6e8; }
@@ -414,6 +422,9 @@ function renderPeople(){
   const w = el('div','wrap');
   w.appendChild(renderNav('people'));
   w.appendChild(el('h1','', 'Люди'));
+  w.appendChild(el('p','lead', state.graph
+    ? 'Отсортировано по тому, насколько ваши схемы похожи — сверху те, с кем совпадений больше.'
+    : 'Заполни свою схему, и здесь появится сортировка по совместимости.'));
 
   const card = el('div','card');
   if(state.peopleLoading){
@@ -424,13 +435,36 @@ function renderPeople(){
     card.appendChild(el('div','empty','Пока никого нет. Будь первой.'));
   } else {
     const grid = el('div','people-grid');
-    state.people.forEach(p => {
+    const others = state.user ? state.people.filter(p => p.name.toLowerCase() !== state.user.name.toLowerCase()) : state.people;
+    if(others.length === 0){
+      card.appendChild(el('div','empty','Кроме тебя пока никого нет.'));
+    }
+    const withScores = others.map(p => ({
+      p,
+      compat: state.graph ? computeCompatibility(state.graph, p.graph) : null
+    }));
+    if(state.graph){
+      withScores.sort((x, y) => y.compat.percent - x.compat.percent);
+    }
+    withScores.forEach(({ p, compat }) => {
       const row = el('div','person-row');
       const left = el('div');
       left.appendChild(el('div','name', p.name));
-      left.appendChild(el('div','meta', (p.graph.nodes||[]).length + ' узлов · ' + (p.graph.clusters||[]).length + ' кластеров'));
+      let metaText = (p.graph.nodes||[]).filter(n=>!n.isHub).length + ' узлов · ' + (p.graph.clusters||[]).length + ' тем';
+      if(compat && compat.sharedClusters.length){
+        metaText += ' · общее: ' + compat.sharedClusters.join(', ');
+      }
+      left.appendChild(el('div','meta', metaText));
       row.appendChild(left);
-      row.appendChild(el('div','arrow','→'));
+
+      const right = el('div','');
+      right.style.display='flex'; right.style.alignItems='center'; right.style.gap='16px'; right.style.flexShrink='0';
+      if(compat){
+        right.appendChild(el('div','compat-badge', compat.percent + '%'));
+      }
+      right.appendChild(el('div','arrow','→'));
+      row.appendChild(right);
+
       row.onclick = () => { state.selectedPerson = p; state.screen = 'personView'; render(); };
       grid.appendChild(row);
     });
@@ -450,6 +484,25 @@ function renderPersonView(){
   w.appendChild(back);
   w.appendChild(el('div','eyebrow', 'Схема — ' + p.name));
   w.appendChild(el('h1','', p.name));
+
+  if(state.graph){
+    const compat = computeCompatibility(state.graph, p.graph);
+    const compatCard = el('div','card');
+    compatCard.style.marginBottom = '20px';
+    const row = el('div','');
+    row.style.display='flex'; row.style.alignItems='center'; row.style.gap='16px';
+    row.appendChild(el('div','compat-badge', compat.percent + '%'));
+    row.appendChild(el('div','', 'совпадение с тобой'));
+    compatCard.appendChild(row);
+    if(compat.sharedClusters.length){
+      compatCard.appendChild(el('div','meta', 'Общие темы: ' + compat.sharedClusters.join(', ')));
+    }
+    const exactMatches = compat.matches.filter(m => m.type === 'exact');
+    if(exactMatches.length){
+      compatCard.appendChild(el('div','meta', 'Совпало почти дословно: ' + exactMatches.map(m=>m.a).join(', ')));
+    }
+    w.appendChild(compatCard);
+  }
 
   const legend = el('div','legend');
   (p.graph.clusters || []).forEach(c=>{
@@ -534,6 +587,7 @@ function renderAuth(){
   card.appendChild(btn);
 
   const switchLink = el('button','nav-link', isLogin ? 'Ещё нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти');
+  switchLink.style.display = 'block';
   switchLink.style.marginTop = '18px';
   switchLink.onclick = () => { state.authMode = isLogin ? 'register' : 'login'; state.error=''; render(); };
   card.appendChild(switchLink);
@@ -767,6 +821,72 @@ const PALETTE = ['#e8935c','#4fc9b8','#ef6f8e','#e8c25c','#8c9eff','#c792ea','#7
 function colorForCluster(clusterName, clusters){
   const idx = clusters.indexOf(clusterName);
   return PALETTE[idx % PALETTE.length] || '#888';
+}
+
+// ---------------- совместимость между людьми ----------------
+// Фиксированный список тем — чтобы сравнивать распределения по одинаковым осям,
+// даже если у кого-то в графе какой-то темы вообще нет.
+const ALL_CLUSTERS = [...Object.keys(CATEGORY_KEYWORDS), 'О себе'];
+
+function clusterDistribution(graph){
+  const leaf = (graph.nodes || []).filter(n => !n.isHub);
+  const totals = {};
+  ALL_CLUSTERS.forEach(c => totals[c] = 0);
+  let sum = 0;
+  leaf.forEach(n => {
+    const w = n.weight || 1;
+    totals[n.cluster] = (totals[n.cluster] || 0) + w;
+    sum += w;
+  });
+  if(sum > 0){ ALL_CLUSTERS.forEach(c => totals[c] = totals[c] / sum); }
+  return totals;
+}
+
+function normalizeLabelTokens(label){
+  return label.toLowerCase().split(/\s+/).map(cleanToken).filter(t => t.length >= 4 && !STOPWORDS.has(t));
+}
+
+// Считает процент совместимости в два слоя:
+// 1) насколько похоже распределение по темам (работа/увлечения/люди/ценности/медиа) —
+//    ловит "похоже по сути", даже если конкретные слова разные (Паразиты vs антиутопии — оба в "Медиа и мысли").
+// 2) бонус за реально совпадающие или пересекающиеся по словам конкретные узлы.
+// Итог — оценка, а не точное измерение, поэтому специально не даём 100% почти никогда.
+function computeCompatibility(graphA, graphB){
+  if(!graphA || !graphB || !(graphA.nodes||[]).length || !(graphB.nodes||[]).length){
+    return { percent: 0, sharedClusters: [], matches: [] };
+  }
+
+  const distA = clusterDistribution(graphA);
+  const distB = clusterDistribution(graphB);
+  let overlapSum = 0;
+  const sharedClusters = [];
+  ALL_CLUSTERS.forEach(c => {
+    const m = Math.min(distA[c], distB[c]);
+    overlapSum += m;
+    if(m > 0.08) sharedClusters.push(c);
+  });
+
+  const leafA = (graphA.nodes||[]).filter(n => !n.isHub);
+  const leafB = (graphB.nodes||[]).filter(n => !n.isHub);
+  const usedB = new Set();
+  const matches = [];
+  let bonus = 0;
+
+  leafA.forEach(a => {
+    const aLower = a.label.toLowerCase();
+    const hit = leafB.find(b => !usedB.has(b.id) && b.label.toLowerCase() === aLower);
+    if(hit){ usedB.add(hit.id); matches.push({ a: a.label, b: hit.label, type: 'exact' }); bonus += 1; }
+  });
+  leafA.forEach(a => {
+    if(matches.some(m => m.a === a.label)) return;
+    const aTokens = normalizeLabelTokens(a.label);
+    if(!aTokens.length) return;
+    const hit = leafB.find(b => !usedB.has(b.id) && normalizeLabelTokens(b.label).some(t => aTokens.includes(t)));
+    if(hit){ usedB.add(hit.id); matches.push({ a: a.label, b: hit.label, type: 'related' }); bonus += 0.4; }
+  });
+
+  const percent = Math.round(Math.max(0, Math.min(100, overlapSum * 70 + Math.min(30, bonus * 6))));
+  return { percent, sharedClusters, matches };
 }
 
 function renderResult(){
