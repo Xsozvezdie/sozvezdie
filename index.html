@@ -210,6 +210,29 @@
   }
   .meta{ font-size:12px; color: var(--ink-dim); margin-top:4px; }
 
+  .chat-box{
+    display:flex; flex-direction:column; gap:8px;
+    max-height: 420px; min-height: 200px; overflow-y:auto;
+    padding-right: 4px;
+  }
+  .chat-bubble{
+    align-self: flex-start;
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 12px 12px 12px 4px;
+    padding: 10px 14px;
+    font-size: 14px;
+    max-width: 70%;
+    word-break: break-word;
+  }
+  .chat-bubble.mine{
+    align-self: flex-end;
+    background: var(--gold);
+    color: #1a1406;
+    border-color: var(--gold);
+    border-radius: 12px 12px 4px 12px;
+  }
+
   body.space{ background: #000000; }
   body.space .nav-brand, body.space .nav-link{ color: #cfd6e8; }
   body.space .nav-link:hover, body.space .nav-link.active{ color: #ffffff; }
@@ -308,7 +331,82 @@ async function saveUserGraph(uid, text, graph){
 async function fetchAllUsers(){
   if(!firebaseReady) throw backendNotConfiguredError();
   const snap = await db.collection('users').orderBy('ts', 'desc').get();
-  return snap.docs.map(d => d.data()).filter(u => u.graph);
+  return snap.docs.map(d => ({ uid: d.id, ...d.data() })).filter(u => u.graph);
+}
+
+// ---------------- друзья ----------------
+function pairId(uidA, uidB){
+  return [uidA, uidB].sort().join('_');
+}
+
+async function getFriendRequestBetween(uidA, uidB){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const q1 = await db.collection('friendRequests').where('fromUid','==',uidA).where('toUid','==',uidB).limit(1).get();
+  if(!q1.empty) return { id: q1.docs[0].id, ...q1.docs[0].data() };
+  const q2 = await db.collection('friendRequests').where('fromUid','==',uidB).where('toUid','==',uidA).limit(1).get();
+  if(!q2.empty) return { id: q2.docs[0].id, ...q2.docs[0].data() };
+  return null;
+}
+
+async function sendFriendRequest(toUid, toName){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const me = state.user;
+  const existing = await getFriendRequestBetween(me.uid, toUid);
+  if(existing){
+    if(existing.status === 'pending' && existing.fromUid === toUid){
+      await db.collection('friendRequests').doc(existing.id).update({ status: 'accepted' });
+      return { ...existing, status: 'accepted' };
+    }
+    return existing;
+  }
+  const doc = await db.collection('friendRequests').add({
+    fromUid: me.uid, fromName: me.name, toUid, toName, status: 'pending', ts: Date.now()
+  });
+  return { id: doc.id, fromUid: me.uid, fromName: me.name, toUid, toName, status: 'pending' };
+}
+
+async function respondFriendRequest(requestId, accept){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  if(accept){
+    await db.collection('friendRequests').doc(requestId).update({ status: 'accepted' });
+  } else {
+    await db.collection('friendRequests').doc(requestId).delete();
+  }
+}
+
+async function listIncomingRequests(){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const snap = await db.collection('friendRequests').where('toUid','==',state.user.uid).where('status','==','pending').get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+async function listFriends(){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const uid = state.user.uid;
+  const [q1, q2] = await Promise.all([
+    db.collection('friendRequests').where('fromUid','==',uid).where('status','==','accepted').get(),
+    db.collection('friendRequests').where('toUid','==',uid).where('status','==','accepted').get(),
+  ]);
+  const friends = [];
+  q1.docs.forEach(d => { const v = d.data(); friends.push({ uid: v.toUid, name: v.toName }); });
+  q2.docs.forEach(d => { const v = d.data(); friends.push({ uid: v.fromUid, name: v.fromName }); });
+  return friends;
+}
+
+// ---------------- сообщения ----------------
+async function sendMessage(toUid, toName, text){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const me = state.user;
+  await db.collection('messages').add({
+    chatId: pairId(me.uid, toUid), fromUid: me.uid, fromName: me.name, toUid, toName, text, ts: Date.now()
+  });
+}
+
+function listenToChat(otherUid, callback){
+  const chatId = pairId(state.user.uid, otherUid);
+  return db.collection('messages').where('chatId','==',chatId).orderBy('ts','asc')
+    .onSnapshot(snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+                err => console.error('chat listen failed', err));
 }
 
 // ---------------- state ----------------
@@ -325,6 +423,8 @@ function render(){
   else if(state.screen === 'result') renderResult();
   else if(state.screen === 'people') renderPeople();
   else if(state.screen === 'personView') renderPersonView();
+  else if(state.screen === 'friends') renderFriends();
+  else if(state.screen === 'chat') renderChat();
 }
 
 function el(tag, cls, html){
@@ -379,14 +479,18 @@ function renderNav(active){
     myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
     const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''), 'Люди');
     peopleLink.onclick = () => { openPeople(); };
+    const friendsLink = el('button','nav-link' + (active==='friends' ? ' active' : ''), 'Друзья');
+    friendsLink.onclick = () => { openFriends(); };
     const logoutLink = el('button','nav-link','Выйти');
     logoutLink.onclick = () => {
+      if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
       logoutUser();
       state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
       render();
     };
     links.appendChild(myLink);
     links.appendChild(peopleLink);
+    links.appendChild(friendsLink);
     links.appendChild(logoutLink);
   } else {
     const loginLink = el('button','nav-link','Войти');
@@ -485,6 +589,11 @@ function renderPersonView(){
   w.appendChild(el('div','eyebrow', 'Схема — ' + p.name));
   w.appendChild(el('h1','', p.name));
 
+  const friendBox = el('div','');
+  friendBox.style.marginBottom = '20px';
+  w.appendChild(friendBox);
+  renderFriendActionInto(friendBox, p);
+
   if(state.graph){
     const compat = computeCompatibility(state.graph, p.graph);
     const compatCard = el('div','card');
@@ -523,6 +632,203 @@ function renderPersonView(){
   w.appendChild(card);
   root.appendChild(w);
   drawGraph(svgWrap, p.graph);
+}
+
+// Асинхронно подтягивает статус дружбы с человеком p и рисует нужную кнопку в container.
+async function renderFriendActionInto(container, p){
+  container.innerHTML = '';
+  container.appendChild(el('div','footer-note','Проверяем статус…'));
+  let req = null;
+  try{
+    req = await getFriendRequestBetween(state.user.uid, p.uid);
+  }catch(e){
+    console.error('friend status check failed', e);
+    container.innerHTML = '';
+    container.appendChild(el('div','err', e.message));
+    return;
+  }
+  container.innerHTML = '';
+  const row = el('div','');
+  row.style.display='flex'; row.style.gap='12px'; row.style.flexWrap='wrap'; row.style.alignItems='center';
+
+  if(!req){
+    const btn = el('button','btn','Добавить в друзья');
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = 'Отправляем…';
+      try{
+        await sendFriendRequest(p.uid, p.name);
+        renderFriendActionInto(container, p);
+      }catch(e){ container.appendChild(el('div','err', e.message)); }
+    };
+    row.appendChild(btn);
+  } else if(req.status === 'accepted'){
+    row.appendChild(el('div','compat-badge','Вы друзья ✓'));
+    const msgBtn = el('button','btn ghost','Написать →');
+    msgBtn.onclick = () => { openChat(p.uid, p.name); };
+    row.appendChild(msgBtn);
+  } else if(req.status === 'pending' && req.fromUid === state.user.uid){
+    const btn = el('button','btn ghost','Заявка отправлена');
+    btn.disabled = true;
+    row.appendChild(btn);
+  } else {
+    const acceptBtn = el('button','btn','Принять заявку в друзья');
+    acceptBtn.onclick = async () => {
+      acceptBtn.disabled = true; acceptBtn.textContent = 'Принимаем…';
+      try{
+        await respondFriendRequest(req.id, true);
+        renderFriendActionInto(container, p);
+      }catch(e){ container.appendChild(el('div','err', e.message)); }
+    };
+    row.appendChild(acceptBtn);
+  }
+  container.appendChild(row);
+}
+
+async function openFriends(){
+  state.screen = 'friends';
+  state.friendsLoading = true;
+  state.friendsError = '';
+  render();
+  try{
+    const [incoming, friends] = await Promise.all([listIncomingRequests(), listFriends()]);
+    state.incomingRequests = incoming;
+    state.friendsList = friends;
+  }catch(e){
+    console.error('friends load failed', e);
+    state.friendsError = e.message;
+  }
+  state.friendsLoading = false;
+  render();
+}
+
+function renderFriends(){
+  const w = el('div','wrap');
+  w.appendChild(renderNav('friends'));
+  w.appendChild(el('h1','', 'Друзья'));
+
+  if(state.friendsLoading){
+    w.appendChild(el('div','footer-note','Загружаем…'));
+    root.appendChild(w);
+    return;
+  }
+  if(state.friendsError){
+    w.appendChild(el('div','err', state.friendsError));
+    root.appendChild(w);
+    return;
+  }
+
+  if(state.incomingRequests && state.incomingRequests.length){
+    w.appendChild(el('div','eyebrow','Заявки в друзья'));
+    const reqGrid = el('div','people-grid');
+    state.incomingRequests.forEach(req => {
+      const row = el('div','person-row');
+      row.appendChild(el('div','name', req.fromName));
+      const actions = el('div','');
+      actions.style.display='flex'; actions.style.gap='10px';
+      const acceptBtn = el('button','btn','Принять');
+      acceptBtn.onclick = async () => { await respondFriendRequest(req.id, true); openFriends(); };
+      const declineBtn = el('button','btn ghost','Отклонить');
+      declineBtn.onclick = async () => { await respondFriendRequest(req.id, false); openFriends(); };
+      actions.appendChild(acceptBtn);
+      actions.appendChild(declineBtn);
+      row.appendChild(actions);
+      reqGrid.appendChild(row);
+    });
+    w.appendChild(reqGrid);
+  }
+
+  if(state.incomingRequests && state.incomingRequests.length){
+    w.appendChild(el('div','eyebrow', 'Мои друзья'));
+  }
+  const card = el('div','card');
+  if(!state.friendsList || state.friendsList.length === 0){
+    card.appendChild(el('div','empty','Пока никого — загляни во вкладку «Люди» и добавь кого-нибудь.'));
+  } else {
+    const grid = el('div','people-grid');
+    state.friendsList.forEach(f => {
+      const row = el('div','person-row');
+      row.appendChild(el('div','name', f.name));
+      const msgBtn = el('button','btn ghost','Написать →');
+      msgBtn.onclick = () => { openChat(f.uid, f.name); };
+      row.appendChild(msgBtn);
+      grid.appendChild(row);
+    });
+    card.appendChild(grid);
+  }
+  w.appendChild(card);
+  root.appendChild(w);
+}
+
+let chatUnsubscribe = null;
+
+function openChat(uid, name){
+  if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
+  state.screen = 'chat';
+  state.chatWith = { uid, name };
+  state.chatMessages = [];
+  render();
+  chatUnsubscribe = listenToChat(uid, (msgs) => {
+    state.chatMessages = msgs;
+    if(state.screen === 'chat' && state.chatWith && state.chatWith.uid === uid){
+      renderChatMessages();
+    }
+  });
+}
+
+function renderChatMessages(){
+  const box = document.getElementById('chat-messages');
+  if(!box) return;
+  box.innerHTML = '';
+  state.chatMessages.forEach(m => {
+    const bubble = el('div','chat-bubble' + (m.fromUid === state.user.uid ? ' mine' : ''));
+    bubble.textContent = m.text;
+    box.appendChild(bubble);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderChat(){
+  const w = el('div','wrap');
+  w.appendChild(renderNav('friends'));
+  const back = el('button','btn ghost','← К друзьям');
+  back.style.marginBottom = '20px';
+  back.onclick = () => {
+    if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
+    state.screen = 'friends';
+    render();
+  };
+  w.appendChild(back);
+  w.appendChild(el('h1','', state.chatWith.name));
+
+  const card = el('div','card');
+  const box = el('div','');
+  box.id = 'chat-messages';
+  box.className = 'chat-box';
+  card.appendChild(box);
+
+  const inputRow = el('div','');
+  inputRow.style.display='flex'; inputRow.style.gap='10px'; inputRow.style.marginTop='14px';
+  const input = document.createElement('input');
+  input.type='text'; input.placeholder='Написать сообщение…';
+  input.style.marginBottom = '0';
+  const sendBtn = el('button','btn','Отправить');
+  const doSend = async () => {
+    const text = input.value.trim();
+    if(!text) return;
+    input.value = '';
+    try{
+      await sendMessage(state.chatWith.uid, state.chatWith.name, text);
+    }catch(e){ console.error('send failed', e); }
+  };
+  sendBtn.onclick = doSend;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') doSend(); });
+  inputRow.appendChild(input);
+  inputRow.appendChild(sendBtn);
+  card.appendChild(inputRow);
+
+  w.appendChild(card);
+  root.appendChild(w);
+  renderChatMessages();
 }
 
 function renderLanding(){
@@ -927,6 +1233,7 @@ function renderResult(){
   editBtn.onclick = () => { state.screen='story'; render(); };
   const logoutBtn = el('button','btn ghost','Выйти');
   logoutBtn.onclick = () => {
+    if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
     logoutUser();
     state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
     render();
