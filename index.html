@@ -243,6 +243,26 @@
   .icon-btn:hover{ border-color: var(--gold); }
   .icon-btn.disabled{ opacity:.5; cursor:default; }
 
+  .unread-row{ border-color: var(--gold); }
+  .unread-dot{
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--gold); flex-shrink: 0;
+    box-shadow: 0 0 8px 1px rgba(242,193,78,0.6);
+  }
+  .unread-name{ font-weight: 700; color: var(--ink); }
+
+  .chat-sender{
+    font-size: 11px; color: var(--gold); font-weight:600; margin-bottom: 4px;
+  }
+  .seen-caption{
+    align-self: flex-end;
+    font-size: 11px;
+    color: var(--ink-dim);
+    font-style: italic;
+    letter-spacing: 0.03em;
+    margin: -4px 4px 4px 0;
+  }
+
   body.space{ background: #000000; }
   body.space .nav-brand, body.space .nav-link{ color: #cfd6e8; }
   body.space .nav-link:hover, body.space .nav-link.active{ color: #ffffff; }
@@ -403,7 +423,7 @@ async function listFriends(){
   return friends;
 }
 
-// ---------------- сообщения ----------------
+// ---------------- сообщения (личные + групповые) ----------------
 async function sendMessage(toUid, toName, text, imageData){
   if(!firebaseReady) throw backendNotConfiguredError();
   const me = state.user;
@@ -413,6 +433,27 @@ async function sendMessage(toUid, toName, text, imageData){
   if(text) payload.text = text;
   if(imageData) payload.imageData = imageData;
   await db.collection('messages').add(payload);
+}
+
+async function sendGroupMessage(groupId, text, imageData){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const me = state.user;
+  const payload = {
+    chatId: 'g_' + groupId, groupId, fromUid: me.uid, fromName: me.name, ts: Date.now()
+  };
+  if(text) payload.text = text;
+  if(imageData) payload.imageData = imageData;
+  await db.collection('messages').add(payload);
+}
+
+async function createGroup(name, memberUidsAndNames){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const me = state.user;
+  const memberNames = { [me.uid]: me.name };
+  const members = [me.uid];
+  memberUidsAndNames.forEach(m => { members.push(m.uid); memberNames[m.uid] = m.name; });
+  const doc = await db.collection('groups').add({ name, members, memberNames, createdBy: me.uid, ts: Date.now() });
+  return doc.id;
 }
 
 async function markChatRead(chatId){
@@ -427,11 +468,22 @@ async function getUnreadChatsCount(){
   const meDoc = await db.collection('users').doc(state.user.uid).get();
   const lastRead = (meDoc.exists && meDoc.data().lastRead) || {};
   const snap = await db.collection('messages').where('toUid','==',state.user.uid).get();
+  const groupSnap = await db.collection('groups').where('members','array-contains',state.user.uid).get();
+  const groupIds = new Set(groupSnap.docs.map(d => 'g_' + d.id));
   const latestByChat = {};
   snap.docs.forEach(d => {
     const m = d.data();
     if(!latestByChat[m.chatId] || m.ts > latestByChat[m.chatId]) latestByChat[m.chatId] = m.ts;
   });
+  // групповые сообщения не от меня тоже считаем непрочитанными
+  if(groupIds.size){
+    const groupMsgsSnap = await Promise.all([...groupIds].map(gid => db.collection('messages').where('chatId','==',gid).get()));
+    groupMsgsSnap.forEach(gs => gs.docs.forEach(d => {
+      const m = d.data();
+      if(m.fromUid === state.user.uid) return;
+      if(!latestByChat[m.chatId] || m.ts > latestByChat[m.chatId]) latestByChat[m.chatId] = m.ts;
+    }));
+  }
   let count = 0;
   Object.keys(latestByChat).forEach(chatId => {
     if(latestByChat[chatId] > (lastRead[chatId] || 0)) count++;
@@ -448,14 +500,105 @@ async function refreshNotificationCounts(){
   }catch(e){ console.error('notif refresh failed', e); }
 }
 
-function listenToChat(otherUid, callback){
-  const chatId = pairId(state.user.uid, otherUid);
+function listenToMessages(chatId, callback){
   return db.collection('messages').where('chatId','==',chatId)
     .onSnapshot(snap => {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       msgs.sort((a,b) => (a.ts||0) - (b.ts||0));
       callback(msgs);
     }, err => console.error('chat listen failed', err));
+}
+
+function listenToChat(otherUid, callback){
+  return listenToMessages(pairId(state.user.uid, otherUid), callback);
+}
+
+// Собирает список всех переписок (личных и групповых) с превью последнего сообщения.
+async function listChatThreads(){
+  const me = state.user.uid;
+  const [sentSnap, receivedSnap, groupsSnap, meDoc] = await Promise.all([
+    db.collection('messages').where('fromUid','==',me).get(),
+    db.collection('messages').where('toUid','==',me).get(),
+    db.collection('groups').where('members','array-contains',me).get(),
+    db.collection('users').doc(me).get(),
+  ]);
+  const byChatId = {};
+  function ingest(doc){
+    const m = doc.data();
+    const existing = byChatId[m.chatId];
+    if(!existing || (m.ts||0) > (existing.latest?.ts||0)){
+      byChatId[m.chatId] = {
+        chatId: m.chatId,
+        isGroup: !!m.groupId,
+        groupId: m.groupId || null,
+        otherUid: m.fromUid === me ? m.toUid : m.fromUid,
+        otherName: m.fromUid === me ? m.toName : m.fromName,
+        latest: m,
+      };
+    }
+  }
+  sentSnap.docs.forEach(ingest);
+  receivedSnap.docs.forEach(ingest);
+
+  const groupMsgLists = await Promise.all(groupsSnap.docs.map(d => db.collection('messages').where('chatId','==','g_'+d.id).get()));
+  groupsSnap.docs.forEach((d, i) => {
+    const g = d.data();
+    const chatId = 'g_' + d.id;
+    groupMsgLists[i].docs.forEach(md => {
+      const m = md.data();
+      const existing = byChatId[chatId];
+      if(!existing || (m.ts||0) > (existing.latest?.ts||0)){
+        byChatId[chatId] = { chatId, isGroup:true, groupId: d.id, groupName: g.name, latest: m };
+      }
+    });
+    if(!byChatId[chatId]){
+      byChatId[chatId] = { chatId, isGroup:true, groupId: d.id, groupName: g.name, latest: null };
+    } else {
+      byChatId[chatId].groupName = g.name;
+    }
+  });
+
+  const lastRead = (meDoc.exists && meDoc.data().lastRead) || {};
+  const threads = Object.values(byChatId).map(t => ({
+    ...t,
+    unread: !!(t.latest && t.latest.fromUid !== me && (t.latest.ts||0) > (lastRead[t.chatId]||0))
+  }));
+  threads.sort((a,b) => (b.latest?.ts||0) - (a.latest?.ts||0));
+  return threads;
+}
+
+// ---------------- статус "в сети" ----------------
+async function updateLastActive(){
+  if(!state.user || !firebaseReady) return;
+  try{ await db.collection('users').doc(state.user.uid).update({ lastActive: Date.now() }); }
+  catch(e){ /* тихо игнорируем */ }
+}
+
+function formatLastSeen(ts){
+  if(!ts) return 'давно не заходил(а)';
+  const diffMin = (Date.now() - ts) / 60000;
+  if(diffMin < 2) return 'в сети';
+  if(diffMin < 60) return `был(а) в сети ${Math.round(diffMin)} мин назад`;
+  const diffH = diffMin / 60;
+  if(diffH < 24) return `был(а) в сети ${Math.round(diffH)} ч назад`;
+  return `был(а) в сети ${Math.round(diffH/24)} дн назад`;
+}
+
+// Статус виден только если ОБА участника не скрыли его — как в Telegram.
+async function getStatusText(otherUid){
+  if(!state.user || !firebaseReady) return null;
+  try{
+    const [meDoc, otherDoc] = await Promise.all([
+      db.collection('users').doc(state.user.uid).get(),
+      db.collection('users').doc(otherUid).get(),
+    ]);
+    const myShow = !meDoc.exists || meDoc.data().showStatus !== false;
+    if(!myShow) return null;
+    if(!otherDoc.exists) return null;
+    const otherShow = otherDoc.data().showStatus !== false;
+    if(!otherShow) return null;
+    return formatLastSeen(otherDoc.data().lastActive);
+  }catch(e){ return null; }
 }
 
 // ---------------- state ----------------
@@ -473,6 +616,8 @@ function render(){
   else if(state.screen === 'people') renderPeople();
   else if(state.screen === 'personView') renderPersonView();
   else if(state.screen === 'friends') renderFriends();
+  else if(state.screen === 'messages') renderMessagesTab();
+  else if(state.screen === 'createGroup') renderCreateGroup();
   else if(state.screen === 'chat') renderChat();
 }
 
@@ -528,13 +673,16 @@ function renderNav(active){
     myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
     const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''), 'Пользователи');
     peopleLink.onclick = () => { openPeople(); };
-    const notifCount = (state.pendingRequestCount||0) + (state.unreadChatsCount||0);
     const friendsLink = el('button','nav-link' + (active==='friends' ? ' active' : ''),
-      'Друзья' + (notifCount > 0 ? ' •' + notifCount : ''));
+      'Друзья' + ((state.pendingRequestCount||0) > 0 ? ' •' + state.pendingRequestCount : ''));
     friendsLink.onclick = () => { openFriends(); };
+    const messagesLink = el('button','nav-link' + (active==='messages' ? ' active' : ''),
+      'Сообщения' + ((state.unreadChatsCount||0) > 0 ? ' •' + state.unreadChatsCount : ''));
+    messagesLink.onclick = () => { openMessagesTab(); };
     const logoutLink = el('button','nav-link','Выйти');
     logoutLink.onclick = () => {
       if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
+      if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
       stopNotificationPolling();
       logoutUser();
       state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
@@ -543,6 +691,7 @@ function renderNav(active){
     links.appendChild(myLink);
     links.appendChild(peopleLink);
     links.appendChild(friendsLink);
+    links.appendChild(messagesLink);
     links.appendChild(logoutLink);
   } else {
     const loginLink = el('button','nav-link','Войти');
@@ -709,6 +858,12 @@ function renderPersonView(){
   w.appendChild(back);
   w.appendChild(el('div','eyebrow', 'Схема — ' + p.name));
   w.appendChild(el('h1','', p.name));
+  const statusLine = el('div','meta','');
+  statusLine.style.marginBottom = '16px';
+  w.appendChild(statusLine);
+  if(p.uid){
+    getStatusText(p.uid).then(txt => { if(txt) statusLine.textContent = txt; });
+  }
 
   const friendBox = el('div','');
   friendBox.style.marginBottom = '20px';
@@ -908,17 +1063,26 @@ let notifInterval = null;
 
 function startNotificationPolling(){
   if(notifInterval) return;
-  notifInterval = setInterval(() => { refreshNotificationCounts().then(render); }, 20000);
+  updateLastActive();
+  notifInterval = setInterval(() => {
+    refreshNotificationCounts().then(render);
+    updateLastActive();
+  }, 20000);
 }
 function stopNotificationPolling(){
   if(notifInterval){ clearInterval(notifInterval); notifInterval = null; }
 }
 
+let otherLastReadUnsub = null;
+
 function openChat(uid, name){
   if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
+  if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
   state.screen = 'chat';
-  state.chatWith = { uid, name };
+  state.chatWith = { uid, name, isGroup: false };
   state.chatMessages = [];
+  state.otherLastRead = 0;
+  state.chatStatusText = '';
   render();
   const chatId = pairId(state.user.uid, uid);
   markChatRead(chatId).then(() => refreshNotificationCounts().then(() => {
@@ -931,19 +1095,67 @@ function openChat(uid, name){
       markChatRead(chatId);
     }
   });
+  // видит ли собеседник мои сообщения — обновляем "просмотрено" в реальном времени
+  otherLastReadUnsub = db.collection('users').doc(uid).onSnapshot(doc => {
+    const lr = (doc.exists && doc.data().lastRead) || {};
+    state.otherLastRead = lr[chatId] || 0;
+    if(state.screen === 'chat') renderChatMessages();
+  });
+  getStatusText(uid).then(txt => {
+    state.chatStatusText = txt;
+    if(state.screen === 'chat') renderChatHeaderStatus();
+  });
+}
+
+function openGroupChat(groupId, groupName){
+  if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
+  if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
+  state.screen = 'chat';
+  state.chatWith = { groupId, name: groupName, isGroup: true };
+  state.chatMessages = [];
+  state.otherLastRead = 0;
+  state.chatStatusText = '';
+  render();
+  const chatId = 'g_' + groupId;
+  markChatRead(chatId).then(() => refreshNotificationCounts().then(() => {
+    if(state.screen === 'chat') renderChatNavOnly();
+  }));
+  chatUnsubscribe = listenToMessages(chatId, (msgs) => {
+    state.chatMessages = msgs;
+    if(state.screen === 'chat' && state.chatWith && state.chatWith.groupId === groupId){
+      renderChatMessages();
+      markChatRead(chatId);
+    }
+  });
 }
 
 function renderChatNavOnly(){
   const oldNav = root.querySelector('.nav');
-  if(oldNav) oldNav.replaceWith(renderNav('friends'));
+  if(oldNav) oldNav.replaceWith(renderNav('messages'));
+}
+
+function renderChatHeaderStatus(){
+  const el2 = document.getElementById('chat-status-text');
+  if(el2) el2.textContent = state.chatStatusText || '';
 }
 
 function renderChatMessages(){
   const box = document.getElementById('chat-messages');
   if(!box) return;
   box.innerHTML = '';
-  state.chatMessages.forEach(m => {
-    const bubble = el('div','chat-bubble' + (m.fromUid === state.user.uid ? ' mine' : ''));
+  // индекс последнего МОЕГО сообщения, которое собеседник уже видел (для подписи "просмотрено")
+  let lastSeenMineIndex = -1;
+  if(!state.chatWith.isGroup){
+    state.chatMessages.forEach((m, i) => {
+      if(m.fromUid === state.user.uid && (m.ts||0) <= (state.otherLastRead||0)) lastSeenMineIndex = i;
+    });
+  }
+  state.chatMessages.forEach((m, i) => {
+    const mine = m.fromUid === state.user.uid;
+    const bubble = el('div','chat-bubble' + (mine ? ' mine' : ''));
+    if(state.chatWith.isGroup && !mine){
+      bubble.appendChild(el('div','chat-sender', m.fromName));
+    }
     if(m.imageData){
       const img = document.createElement('img');
       img.src = m.imageData;
@@ -957,22 +1169,32 @@ function renderChatMessages(){
       bubble.appendChild(textEl);
     }
     box.appendChild(bubble);
+    if(i === lastSeenMineIndex){
+      box.appendChild(el('div','seen-caption','просмотрено ·˖✧'));
+    }
   });
   box.scrollTop = box.scrollHeight;
 }
 
 function renderChat(){
   const w = el('div','wrap');
-  w.appendChild(renderNav('friends'));
-  const back = el('button','btn ghost','← К друзьям');
+  w.appendChild(renderNav('messages'));
+  const back = el('button','btn ghost','← К сообщениям');
   back.style.marginBottom = '20px';
   back.onclick = () => {
     if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
-    state.screen = 'friends';
+    if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
+    state.screen = 'messages';
     render();
   };
   w.appendChild(back);
   w.appendChild(el('h1','', state.chatWith.name));
+  if(!state.chatWith.isGroup){
+    const statusEl = el('div','meta', state.chatStatusText || '');
+    statusEl.id = 'chat-status-text';
+    statusEl.style.marginBottom = '14px';
+    w.appendChild(statusEl);
+  }
 
   const card = el('div','card');
   const box = el('div','');
@@ -987,13 +1209,19 @@ function renderChat(){
   const attachBtn = el('button','btn ghost','📎');
   attachBtn.style.flexShrink = '0';
   attachBtn.onclick = () => fileInput.click();
+  const doSendImage = (dataUrl) => state.chatWith.isGroup
+    ? sendGroupMessage(state.chatWith.groupId, null, dataUrl)
+    : sendMessage(state.chatWith.uid, state.chatWith.name, null, dataUrl);
+  const doSendText = (text) => state.chatWith.isGroup
+    ? sendGroupMessage(state.chatWith.groupId, text)
+    : sendMessage(state.chatWith.uid, state.chatWith.name, text);
   fileInput.onchange = async () => {
     const file = fileInput.files[0];
     if(!file) return;
     attachBtn.disabled = true; attachBtn.textContent = '…';
     try{
       const dataUrl = await compressImageToDataUrl(file);
-      await sendMessage(state.chatWith.uid, state.chatWith.name, null, dataUrl);
+      await doSendImage(dataUrl);
     }catch(e){ console.error('image send failed', e); }
     attachBtn.disabled = false; attachBtn.textContent = '📎';
     fileInput.value = '';
@@ -1007,7 +1235,7 @@ function renderChat(){
     if(!text) return;
     input.value = '';
     try{
-      await sendMessage(state.chatWith.uid, state.chatWith.name, text);
+      await doSendText(text);
     }catch(e){ console.error('send failed', e); }
   };
   sendBtn.onclick = doSend;
@@ -1021,6 +1249,144 @@ function renderChat(){
   w.appendChild(card);
   root.appendChild(w);
   renderChatMessages();
+}
+
+async function openMessagesTab(){
+  state.screen = 'messages';
+  state.threadsLoading = true;
+  state.threadsError = '';
+  render();
+  try{
+    state.threads = await listChatThreads();
+  }catch(e){
+    console.error('threads load failed', e);
+    state.threadsError = e.message;
+  }
+  state.threadsLoading = false;
+  render();
+}
+
+function timeAgoShort(ts){
+  if(!ts) return '';
+  const diffMin = (Date.now() - ts) / 60000;
+  if(diffMin < 1) return 'сейчас';
+  if(diffMin < 60) return Math.round(diffMin) + ' мин';
+  const diffH = diffMin / 60;
+  if(diffH < 24) return Math.round(diffH) + ' ч';
+  return Math.round(diffH / 24) + ' дн';
+}
+
+function renderMessagesTab(){
+  const w = el('div','wrap');
+  w.appendChild(renderNav('messages'));
+  const headerRow = el('div','');
+  headerRow.style.display='flex'; headerRow.style.justifyContent='space-between'; headerRow.style.alignItems='center'; headerRow.style.flexWrap='wrap'; headerRow.style.gap='12px';
+  headerRow.appendChild(el('h1','', 'Сообщения'));
+  const createGroupBtn = el('button','btn ghost','+ Группа');
+  createGroupBtn.onclick = () => { openCreateGroup(); };
+  headerRow.appendChild(createGroupBtn);
+  w.appendChild(headerRow);
+
+  const card = el('div','card');
+  if(state.threadsLoading){
+    card.appendChild(el('div','footer-note','Загружаем…'));
+  } else if(state.threadsError){
+    card.appendChild(el('div','err', state.threadsError));
+  } else if(!state.threads || state.threads.length === 0){
+    card.appendChild(el('div','empty','Пока нет переписок — напиши кому-нибудь из «Друзей».'));
+  } else {
+    const grid = el('div','people-grid');
+    state.threads.forEach(t => {
+      const row = el('div','person-row' + (t.unread ? ' unread-row' : ''));
+      const left = el('div','');
+      left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
+      if(t.unread) left.appendChild(el('span','unread-dot'));
+      const nameCol = el('div','');
+      const displayName = t.isGroup ? (t.groupName || 'Группа') : t.otherName;
+      nameCol.appendChild(el('div', t.unread ? 'name unread-name' : 'name', displayName));
+      let preview = 'Пока нет сообщений';
+      if(t.latest){
+        const prefix = t.isGroup && t.latest.fromUid !== state.user.uid ? t.latest.fromName + ': ' : '';
+        preview = prefix + (t.latest.imageData ? '📷 Фото' : (t.latest.text || ''));
+      }
+      nameCol.appendChild(el('div','meta', preview + (t.latest ? ' · ' + timeAgoShort(t.latest.ts) : '')));
+      left.appendChild(nameCol);
+      row.appendChild(left);
+      row.appendChild(el('div','arrow','→'));
+      row.onclick = () => {
+        if(t.isGroup) openGroupChat(t.groupId, t.groupName || 'Группа');
+        else openChat(t.otherUid, t.otherName);
+      };
+      grid.appendChild(row);
+    });
+    card.appendChild(grid);
+  }
+  w.appendChild(card);
+  root.appendChild(w);
+}
+
+async function openCreateGroup(){
+  state.screen = 'createGroup';
+  state.createGroupFriends = null;
+  render();
+  try{
+    state.createGroupFriends = await listFriends();
+  }catch(e){ console.error('friends load failed', e); state.createGroupFriends = []; }
+  render();
+}
+
+function renderCreateGroup(){
+  const w = el('div','wrap');
+  w.appendChild(renderNav('messages'));
+  const back = el('button','btn ghost','← К сообщениям');
+  back.style.marginBottom = '20px';
+  back.onclick = () => { state.screen = 'messages'; render(); };
+  w.appendChild(back);
+  w.appendChild(el('h1','', 'Новая группа'));
+  w.appendChild(el('p','lead','Добавлять в группу можно только друзей.'));
+
+  const card = el('div','card');
+  const nameInput = document.createElement('input');
+  nameInput.type='text'; nameInput.placeholder='Название группы';
+  card.appendChild(nameInput);
+
+  if(state.createGroupFriends === null){
+    card.appendChild(el('div','footer-note','Загружаем друзей…'));
+  } else if(state.createGroupFriends.length === 0){
+    card.appendChild(el('div','empty','Пока нет друзей, кого можно добавить.'));
+  } else {
+    const checks = [];
+    state.createGroupFriends.forEach(f => {
+      const label = document.createElement('label');
+      label.style.display='flex'; label.style.alignItems='center'; label.style.gap='10px'; label.style.marginBottom='10px'; label.style.cursor='pointer';
+      const cb = document.createElement('input');
+      cb.type='checkbox'; cb.style.width='auto'; cb.style.marginBottom='0';
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(f.name));
+      card.appendChild(label);
+      checks.push({ cb, friend: f });
+    });
+    const createBtn = el('button','btn','Создать группу →');
+    createBtn.style.marginTop = '12px';
+    createBtn.onclick = async () => {
+      const name = nameInput.value.trim();
+      const chosen = checks.filter(c => c.cb.checked).map(c => c.friend);
+      if(!name){ nameInput.style.borderColor = '#ef6f8e'; return; }
+      if(chosen.length === 0){ card.appendChild(el('div','err','Выбери хотя бы одного друга.')); return; }
+      createBtn.disabled = true; createBtn.textContent = 'Создаём…';
+      try{
+        const groupId = await createGroup(name, chosen);
+        openGroupChat(groupId, name);
+      }catch(e){
+        console.error('group create failed', e);
+        card.appendChild(el('div','err', e.message));
+        createBtn.disabled = false; createBtn.textContent = 'Создать группу →';
+      }
+    };
+    card.appendChild(createBtn);
+  }
+  w.appendChild(card);
+  root.appendChild(w);
 }
 
 function renderLanding(){
@@ -1414,13 +1780,24 @@ function renderResult(){
   profileRow.appendChild(cityInput);
   profileCard.appendChild(profileRow);
 
+  const statusLabel = document.createElement('label');
+  statusLabel.style.display='flex'; statusLabel.style.alignItems='center'; statusLabel.style.gap='10px';
+  statusLabel.style.marginTop = '14px'; statusLabel.style.fontSize = '13px'; statusLabel.style.color = 'var(--ink-dim)';
+  statusLabel.style.cursor = 'pointer';
+  const statusCheckbox = document.createElement('input');
+  statusCheckbox.type = 'checkbox'; statusCheckbox.style.width='auto'; statusCheckbox.style.marginBottom='0';
+  statusCheckbox.checked = state.profile?.showStatus !== false;
+  statusLabel.appendChild(statusCheckbox);
+  statusLabel.appendChild(document.createTextNode('Показывать мой статус «в сети» другим (если выключишь — тоже перестанешь видеть чужой)'));
+  profileCard.appendChild(statusLabel);
+
   const saveProfileBtn = el('button','btn ghost','Сохранить профиль');
   saveProfileBtn.style.marginTop = '12px';
   saveProfileBtn.onclick = async () => {
     saveProfileBtn.disabled = true; saveProfileBtn.textContent = 'Сохраняем…';
-    const profile = { age: ageInput.value.trim(), city: cityInput.value.trim() };
+    const profile = { age: ageInput.value.trim(), city: cityInput.value.trim(), showStatus: statusCheckbox.checked };
     try{
-      await db.collection('users').doc(state.user.uid).update({ profile });
+      await db.collection('users').doc(state.user.uid).update({ profile, showStatus: statusCheckbox.checked });
       state.profile = profile;
       saveProfileBtn.textContent = 'Сохранено ✓';
     }catch(e){
@@ -1465,6 +1842,7 @@ function renderResult(){
   const logoutBtn = el('button','btn ghost','Выйти');
   logoutBtn.onclick = () => {
     if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
+    if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
     stopNotificationPolling();
     logoutUser();
     state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
