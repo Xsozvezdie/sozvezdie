@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Схема о себе</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -166,9 +167,28 @@
 
   ::selection{ background: var(--gold); color:#1a1406; }
 
+  @media (max-width: 640px){
+    .wrap{ padding: 20px 16px 60px; }
+    .card{ padding: 20px; }
+    h1{ font-size: clamp(26px, 8vw, 36px); }
+    .nav{ flex-direction: column; align-items: flex-start; gap: 12px; padding: 14px 16px; }
+    .nav-links{ flex-wrap: wrap; gap: 14px; width: 100%; }
+    .person-row{ flex-wrap: wrap; gap: 10px; }
+    .chat-bubble{ max-width: 85%; }
+    .hero-graph{ height: 150px; }
+  }
+
   .nav{
     display:flex; align-items:center; justify-content:space-between;
-    margin-bottom: 48px;
+    margin-bottom: 40px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 22px;
+    position: sticky;
+    top: 16px;
+    z-index: 50;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
   }
   .nav-brand{
     font-family:'Space Grotesk',sans-serif;
@@ -178,17 +198,29 @@
     letter-spacing: -0.01em;
     cursor: pointer;
   }
-  .nav-links{ display:flex; gap: 22px; }
+  .nav-links{ display:flex; gap: 20px; align-items:center; }
   .nav-link{
     font-family:'Space Grotesk',sans-serif;
     font-size: 13px;
     color: var(--ink-dim);
     cursor: pointer;
     background:none; border:none;
-    padding: 0;
-    transition: color .15s ease;
+    padding: 4px 2px;
+    transition: color .15s ease, background .15s ease;
+    border-radius: 999px;
   }
   .nav-link:hover, .nav-link.active{ color: var(--gold); }
+  .nav-link.alert{
+    color: #1a1406;
+    background: var(--gold);
+    font-weight: 700;
+    padding: 6px 14px;
+    animation: nav-alert-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes nav-alert-pulse{
+    0%, 100% { box-shadow: 0 0 0 0 rgba(242,193,78,0.55); }
+    50% { box-shadow: 0 0 0 6px rgba(242,193,78,0); }
+  }
 
   .people-grid{ display:flex; flex-direction:column; gap:10px; margin-top: 20px; }
   .person-row{
@@ -346,7 +378,7 @@ async function loginUser(username, password){
   }
   const doc = await db.collection('users').doc(cred.user.uid).get();
   const data = doc.exists ? doc.data() : {};
-  return { uid: cred.user.uid, name: data.name || username, graph: data.graph || null, text: data.text || '', profile: data.profile || null };
+  return { uid: cred.user.uid, name: data.name || username, graph: data.graph || null, text: data.text || '', profile: data.profile || null, isAdmin: data.isAdmin === true };
 }
 
 function logoutUser(){
@@ -601,6 +633,44 @@ async function getStatusText(otherUid){
   }catch(e){ return null; }
 }
 
+// ---------------- установка как приложение (PWA) ----------------
+// Ловим событие заранее — как только позже добавим manifest.json и service worker,
+// эта кнопка сама начнёт предлагать установку без дополнительных правок кода.
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+});
+function triggerInstallPrompt(){
+  if(deferredInstallPrompt){
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt = null;
+  } else {
+    alert('Установка приложения скоро появится — сейчас в разработке.');
+  }
+}
+
+// ---------------- поддержка ----------------
+async function sendSupportMessage(text){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  await db.collection('supportMessages').add({
+    fromUid: state.user.uid, fromName: state.user.name, text, ts: Date.now(), resolved: false
+  });
+}
+
+async function listSupportMessages(){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const snap = await db.collection('supportMessages').get();
+  const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  msgs.sort((a,b) => (b.ts||0) - (a.ts||0));
+  return msgs;
+}
+
+async function markSupportResolved(id, resolved){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  await db.collection('supportMessages').doc(id).update({ resolved });
+}
+
 // ---------------- state ----------------
 const root = document.getElementById('root');
 let state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
@@ -618,6 +688,7 @@ function render(){
   else if(state.screen === 'friends') renderFriends();
   else if(state.screen === 'messages') renderMessagesTab();
   else if(state.screen === 'createGroup') renderCreateGroup();
+  else if(state.screen === 'support') renderSupport();
   else if(state.screen === 'chat') renderChat();
 }
 
@@ -673,12 +744,18 @@ function renderNav(active){
     myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
     const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''), 'Пользователи');
     peopleLink.onclick = () => { openPeople(); };
-    const friendsLink = el('button','nav-link' + (active==='friends' ? ' active' : ''),
-      'Друзья' + ((state.pendingRequestCount||0) > 0 ? ' •' + state.pendingRequestCount : ''));
+    const hasPending = (state.pendingRequestCount||0) > 0;
+    const friendsLink = el('button','nav-link' + (active==='friends' ? ' active' : '') + (hasPending ? ' alert' : ''),
+      'Друзья' + (hasPending ? ' •' + state.pendingRequestCount : ''));
     friendsLink.onclick = () => { openFriends(); };
-    const messagesLink = el('button','nav-link' + (active==='messages' ? ' active' : ''),
-      'Сообщения' + ((state.unreadChatsCount||0) > 0 ? ' •' + state.unreadChatsCount : ''));
+    const hasUnread = (state.unreadChatsCount||0) > 0;
+    const messagesLink = el('button','nav-link' + (active==='messages' ? ' active' : '') + (hasUnread ? ' alert' : ''),
+      'Сообщения' + (hasUnread ? ' •' + state.unreadChatsCount : ''));
     messagesLink.onclick = () => { openMessagesTab(); };
+    const supportLink = el('button','nav-link' + (active==='support' ? ' active' : ''), 'Поддержка');
+    supportLink.onclick = () => { openSupport(); };
+    const installLink = el('button','nav-link','Установить приложение');
+    installLink.onclick = () => { triggerInstallPrompt(); };
     const logoutLink = el('button','nav-link','Выйти');
     logoutLink.onclick = () => {
       if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
@@ -692,6 +769,8 @@ function renderNav(active){
     links.appendChild(peopleLink);
     links.appendChild(friendsLink);
     links.appendChild(messagesLink);
+    links.appendChild(supportLink);
+    links.appendChild(installLink);
     links.appendChild(logoutLink);
   } else {
     const loginLink = el('button','nav-link','Войти');
@@ -732,16 +811,27 @@ function renderPeople(){
     : 'Заполни свою схему, и здесь появится сортировка по совместимости.'));
 
   if(!state.peopleLoading && !state.peopleError && state.people && state.people.length){
+    const searchRow = el('div','');
+    searchRow.style.display='flex'; searchRow.style.gap='12px'; searchRow.style.flexWrap='wrap'; searchRow.style.marginBottom='16px';
+
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
     searchInput.placeholder = 'Поиск по имени…';
     searchInput.value = state.peopleSearch || '';
-    searchInput.style.marginBottom = '16px';
-    w.appendChild(searchInput);
-    searchInput.addEventListener('input', () => {
-      state.peopleSearch = searchInput.value;
-      renderGrid();
-    });
+    searchInput.style.marginBottom = '0'; searchInput.style.flex='1'; searchInput.style.minWidth='180px';
+
+    const interestInput = document.createElement('input');
+    interestInput.type = 'text';
+    interestInput.placeholder = 'Поиск по интересу (например: шахматы)…';
+    interestInput.value = state.peopleInterestSearch || '';
+    interestInput.style.marginBottom = '0'; interestInput.style.flex='1'; interestInput.style.minWidth='220px';
+
+    searchRow.appendChild(searchInput);
+    searchRow.appendChild(interestInput);
+    w.appendChild(searchRow);
+
+    searchInput.addEventListener('input', () => { state.peopleSearch = searchInput.value; renderGrid(); });
+    interestInput.addEventListener('input', () => { state.peopleInterestSearch = interestInput.value; renderGrid(); });
   }
 
   const card = el('div','card');
@@ -763,10 +853,22 @@ function renderPeople(){
       return;
     }
     const query = (state.peopleSearch || '').trim().toLowerCase();
+    const interestQuery = (state.peopleInterestSearch || '').trim().toLowerCase();
     let others = state.user ? state.people.filter(p => p.name.toLowerCase() !== state.user.name.toLowerCase()) : state.people;
     if(query){ others = others.filter(p => p.name.toLowerCase().includes(query)); }
+    let matchedInterestByUid = {};
+    if(interestQuery){
+      others = others.filter(p => {
+        const hit = (p.graph.nodes||[]).find(n => !n.isHub && n.label.toLowerCase().includes(interestQuery));
+        if(hit){ matchedInterestByUid[p.uid || p.name] = hit.label; return true; }
+        const clusterHit = (p.graph.clusters||[]).find(c => c.toLowerCase().includes(interestQuery));
+        if(clusterHit){ matchedInterestByUid[p.uid || p.name] = clusterHit; return true; }
+        return false;
+      });
+    }
     if(others.length === 0){
-      card.appendChild(el('div','empty', query ? 'Никого не нашли по этому запросу.' : 'Кроме тебя пока никого нет.'));
+      const emptyMsg = interestQuery ? 'Никто не упоминал такой интерес.' : (query ? 'Никого не нашли по этому запросу.' : 'Кроме тебя пока никого нет.');
+      card.appendChild(el('div','empty', emptyMsg));
       return;
     }
     const withScores = others.map(p => ({
@@ -782,6 +884,9 @@ function renderPeople(){
       const left = el('div');
       left.appendChild(el('div','name', p.name));
       let metaText = (p.graph.nodes||[]).filter(n=>!n.isHub).length + ' узлов · ' + (p.graph.clusters||[]).length + ' тем';
+      if(matchedInterestByUid[p.uid || p.name]){
+        metaText += ' · нашли: ' + matchedInterestByUid[p.uid || p.name];
+      }
       if(compat && compat.sharedClusters.length){
         metaText += ' · общее: ' + compat.sharedClusters.join(', ');
       }
@@ -1389,6 +1494,89 @@ function renderCreateGroup(){
   root.appendChild(w);
 }
 
+async function openSupport(){
+  state.screen = 'support';
+  state.supportSubmitted = false;
+  if(state.isAdmin){
+    state.supportLoading = true;
+    render();
+    try{ state.supportMessages = await listSupportMessages(); }
+    catch(e){ console.error('support load failed', e); state.supportMessages = []; }
+    state.supportLoading = false;
+  }
+  render();
+}
+
+function renderSupport(){
+  const w = el('div','wrap');
+  w.appendChild(renderNav('support'));
+  w.appendChild(el('h1','', 'Поддержка'));
+
+  const card = el('div','card');
+  card.appendChild(el('p','lead','Опиши проблему или идею — обращение уйдёт напрямую создателю сайта.'));
+  const ta = document.createElement('textarea');
+  ta.placeholder = 'Что случилось или что хочется добавить?';
+  ta.style.minHeight = '140px';
+  card.appendChild(ta);
+  const sendBtn = el('button','btn','Отправить →');
+  sendBtn.onclick = async () => {
+    const text = ta.value.trim();
+    if(!text) return;
+    sendBtn.disabled = true; sendBtn.textContent = 'Отправляем…';
+    try{
+      await sendSupportMessage(text);
+      ta.value = '';
+      sendBtn.textContent = 'Отправлено ✓';
+      setTimeout(() => { sendBtn.disabled = false; sendBtn.textContent = 'Отправить →'; }, 1500);
+    }catch(e){
+      console.error('support send failed', e);
+      card.appendChild(el('div','err', e.message));
+      sendBtn.disabled = false; sendBtn.textContent = 'Отправить →';
+    }
+  };
+  card.appendChild(sendBtn);
+  w.appendChild(card);
+
+  if(state.isAdmin){
+    w.appendChild(el('div','eyebrow','Все обращения (видно только тебе)'));
+    const adminCard = el('div','card');
+    if(state.supportLoading){
+      adminCard.appendChild(el('div','footer-note','Загружаем…'));
+    } else if(!state.supportMessages || state.supportMessages.length === 0){
+      adminCard.appendChild(el('div','empty','Обращений пока нет.'));
+    } else {
+      const list = el('div','people-grid');
+      state.supportMessages.forEach(m => {
+        const row = el('div','person-row');
+        row.style.cursor = 'default';
+        row.style.flexDirection = 'column';
+        row.style.alignItems = 'flex-start';
+        const top = el('div','');
+        top.style.display='flex'; top.style.justifyContent='space-between'; top.style.width='100%';
+        top.appendChild(el('div','name', m.fromName + (m.resolved ? ' ✓' : '')));
+        top.appendChild(el('div','meta', timeAgoShort(m.ts) + ' назад'));
+        row.appendChild(top);
+        const textEl = document.createElement('div');
+        textEl.textContent = m.text;
+        textEl.style.margin = '10px 0';
+        textEl.style.fontSize = '14px';
+        row.appendChild(textEl);
+        const resolveBtn = el('button','btn ghost', m.resolved ? 'Снова открыть' : 'Отметить решённым');
+        resolveBtn.onclick = async () => {
+          await markSupportResolved(m.id, !m.resolved);
+          openSupport();
+        };
+        row.appendChild(resolveBtn);
+        list.appendChild(row);
+      });
+      adminCard.appendChild(list);
+    }
+    w.appendChild(adminCard);
+  }
+
+  root.appendChild(w);
+}
+
 function renderLanding(){
   const w = el('div','wrap');
   w.appendChild(renderNav('landing'));
@@ -1441,6 +1629,7 @@ function renderAuth(){
       state.graph = user.graph || null;
       state.text = user.text || '';
       state.profile = user.profile || null;
+      state.isAdmin = user.isAdmin === true;
       state.screen = state.graph ? 'result' : 'story';
       render();
       refreshNotificationCounts().then(render);
@@ -1923,6 +2112,7 @@ if(firebaseReady){
         state.graph = data.graph || null;
         state.text = data.text || '';
         state.profile = data.profile || null;
+        state.isAdmin = data.isAdmin === true;
         if(state.screen === 'landing'){ state.screen = state.graph ? 'result' : 'story'; }
         refreshNotificationCounts().then(render);
         startNotificationPolling();
