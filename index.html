@@ -123,6 +123,20 @@
   }
   input[type=text]:focus, input[type=password]:focus{ outline:none; border-color: var(--gold); }
 
+  select{
+    width:100%;
+    background: var(--bg-soft);
+    border:1px solid var(--line);
+    color: var(--ink);
+    padding: 14px 16px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-family:'Inter',sans-serif;
+    margin-bottom: 14px;
+    display: block;
+  }
+  select:focus{ outline:none; border-color: var(--gold); }
+
   .counter{ font-size:12px; color: var(--ink-dim); margin-bottom: 18px; }
 
   .prompts{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom: 18px; }
@@ -270,6 +284,28 @@
     background: var(--panel); border:1px solid var(--line); border-radius:14px;
     padding: 14px 18px; margin-bottom: 16px;
   }
+  .eye-toggle{
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer; font-size: 16px;
+    padding: 4px; line-height: 1;
+  }
+
+  .demo-chat-header{
+    display:flex; align-items:center; gap:12px;
+    padding-bottom: 14px; margin-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .demo-avatar{
+    width: 40px; height: 40px; border-radius: 50%;
+    background: linear-gradient(135deg, #7c9eff, #c792ea);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; color:#0b0f19; font-size:16px;
+  }
+  .chat-photo{
+    width: 220px; border-radius: 10px; overflow:hidden;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  }
+  .chat-photo svg{ display:block; width:100%; height:auto; }
 
   .icon-btn{
     width: 30px; height: 30px; border-radius: 50%;
@@ -399,8 +435,8 @@ async function registerUser(username, password){
     if(e.code === 'auth/weak-password') throw new Error('Пароль слишком короткий — минимум 6 символов.');
     throw new Error(e.message);
   }
-  await db.collection('users').doc(cred.user.uid).set({ name: username, ts: Date.now() });
-  return { uid: cred.user.uid, name: username };
+  await db.collection('users').doc(cred.user.uid).set({ name: username, login: username, ts: Date.now() });
+  return { uid: cred.user.uid, name: username, login: username };
 }
 
 async function loginUser(username, password){
@@ -417,11 +453,37 @@ async function loginUser(username, password){
   }
   const doc = await db.collection('users').doc(cred.user.uid).get();
   const data = doc.exists ? doc.data() : {};
-  return { uid: cred.user.uid, name: data.name || username, graph: data.graph || null, text: data.text || '', profile: data.profile || null, isAdmin: data.isAdmin === true };
+  return { uid: cred.user.uid, name: data.name || username, login: data.login || username, graph: data.graph || null, text: data.text || '', profile: data.profile || null, isAdmin: data.isAdmin === true };
 }
 
 function logoutUser(){
   if(auth) auth.signOut();
+}
+
+async function changeLogin(newLogin, currentPassword){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  const user = auth.currentUser;
+  if(!user) throw new Error('Сессия истекла, войди заново.');
+  const oldEmail = usernameToEmail(state.user.login);
+  const cred = firebase.auth.EmailAuthProvider.credential(oldEmail, currentPassword);
+  try{
+    await user.reauthenticateWithCredential(cred);
+  }catch(e){
+    throw new Error('Неверный текущий пароль.');
+  }
+  const newEmail = usernameToEmail(newLogin);
+  try{
+    await user.updateEmail(newEmail);
+  }catch(e){
+    if(e.code === 'auth/email-already-in-use') throw new Error('Такой логин уже занят.');
+    throw new Error(e.message);
+  }
+  await db.collection('users').doc(user.uid).update({ login: newLogin });
+}
+
+async function changeDisplayName(newName){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  await db.collection('users').doc(state.user.uid).update({ name: newName });
 }
 
 async function saveUserGraph(uid, text, graph){
@@ -738,6 +800,7 @@ function render(){
   else if(state.screen === 'messages') renderMessagesTab();
   else if(state.screen === 'createGroup') renderCreateGroup();
   else if(state.screen === 'support') renderSupport();
+  else if(state.screen === 'account') renderAccountScreen();
   else if(state.screen === 'chat') renderChat();
 }
 
@@ -803,6 +866,8 @@ function renderNav(active){
     messagesLink.onclick = () => { openMessagesTab(); };
     const supportLink = el('button','nav-link' + (active==='support' ? ' active' : ''), 'Поддержка');
     supportLink.onclick = () => { openSupport(); };
+    const accountLink = el('button','nav-link' + (active==='account' ? ' active' : ''), 'Аккаунт');
+    accountLink.onclick = () => { state.screen = 'account'; render(); };
     const installLink = el('button','nav-link','Установить приложение');
     installLink.onclick = () => { triggerInstallPrompt(); };
     const logoutLink = el('button','nav-link','Выйти');
@@ -819,6 +884,7 @@ function renderNav(active){
     links.appendChild(friendsLink);
     links.appendChild(messagesLink);
     links.appendChild(supportLink);
+    links.appendChild(accountLink);
     links.appendChild(installLink);
     links.appendChild(logoutLink);
   } else {
@@ -1664,6 +1730,185 @@ function demoGraphData(){
   };
 }
 
+// ---------------- страны и города ----------------
+const COUNTRIES = ['Россия','Украина','Беларусь','Казахстан','Армения','Грузия','Азербайджан','Узбекистан','Киргизия','Таджикистан','Туркменистан','Молдова','Латвия','Литва','Эстония','США','Канада','Великобритания','Германия','Франция','Испания','Италия','Польша','Нидерланды','Швеция','Норвегия','Финляндия','Турция','ОАЭ','Израиль','Китай','Япония','Южная Корея','Индия','Таиланд','Индонезия','Бразилия','Аргентина','Мексика','Австралия','Другое'];
+
+const CITIES_BY_COUNTRY = {
+  'Россия': ['Москва','Санкт-Петербург','Новосибирск','Екатеринбург','Казань','Нижний Новгород','Челябинск','Самара','Омск','Ростов-на-Дону','Уфа','Красноярск','Воронеж','Пермь','Волгоград','Краснодар','Саратов','Тюмень','Тольятти','Ижевск','Барнаул','Ульяновск','Иркутск','Хабаровск','Ярославль','Владивосток','Махачкала','Томск','Оренбург','Кемерово','Новокузнецк','Рязань','Астрахань','Пенза','Липецк','Киров','Чебоксары','Тула','Калининград','Курск','Ставрополь','Сочи','Электросталь','Балашиха','Химки','Подольск','Королёв','Мытищи','Люберцы','Одинцово','Павловский Посад','Другое'],
+  'Украина': ['Киев','Харьков','Одесса','Днепр','Львов','Запорожье','Другое'],
+  'Беларусь': ['Минск','Гомель','Витебск','Могилёв','Брест','Гродно','Другое'],
+  'Казахстан': ['Алматы','Астана','Шымкент','Караганда','Актобе','Другое'],
+  'Армения': ['Ереван','Гюмри','Ванадзор','Другое'],
+  'Грузия': ['Тбилиси','Батуми','Кутаиси','Другое'],
+  'Азербайджан': ['Баку','Гянджа','Другое'],
+  'Узбекистан': ['Ташкент','Самарканд','Бухара','Другое'],
+  'США': ['Нью-Йорк','Лос-Анджелес','Чикаго','Хьюстон','Майами','Сан-Франциско','Сиэтл','Бостон','Другое'],
+  'Канада': ['Торонто','Ванкувер','Монреаль','Другое'],
+  'Великобритания': ['Лондон','Манчестер','Эдинбург','Другое'],
+  'Германия': ['Берлин','Мюнхен','Гамбург','Франкфурт','Кёльн','Другое'],
+  'Франция': ['Париж','Марсель','Лион','Другое'],
+  'Испания': ['Мадрид','Барселона','Валенсия','Другое'],
+  'Италия': ['Рим','Милан','Неаполь','Другое'],
+  'Польша': ['Варшава','Краков','Вроцлав','Другое'],
+  'Турция': ['Стамбул','Анкара','Анталия','Другое'],
+  'ОАЭ': ['Дубай','Абу-Даби','Другое'],
+  'Израиль': ['Тель-Авив','Иерусалим','Хайфа','Другое'],
+};
+
+function citiesForCountry(country){
+  return CITIES_BY_COUNTRY[country] || null;
+}
+
+function renderAccountScreen(){
+  const w = el('div','wrap');
+  w.appendChild(renderNav('account'));
+  w.appendChild(el('h1','', 'Аккаунт'));
+
+  // --- Логин ---
+  const loginCard = el('div','card');
+  loginCard.style.marginBottom = '16px';
+  loginCard.appendChild(el('div','top-tag','Логин'));
+  loginCard.appendChild(el('p','lead','Только латинские буквы — это то, чем ты входишь на сайт.'));
+  if(state.accountError) loginCard.appendChild(el('div','err', state.accountError));
+
+  const loginInput = document.createElement('input');
+  loginInput.type='text'; loginInput.value = state.user.login || '';
+  loginCard.appendChild(loginInput);
+
+  const currentPassInput = document.createElement('input');
+  currentPassInput.type='password'; currentPassInput.placeholder='Текущий пароль (чтобы подтвердить смену)';
+  loginCard.appendChild(currentPassInput);
+
+  const loginBtn = el('button','btn ghost','Сохранить логин');
+  loginBtn.onclick = async () => {
+    const newLogin = loginInput.value.trim();
+    if(!/^[A-Za-z0-9_]+$/.test(newLogin)){
+      state.accountError = 'Логин может содержать только латинские буквы, цифры и подчёркивание.';
+      render(); return;
+    }
+    if(!currentPassInput.value){
+      state.accountError = 'Введи текущий пароль, чтобы подтвердить смену логина.';
+      render(); return;
+    }
+    loginBtn.disabled = true; loginBtn.textContent = 'Сохраняем…';
+    try{
+      await changeLogin(newLogin, currentPassInput.value);
+      state.user.login = newLogin;
+      state.accountError = '';
+      showToast('Логин обновлён ✓');
+      render();
+    }catch(e){
+      state.accountError = e.message;
+      loginBtn.disabled = false; loginBtn.textContent = 'Сохранить логин';
+      render();
+    }
+  };
+  loginCard.appendChild(loginBtn);
+  w.appendChild(loginCard);
+
+  // --- Профиль ---
+  const card = el('div','card');
+  card.appendChild(el('div','top-tag','Профиль'));
+
+  const nameInput = document.createElement('input');
+  nameInput.type='text'; nameInput.placeholder='Имя'; nameInput.value = state.user.name || '';
+  card.appendChild(nameInput);
+
+  const rowTop = el('div','');
+  rowTop.style.display='flex'; rowTop.style.gap='12px'; rowTop.style.flexWrap='wrap';
+  const ageInput = document.createElement('input');
+  ageInput.type='text'; ageInput.placeholder='Возраст'; ageInput.style.maxWidth='120px'; ageInput.style.marginBottom='0';
+  ageInput.value = state.profile?.age || '';
+  rowTop.appendChild(ageInput);
+  card.appendChild(rowTop);
+
+  const rowGeo = el('div','');
+  rowGeo.style.display='flex'; rowGeo.style.gap='12px'; rowGeo.style.flexWrap='wrap'; rowGeo.style.marginTop='12px';
+
+  const countrySelect = document.createElement('select');
+  countrySelect.style.flex='1'; countrySelect.style.minWidth='160px';
+  const emptyOpt = document.createElement('option'); emptyOpt.value=''; emptyOpt.textContent='Страна';
+  countrySelect.appendChild(emptyOpt);
+  COUNTRIES.forEach(c => {
+    const opt = document.createElement('option'); opt.value = c; opt.textContent = c;
+    if(state.profile?.country === c) opt.selected = true;
+    countrySelect.appendChild(opt);
+  });
+  rowGeo.appendChild(countrySelect);
+
+  const cityContainer = el('div','');
+  cityContainer.style.flex = '1'; cityContainer.style.minWidth='160px';
+  rowGeo.appendChild(cityContainer);
+  card.appendChild(rowGeo);
+
+  function renderCityField(){
+    cityContainer.innerHTML = '';
+    const cities = citiesForCountry(countrySelect.value);
+    if(cities){
+      const citySelect = document.createElement('select');
+      citySelect.style.width = '100%';
+      const cEmpty = document.createElement('option'); cEmpty.value=''; cEmpty.textContent='Город';
+      citySelect.appendChild(cEmpty);
+      cities.forEach(city => {
+        const opt = document.createElement('option'); opt.value = city; opt.textContent = city;
+        if(state.profile?.city === city) opt.selected = true;
+        citySelect.appendChild(opt);
+      });
+      citySelect.id = 'city-field';
+      cityContainer.appendChild(citySelect);
+    } else {
+      const cityInput = document.createElement('input');
+      cityInput.type='text'; cityInput.placeholder='Город'; cityInput.style.marginBottom='0';
+      cityInput.value = state.profile?.city || '';
+      cityInput.id = 'city-field';
+      cityContainer.appendChild(cityInput);
+    }
+  }
+  renderCityField();
+  countrySelect.addEventListener('change', renderCityField);
+
+  const statusLabel = document.createElement('label');
+  statusLabel.style.display='flex'; statusLabel.style.alignItems='center'; statusLabel.style.gap='10px';
+  statusLabel.style.marginTop = '16px'; statusLabel.style.fontSize = '13px'; statusLabel.style.color = 'var(--ink-dim)';
+  statusLabel.style.cursor = 'pointer';
+  const statusCheckbox = document.createElement('input');
+  statusCheckbox.type = 'checkbox'; statusCheckbox.style.width='auto'; statusCheckbox.style.marginBottom='0';
+  statusCheckbox.checked = state.profile?.showStatus !== false;
+  statusLabel.appendChild(statusCheckbox);
+  statusLabel.appendChild(document.createTextNode('Показывать мой статус «в сети» другим (если выключишь — тоже перестанешь видеть чужой)'));
+  card.appendChild(statusLabel);
+
+  const saveBtn = el('button','btn','Сохранить профиль');
+  saveBtn.style.marginTop = '14px';
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true; saveBtn.textContent = 'Сохраняем…';
+    const cityField = document.getElementById('city-field');
+    const profile = {
+      age: ageInput.value.trim(),
+      country: countrySelect.value,
+      city: cityField ? cityField.value.trim() : '',
+      showStatus: statusCheckbox.checked,
+    };
+    const newName = nameInput.value.trim() || state.user.name;
+    try{
+      await db.collection('users').doc(state.user.uid).update({ profile, showStatus: statusCheckbox.checked });
+      if(newName !== state.user.name) await changeDisplayName(newName);
+      state.profile = profile;
+      state.user.name = newName;
+      showToast('Профиль сохранён ✓');
+    }catch(e){
+      console.error('account save failed', e);
+      showToast('Не удалось сохранить :(');
+    }
+    saveBtn.disabled = false; saveBtn.textContent = 'Сохранить профиль';
+    render();
+  };
+  card.appendChild(saveBtn);
+  w.appendChild(card);
+
+  root.appendChild(w);
+}
+
 function renderLanding(){
   const w = el('div','wrap');
   w.appendChild(renderNav('landing'));
@@ -1690,37 +1935,75 @@ function renderLanding(){
   w.appendChild(section1);
 
   const section2 = el('div','landing-section');
-  section2.appendChild(el('div','top-tag','А дальше — просто разговор'));
-  section2.appendChild(el('h2','landing-h2','Совпали интересы — уже есть тема для разговора'));
+  section2.appendChild(el('div','top-tag','Находишь, с кем совпадаешь'));
+  section2.appendChild(el('h2','landing-h2','Проценты совпадения — сразу видно, с кем есть о чём поговорить'));
+  const matchCard = el('div','card');
+  const matchList = el('div','people-grid');
+  [
+    { name: 'anna_travels', pct: 83, common: 'путешествия, музыка' },
+    { name: 'maxim.k', pct: 78, common: 'кино, философия' },
+    { name: 'lera_92', pct: 71, common: 'музыка' },
+  ].forEach(m => {
+    const row = el('div','person-row');
+    const left = el('div','');
+    left.appendChild(el('div','name', m.name));
+    left.appendChild(el('div','meta', 'общее: ' + m.common));
+    row.appendChild(left);
+    row.appendChild(el('div','compat-badge', m.pct + '%'));
+    matchList.appendChild(row);
+  });
+  matchCard.appendChild(matchList);
+  section2.appendChild(matchCard);
+  w.appendChild(section2);
 
-  const matchRow = el('div','demo-match');
-  matchRow.appendChild(el('div','compat-badge','78%'));
-  const matchText = el('div','');
-  matchText.appendChild(el('div','name','Ты и Аня'));
-  matchText.appendChild(el('div','meta','общее: путешествия, музыка'));
-  matchRow.appendChild(matchText);
-  section2.appendChild(matchRow);
-
+  const section3 = el('div','landing-section');
+  section3.appendChild(el('div','top-tag','А дальше — просто разговор'));
+  section3.appendChild(el('h2','landing-h2','Совпали интересы — уже есть тема для разговора'));
   const chatCard = el('div','card');
+
+  const chatHeader = el('div','demo-chat-header');
+  const avatar = el('div','demo-avatar','A');
+  chatHeader.appendChild(avatar);
+  const chatHeaderText = el('div','');
+  chatHeaderText.appendChild(el('div','name','anna_travels'));
+  chatHeaderText.appendChild(el('div','meta','в сети'));
+  chatHeader.appendChild(chatHeaderText);
+  chatCard.appendChild(chatHeader);
+
   const demoBox = el('div','chat-box');
   demoBox.style.maxHeight = 'none';
-  const mountainSvg = `<svg viewBox="0 0 220 130" xmlns="http://www.w3.org/2000/svg">
-    <rect width="220" height="130" fill="#111a2e"/>
-    <polygon points="0,130 60,45 100,90 140,30 220,130" fill="#2a3a5c"/>
-    <polygon points="90,130 140,55 175,90 220,60 220,130" fill="#1c2947"/>
-    <polygon points="60,45 72,58 48,58" fill="#c3c9de"/>
-    <polygon points="140,30 150,42 130,42" fill="#c3c9de"/>
-    <circle cx="185" cy="28" r="14" fill="#f2c14e"/>
+  const mountainSvg = `<svg viewBox="0 0 220 140" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#ff9d6f"/>
+        <stop offset="45%" stop-color="#c96b8f"/>
+        <stop offset="100%" stop-color="#2a2350"/>
+      </linearGradient>
+      <linearGradient id="m1" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#4a3f6b"/>
+        <stop offset="100%" stop-color="#241f3d"/>
+      </linearGradient>
+      <linearGradient id="m2" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#2e2750"/>
+        <stop offset="100%" stop-color="#171531"/>
+      </linearGradient>
+    </defs>
+    <rect width="220" height="140" fill="url(#sky)"/>
+    <circle cx="178" cy="34" r="16" fill="#ffe3a8" opacity="0.9"/>
+    <polygon points="0,140 55,55 95,95 130,50 220,140" fill="url(#m2)"/>
+    <polygon points="70,140 130,60 165,95 220,70 220,140" fill="url(#m1)"/>
+    <polygon points="55,55 66,68 44,68" fill="#eef1f8" opacity="0.85"/>
+    <polygon points="130,50 139,62 121,62" fill="#eef1f8" opacity="0.85"/>
+    <rect width="220" height="140" fill="#000" opacity="0.06"/>
   </svg>`;
   [
     { text: 'Видела, что у тебя тоже путешествия в схеме 👀', mine: false },
     { img: mountainSvg, text: 'Да! Только вернулась из Грузии, обожаю горы', mine: true },
-    { text: 'О, у меня в планах Кавказ этим летом. Расскажешь маршрут?', mine: false },
+    { text: 'Красота 😍 Расскажешь маршрут? гс', mine: false },
   ].forEach(m => {
     const bubble = el('div','chat-bubble'+(m.mine?' mine':''));
     if(m.img){
-      const imgWrap = el('div','chat-image', m.img);
-      imgWrap.style.width = '220px';
+      const imgWrap = el('div','chat-photo', m.img);
       bubble.appendChild(imgWrap);
     }
     const textEl = document.createElement('div');
@@ -1730,8 +2013,8 @@ function renderLanding(){
     demoBox.appendChild(bubble);
   });
   chatCard.appendChild(demoBox);
-  section2.appendChild(chatCard);
-  w.appendChild(section2);
+  section3.appendChild(chatCard);
+  w.appendChild(section3);
 
   root.appendChild(w);
   drawGraph(svgWrap, demoGraphData());
@@ -1748,11 +2031,34 @@ function renderAuth(){
 
   const userInput = document.createElement('input');
   userInput.type = 'text'; userInput.placeholder = 'Логин'; userInput.maxLength = 30;
-  card.appendChild(userInput);
+  if(!isLogin){
+    const hint = el('div','meta','Только латинские буквы и цифры, без пробелов');
+    hint.style.marginTop = '-10px'; hint.style.marginBottom = '10px';
+    card.appendChild(userInput);
+    card.appendChild(hint);
+  } else {
+    card.appendChild(userInput);
+  }
 
+  const passWrap = el('div','');
+  passWrap.style.position = 'relative';
   const passInput = document.createElement('input');
   passInput.type = 'password'; passInput.placeholder = 'Пароль';
-  card.appendChild(passInput);
+  passInput.style.paddingRight = '46px';
+  const eyeBtn = document.createElement('button');
+  eyeBtn.type = 'button';
+  eyeBtn.textContent = '👁';
+  eyeBtn.className = 'eye-toggle';
+  eyeBtn.onclick = () => {
+    const showing = passInput.type === 'text';
+    passInput.type = showing ? 'password' : 'text';
+    eyeBtn.textContent = showing ? '👁' : '🙈';
+  };
+  passWrap.appendChild(passInput);
+  passWrap.appendChild(eyeBtn);
+  card.appendChild(passWrap);
+
+  const LATIN_LOGIN_RE = /^[A-Za-z0-9_]+$/;
 
   const btn = el('button','btn', isLogin ? 'Войти →' : 'Зарегистрироваться →');
   btn.onclick = async () => {
@@ -1763,12 +2069,17 @@ function renderAuth(){
       render();
       return;
     }
+    if(!isLogin && !LATIN_LOGIN_RE.test(username)){
+      state.error = 'Логин может содержать только латинские буквы, цифры и подчёркивание — без кириллицы и пробелов.';
+      render();
+      return;
+    }
     state.error = '';
     btn.disabled = true;
     btn.textContent = 'Подождите…';
     try{
       const user = isLogin ? await loginUser(username, password) : await registerUser(username, password);
-      state.user = { uid: user.uid, name: user.name };
+      state.user = { uid: user.uid, name: user.name, login: user.login || user.name };
       state.graph = user.graph || null;
       state.text = user.text || '';
       state.profile = user.profile || null;
@@ -2111,53 +2422,6 @@ function renderResult(){
   w.appendChild(el('div','eyebrow', `Граф — ${state.user.name}`));
   w.appendChild(el('h1','', 'Вот из чего ты состоишь.'));
 
-  const profileCard = el('div','card');
-  profileCard.style.marginBottom = '20px';
-  profileCard.appendChild(el('div','top-tag','Профиль (по желанию)'));
-  const profileRow = el('div','');
-  profileRow.style.display='flex'; profileRow.style.gap='12px'; profileRow.style.flexWrap='wrap';
-
-  const ageInput = document.createElement('input');
-  ageInput.type='text'; ageInput.placeholder='Возраст'; ageInput.style.maxWidth='120px'; ageInput.style.marginBottom='0';
-  ageInput.value = state.profile?.age || '';
-
-  const cityInput = document.createElement('input');
-  cityInput.type='text'; cityInput.placeholder='Город'; cityInput.style.flex='1'; cityInput.style.marginBottom='0';
-  cityInput.value = state.profile?.city || '';
-
-  profileRow.appendChild(ageInput);
-  profileRow.appendChild(cityInput);
-  profileCard.appendChild(profileRow);
-
-  const statusLabel = document.createElement('label');
-  statusLabel.style.display='flex'; statusLabel.style.alignItems='center'; statusLabel.style.gap='10px';
-  statusLabel.style.marginTop = '14px'; statusLabel.style.fontSize = '13px'; statusLabel.style.color = 'var(--ink-dim)';
-  statusLabel.style.cursor = 'pointer';
-  const statusCheckbox = document.createElement('input');
-  statusCheckbox.type = 'checkbox'; statusCheckbox.style.width='auto'; statusCheckbox.style.marginBottom='0';
-  statusCheckbox.checked = state.profile?.showStatus !== false;
-  statusLabel.appendChild(statusCheckbox);
-  statusLabel.appendChild(document.createTextNode('Показывать мой статус «в сети» другим (если выключишь — тоже перестанешь видеть чужой)'));
-  profileCard.appendChild(statusLabel);
-
-  const saveProfileBtn = el('button','btn ghost','Сохранить профиль');
-  saveProfileBtn.style.marginTop = '12px';
-  saveProfileBtn.onclick = async () => {
-    saveProfileBtn.disabled = true; saveProfileBtn.textContent = 'Сохраняем…';
-    const profile = { age: ageInput.value.trim(), city: cityInput.value.trim(), showStatus: statusCheckbox.checked };
-    try{
-      await db.collection('users').doc(state.user.uid).update({ profile, showStatus: statusCheckbox.checked });
-      state.profile = profile;
-      saveProfileBtn.textContent = 'Сохранено ✓';
-    }catch(e){
-      saveProfileBtn.textContent = 'Не сохранилось';
-      console.error('profile save failed', e);
-    }
-    setTimeout(() => { saveProfileBtn.disabled = false; saveProfileBtn.textContent = 'Сохранить профиль'; }, 1500);
-  };
-  profileCard.appendChild(saveProfileBtn);
-  w.appendChild(profileCard);
-
   const legend = el('div','legend');
   (state.graph.clusters || []).forEach(c=>{
     const item = el('div','legend-item');
@@ -2268,7 +2532,7 @@ if(firebaseReady){
       try{
         const doc = await db.collection('users').doc(fbUser.uid).get();
         const data = doc.exists ? doc.data() : {};
-        state.user = { uid: fbUser.uid, name: data.name || 'Без имени' };
+        state.user = { uid: fbUser.uid, name: data.name || 'Без имени', login: data.login || data.name || '' };
         state.graph = data.graph || null;
         state.text = data.text || '';
         state.profile = data.profile || null;
