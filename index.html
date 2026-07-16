@@ -264,7 +264,12 @@
     border-color: var(--gold);
     border-radius: 12px 12px 4px 12px;
   }
-  .chat-image{ max-width: 220px; border-radius: 8px; display:block; }
+  .chat-image{ max-width: 220px; border-radius: 8px; display:block; overflow: hidden; }
+  .demo-match{
+    display:flex; align-items:center; gap:14px;
+    background: var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding: 14px 18px; margin-bottom: 16px;
+  }
 
   .icon-btn{
     width: 30px; height: 30px; border-radius: 50%;
@@ -1646,11 +1651,15 @@ function demoGraphData(){
       { id:'n3', label:'Кино', cluster:'Увлечения', weight:1 },
       { id:'h2', label:'Люди рядом', cluster:'Люди рядом', weight:3, isHub:true },
       { id:'n4', label:'Друзья', cluster:'Люди рядом', weight:2 },
+      { id:'n6', label:'Семья', cluster:'Люди рядом', weight:1 },
+      { id:'n7', label:'Соседи по общаге', cluster:'Люди рядом', weight:1 },
       { id:'n5', label:'Философия', cluster:'Медиа и мысли', weight:2 },
+      { id:'n8', label:'Подкасты', cluster:'Медиа и мысли', weight:1 },
     ],
     edges: [
       { source:'h1', target:'n1' }, { source:'h1', target:'n2' }, { source:'h1', target:'n3' },
-      { source:'h2', target:'n4' }, { source:'n2', target:'n5' },
+      { source:'h2', target:'n4' }, { source:'h2', target:'n6' }, { source:'h2', target:'n7' },
+      { source:'n2', target:'n5' }, { source:'n5', target:'n8' },
     ]
   };
 }
@@ -1675,7 +1684,7 @@ function renderLanding(){
   section1.appendChild(el('h2','landing-h2','Твои интересы — живой картой, а не анкетой'));
   const exampleCard = el('div','card');
   const svgWrap = document.createElement('div');
-  svgWrap.style.width = '100%'; svgWrap.style.height = '300px';
+  svgWrap.style.width = '100%'; svgWrap.style.height = '360px';
   exampleCard.appendChild(svgWrap);
   section1.appendChild(exampleCard);
   w.appendChild(section1);
@@ -1683,14 +1692,43 @@ function renderLanding(){
   const section2 = el('div','landing-section');
   section2.appendChild(el('div','top-tag','А дальше — просто разговор'));
   section2.appendChild(el('h2','landing-h2','Совпали интересы — уже есть тема для разговора'));
+
+  const matchRow = el('div','demo-match');
+  matchRow.appendChild(el('div','compat-badge','78%'));
+  const matchText = el('div','');
+  matchText.appendChild(el('div','name','Ты и Аня'));
+  matchText.appendChild(el('div','meta','общее: путешествия, музыка'));
+  matchRow.appendChild(matchText);
+  section2.appendChild(matchRow);
+
   const chatCard = el('div','card');
   const demoBox = el('div','chat-box');
   demoBox.style.maxHeight = 'none';
+  const mountainSvg = `<svg viewBox="0 0 220 130" xmlns="http://www.w3.org/2000/svg">
+    <rect width="220" height="130" fill="#111a2e"/>
+    <polygon points="0,130 60,45 100,90 140,30 220,130" fill="#2a3a5c"/>
+    <polygon points="90,130 140,55 175,90 220,60 220,130" fill="#1c2947"/>
+    <polygon points="60,45 72,58 48,58" fill="#c3c9de"/>
+    <polygon points="140,30 150,42 130,42" fill="#c3c9de"/>
+    <circle cx="185" cy="28" r="14" fill="#f2c14e"/>
+  </svg>`;
   [
     { text: 'Видела, что у тебя тоже путешествия в схеме 👀', mine: false },
-    { text: 'Да! Только вернулась из Грузии, обожаю горы', mine: true },
+    { img: mountainSvg, text: 'Да! Только вернулась из Грузии, обожаю горы', mine: true },
     { text: 'О, у меня в планах Кавказ этим летом. Расскажешь маршрут?', mine: false },
-  ].forEach(m => demoBox.appendChild(el('div','chat-bubble'+(m.mine?' mine':''), m.text)));
+  ].forEach(m => {
+    const bubble = el('div','chat-bubble'+(m.mine?' mine':''));
+    if(m.img){
+      const imgWrap = el('div','chat-image', m.img);
+      imgWrap.style.width = '220px';
+      bubble.appendChild(imgWrap);
+    }
+    const textEl = document.createElement('div');
+    textEl.textContent = m.text;
+    if(m.img) textEl.style.marginTop = '6px';
+    bubble.appendChild(textEl);
+    demoBox.appendChild(bubble);
+  });
   chatCard.appendChild(demoBox);
   section2.appendChild(chatCard);
   w.appendChild(section2);
@@ -1978,7 +2016,7 @@ async function buildGraph(text){
   render();
 }
 
-const PALETTE = ['#e8935c','#4fc9b8','#ef6f8e','#e8c25c','#8c9eff','#c792ea','#7fd88f'];
+const PALETTE = ['#7c9eff','#4fd8c4','#ff8fa3','#c792ea','#ffb37a','#7fe0a0','#6fb8ff'];
 // Грубое сравнение по основе слова — устойчиво к русским окончаниям
 // ("шахматы" находит "шахматами", "шахматист" и т.п.), без словаря синонимов.
 function stemMatch(a, b, minLen){
@@ -2169,7 +2207,7 @@ function renderResult(){
 
 function drawGraph(container, graph){
   const width = container.clientWidth || 960;
-  const height = 460;
+  const height = container.clientHeight || 460;
   const padding = 24;
   const svg = d3.select(container).append('svg')
     .attr('width', '100%').attr('height', height)
