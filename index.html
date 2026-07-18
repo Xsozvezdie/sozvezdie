@@ -317,6 +317,26 @@
   }
   .chat-bubble.mine .voice-play{ background: rgba(0,0,0,0.2); }
   .voice-wave{ display:flex; align-items:center; gap:2px; flex:1; height: 22px; }
+  .voice-seek{
+    flex: 1; -webkit-appearance: none; appearance: none;
+    height: 3px; border-radius: 2px; background: currentColor; opacity: 0.4;
+    margin: 0; cursor: pointer;
+  }
+  .voice-seek::-webkit-slider-thumb{
+    -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%;
+    background: currentColor; opacity: 1; cursor: pointer;
+  }
+  .voice-seek::-moz-range-thumb{
+    width: 11px; height: 11px; border-radius: 50%; border:none;
+    background: currentColor; cursor: pointer;
+  }
+  .voice-transcript-toggle{
+    font-size: 11px; text-decoration: underline; cursor: pointer;
+    margin-top: 6px; opacity: 0.85; display:inline-block;
+  }
+  .voice-transcript-text{
+    font-size: 13px; margin-top: 6px; opacity: 0.9; line-height:1.4;
+  }
   .voice-wave span{
     width: 3px; border-radius: 2px; background: currentColor; opacity: 0.55;
     display:inline-block;
@@ -340,9 +360,20 @@
     object-fit: cover; display:block; cursor:pointer;
     border: 2px solid var(--gold);
   }
+  .video-circle-wrap{ position: relative; width: 180px; height: 180px; }
+  .video-circle-play{
+    position: absolute; inset: 0; border-radius: 50%;
+    display:flex; align-items:center; justify-content:center;
+    background: rgba(0,0,0,0.25); color:#fff; font-size: 22px;
+    pointer-events: none;
+  }
   .btn.recording{
     background: #ef6f8e; color:#1a0a0e; border-color:#ef6f8e;
     animation: nav-alert-pulse 1.2s ease-in-out infinite;
+  }
+  .record-live-preview{
+    width: 46px; height: 46px; border-radius: 50%; object-fit: cover;
+    border: 2px solid #ef6f8e; vertical-align: middle;
   }
 
   .icon-btn{
@@ -595,7 +626,7 @@ async function listFriends(){
 }
 
 // ---------------- сообщения (личные + групповые) ----------------
-async function sendMessage(toUid, toName, text, imageData, voiceData, videoData){
+async function sendMessage(toUid, toName, text, imageData, voiceData, videoData, transcript){
   if(!firebaseReady) throw backendNotConfiguredError();
   const me = state.user;
   const payload = {
@@ -605,10 +636,11 @@ async function sendMessage(toUid, toName, text, imageData, voiceData, videoData)
   if(imageData) payload.imageData = imageData;
   if(voiceData) payload.voiceData = voiceData;
   if(videoData) payload.videoData = videoData;
+  if(transcript) payload.transcript = transcript;
   await db.collection('messages').add(payload);
 }
 
-async function sendGroupMessage(groupId, text, imageData, voiceData, videoData){
+async function sendGroupMessage(groupId, text, imageData, voiceData, videoData, transcript){
   if(!firebaseReady) throw backendNotConfiguredError();
   const me = state.user;
   const payload = {
@@ -618,6 +650,7 @@ async function sendGroupMessage(groupId, text, imageData, voiceData, videoData){
   if(imageData) payload.imageData = imageData;
   if(voiceData) payload.voiceData = voiceData;
   if(videoData) payload.videoData = videoData;
+  if(transcript) payload.transcript = transcript;
   await db.collection('messages').add(payload);
 }
 
@@ -827,10 +860,20 @@ async function markSupportResolved(id, resolved){
 // ---------------- запись голосовых и видео-кружочков ----------------
 // Ограничиваем длительность — сообщения хранятся прямо в базе Firestore
 // (лимит ~1 МБ на сообщение), поэтому длинные ролики физически не влезут.
-function recordMedia(constraints, maxSeconds, onTick){
+function pickSupportedMimeType(candidates){
+  for(const c of candidates){
+    if(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
+  }
+  return null;
+}
+
+function recordMedia(constraints, maxSeconds, onTick, recorderOptions, onStreamReady){
   return navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+    if(onStreamReady) onStreamReady(stream);
     const chunks = [];
-    const recorder = new MediaRecorder(stream);
+    let recorder;
+    try{ recorder = new MediaRecorder(stream, recorderOptions || {}); }
+    catch(e){ recorder = new MediaRecorder(stream); }
     let seconds = 0;
     recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
     const finished = new Promise((resolve, reject) => {
@@ -855,6 +898,34 @@ function recordMedia(constraints, maxSeconds, onTick){
     recorder.start();
     return { stop, finished, stream };
   });
+}
+
+// Расшифровка голосового — идёт ЖИВЬЁМ во время записи (браузер умеет распознавать
+// только живой звук с микрофона, не готовый файл), результат сохраняется вместе с сообщением.
+let activeRecognition = null;
+let recognitionBuffer = '';
+function startTranscription(){
+  recognitionBuffer = '';
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR) return;
+  activeRecognition = new SR();
+  activeRecognition.lang = 'ru-RU';
+  activeRecognition.continuous = true;
+  activeRecognition.interimResults = true;
+  activeRecognition.onresult = (event) => {
+    let text = '';
+    for(let i=0;i<event.results.length;i++){ text += event.results[i][0].transcript; }
+    recognitionBuffer = text;
+  };
+  activeRecognition.onerror = () => {};
+  try{ activeRecognition.start(); }catch(e){ /* ignore */ }
+}
+function stopTranscription(){
+  if(activeRecognition){
+    try{ activeRecognition.stop(); }catch(e){ /* ignore */ }
+    activeRecognition = null;
+  }
+  return recognitionBuffer.trim();
 }
 
 function formatDuration(sec){
@@ -1462,28 +1533,67 @@ function renderChatHeaderStatus(){
   if(el2) el2.textContent = state.chatStatusText || '';
 }
 
-function buildVoicePlayer(voiceData){
+function buildVoicePlayer(voiceData, transcript){
+  const wrap = el('div','');
   const audio = new Audio(voiceData);
   const row = el('div','voice-bubble');
   const playBtn = el('div','voice-play','▶');
-  const wave = el('div','voice-wave');
-  for(let i=0;i<18;i++){ wave.appendChild(el('span','','')); }
+  const seek = document.createElement('input');
+  seek.type = 'range'; seek.min = '0'; seek.max = '1000'; seek.value = '0';
+  seek.className = 'voice-seek';
+  let seeking = false;
   const durationEl = el('div','voice-duration','0:00');
   row.appendChild(playBtn);
-  row.appendChild(wave);
+  row.appendChild(seek);
   row.appendChild(durationEl);
+  wrap.appendChild(row);
+
+  if(transcript){
+    const toggleBtn = el('div','voice-transcript-toggle','Показать текст');
+    const textEl = el('div','voice-transcript-text', transcript);
+    textEl.style.display = 'none';
+    toggleBtn.onclick = () => {
+      const hidden = textEl.style.display === 'none';
+      textEl.style.display = hidden ? 'block' : 'none';
+      toggleBtn.textContent = hidden ? 'Скрыть текст' : 'Показать текст';
+    };
+    wrap.appendChild(toggleBtn);
+    wrap.appendChild(textEl);
+  }
+
   audio.addEventListener('loadedmetadata', () => {
     if(isFinite(audio.duration)) durationEl.textContent = formatDuration(Math.round(audio.duration));
   });
   audio.addEventListener('timeupdate', () => {
+    if(seeking) return;
     if(!audio.paused) durationEl.textContent = formatDuration(Math.round(audio.currentTime));
+    if(isFinite(audio.duration) && audio.duration > 0){
+      seek.value = String(Math.round((audio.currentTime / audio.duration) * 1000));
+    }
   });
-  audio.addEventListener('ended', () => { playBtn.textContent = '▶'; durationEl.textContent = isFinite(audio.duration) ? formatDuration(Math.round(audio.duration)) : '0:00'; });
+  audio.addEventListener('ended', () => {
+    playBtn.textContent = '▶';
+    durationEl.textContent = isFinite(audio.duration) ? formatDuration(Math.round(audio.duration)) : '0:00';
+    seek.value = '0';
+  });
   playBtn.onclick = () => {
     if(audio.paused){ audio.play(); playBtn.textContent = '⏸'; }
     else { audio.pause(); playBtn.textContent = '▶'; }
   };
-  return row;
+  seek.addEventListener('input', () => {
+    seeking = true;
+    if(isFinite(audio.duration)){
+      const t = (seek.value/1000) * audio.duration;
+      durationEl.textContent = formatDuration(Math.round(t));
+    }
+  });
+  seek.addEventListener('change', () => {
+    if(isFinite(audio.duration)){
+      audio.currentTime = (seek.value/1000) * audio.duration;
+    }
+    seeking = false;
+  });
+  return wrap;
 }
 
 function renderChatMessages(){
@@ -1510,15 +1620,24 @@ function renderChatMessages(){
       bubble.appendChild(img);
     }
     if(m.voiceData){
-      bubble.appendChild(buildVoicePlayer(m.voiceData));
+      bubble.appendChild(buildVoicePlayer(m.voiceData, m.transcript));
     }
     if(m.videoData){
+      const circleWrap = el('div','video-circle-wrap');
       const vid = document.createElement('video');
       vid.src = m.videoData;
       vid.className = 'chat-video-circle';
       vid.loop = true; vid.muted = false; vid.playsInline = true;
-      vid.onclick = () => { vid.paused ? vid.play() : vid.pause(); };
-      bubble.appendChild(vid);
+      const playOverlay = el('div','video-circle-play','▶');
+      let started = false;
+      vid.onclick = () => {
+        if(vid.paused){ vid.play(); playOverlay.style.display = 'none'; started = true; }
+        else { vid.pause(); playOverlay.style.display = 'flex'; }
+      };
+      vid.addEventListener('ended', () => {});
+      circleWrap.appendChild(vid);
+      circleWrap.appendChild(playOverlay);
+      bubble.appendChild(circleWrap);
     }
     if(m.text){
       const textEl = document.createElement('div');
@@ -1584,55 +1703,84 @@ function renderChat(){
     attachBtn.disabled = false; attachBtn.textContent = '📎';
     fileInput.value = '';
   };
-  const doSendVoice = (dataUrl) => state.chatWith.isGroup
-    ? sendGroupMessage(state.chatWith.groupId, null, null, dataUrl)
-    : sendMessage(state.chatWith.uid, state.chatWith.name, null, null, dataUrl);
+  const doSendVoice = (dataUrl, transcript) => state.chatWith.isGroup
+    ? sendGroupMessage(state.chatWith.groupId, null, null, dataUrl, null, transcript)
+    : sendMessage(state.chatWith.uid, state.chatWith.name, null, null, dataUrl, null, transcript);
   const doSendVideo = (dataUrl) => state.chatWith.isGroup
     ? sendGroupMessage(state.chatWith.groupId, null, null, null, dataUrl)
     : sendMessage(state.chatWith.uid, state.chatWith.name, null, null, null, dataUrl);
 
   const MAX_UPLOAD_BYTES = 900000; // запас под лимит Firestore в 1 МБ
 
-  function makeRecordButton(icon, constraints, maxSeconds, onFinish){
+  function makeRecordButton(icon, constraints, maxSeconds, onFinish, opts){
+    opts = opts || {};
     const btn = el('button','btn ghost', icon);
     btn.style.flexShrink = '0';
+    btn.title = opts.title || '';
     let active = null;
-    btn.onclick = async () => {
-      if(!active){
-        try{
-          active = await recordMedia(constraints, maxSeconds, sec => {
-            btn.textContent = '⏹ ' + formatDuration(sec);
-          });
-          btn.classList.add('recording');
-        }catch(e){
-          console.error('recording failed', e);
-          showToast('Не удалось получить доступ к микрофону/камере');
-        }
-        return;
-      }
-      active.stop();
-      btn.disabled = true;
-      btn.textContent = '…';
+    let previewEl = null;
+
+    async function begin(){
+      if(active) return;
       try{
-        const result = await active.finished;
-        if(result.sizeBytes > MAX_UPLOAD_BYTES){
-          showToast('Запись слишком длинная — попробуй короче');
-        } else {
-          await onFinish(result.dataUrl);
+        active = await recordMedia(constraints, maxSeconds, sec => {
+          btn.textContent = '⏹ ' + formatDuration(sec);
+        }, opts.recorderOptions, stream => {
+          if(opts.livePreview){
+            previewEl = document.createElement('video');
+            previewEl.srcObject = stream;
+            previewEl.autoplay = true; previewEl.muted = true; previewEl.playsInline = true;
+            previewEl.className = 'record-live-preview';
+            btn.insertAdjacentElement('afterend', previewEl);
+          }
+        });
+        btn.classList.add('recording');
+        if(opts.transcribe) startTranscription();
+      }catch(e){
+        console.error('recording start failed', e);
+        showToast('Микрофон/камера недоступны: ' + (e.name || e.message || 'нет доступа'));
+      }
+    }
+
+    async function finish(){
+      if(!active) return;
+      const rec = active; active = null;
+      rec.stop();
+      btn.disabled = true; btn.textContent = '…';
+      if(previewEl){ previewEl.remove(); previewEl = null; }
+      const transcript = opts.transcribe ? stopTranscription() : '';
+      try{
+        const result = await rec.finished;
+        if(result.seconds >= 1){
+          if(result.sizeBytes > MAX_UPLOAD_BYTES){
+            showToast('Запись слишком длинная — попробуй короче');
+          } else {
+            await onFinish(result.dataUrl, transcript);
+          }
         }
       }catch(e){ console.error('recording send failed', e); }
-      active = null;
       btn.disabled = false;
       btn.classList.remove('recording');
       btn.textContent = icon;
-    };
+    }
+
+    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); begin(); });
+    btn.addEventListener('pointerup', finish);
+    btn.addEventListener('pointerleave', () => { if(active) finish(); });
+    btn.addEventListener('pointercancel', () => { if(active) finish(); });
     return btn;
   }
 
-  const voiceBtn = makeRecordButton('🎙', { audio: true }, 60, doSendVoice);
-  const videoCircleBtn = makeRecordButton('⏺', { video: { width:240, height:240 }, audio: true }, 15, doSendVideo);
-  voiceBtn.title = 'Голосовое сообщение (до 60 сек)';
-  videoCircleBtn.title = 'Видео-кружочек (до 15 сек)';
+  const videoMime = pickSupportedMimeType(['video/webm;codecs=vp8,opus','video/webm']);
+  const voiceBtn = makeRecordButton('🎙', { audio: true }, 60, doSendVoice, {
+    title: 'Зажми, чтобы записать голосовое (до 60 сек)',
+    transcribe: true,
+  });
+  const videoCircleBtn = makeRecordButton('⏺', { video: { width: {ideal: 240}, height: {ideal: 240}, facingMode: 'user' }, audio: true }, 60, doSendVideo, {
+    title: 'Зажми, чтобы записать видео-кружочек (до 60 сек)',
+    livePreview: true,
+    recorderOptions: videoMime ? { mimeType: videoMime, videoBitsPerSecond: 90000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 90000, audioBitsPerSecond: 32000 },
+  });
 
   const input = document.createElement('input');
   input.type='text'; input.placeholder='Написать сообщение…';
