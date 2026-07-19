@@ -181,6 +181,56 @@
 
   ::selection{ background: var(--gold); color:#1a1406; }
 
+  /* ---------------- темы оформления ---------------- */
+  @keyframes theme-shift{
+    0%{ background-position: 0% 50%; }
+    50%{ background-position: 100% 50%; }
+    100%{ background-position: 0% 50%; }
+  }
+  body[data-theme]::before{
+    content: ''; position: fixed; inset: 0; z-index: -1;
+  }
+
+  body[data-theme="light"]{
+    --bg: #f3f4fa; --bg-soft: #ffffff; --panel: #ffffff; --line: #e1e3ee;
+    --ink: #1b2030; --ink-dim: #6b7280; --edge: #d7d9ea;
+  }
+  body[data-theme="light"] .card, body[data-theme="light"] .nav, body[data-theme="light"] .chat-bubble{
+    box-shadow: 0 2px 10px rgba(20,20,40,0.06);
+  }
+
+  body[data-theme="aurora"]::before{
+    background: linear-gradient(120deg, #0b1020, #123b34, #0b1020, #2a1f57);
+    background-size: 400% 400%; animation: theme-shift 20s ease infinite;
+  }
+  body[data-theme="sunset"]::before{
+    background: linear-gradient(120deg, #1a0f1f, #5c2a3a, #1a0f1f, #7a4326);
+    background-size: 400% 400%; animation: theme-shift 20s ease infinite;
+  }
+  body[data-theme="ocean"]::before{
+    background: linear-gradient(120deg, #061323, #103a52, #061323, #0d2a4a);
+    background-size: 400% 400%; animation: theme-shift 22s ease infinite;
+  }
+  body[data-theme="forest"]::before{
+    background: linear-gradient(120deg, #0a1710, #1c3a25, #0a1710, #24462c);
+    background-size: 400% 400%; animation: theme-shift 24s ease infinite;
+  }
+  body[data-theme="nebula"]::before{
+    background: linear-gradient(120deg, #100b22, #3a1656, #100b22, #551a4a);
+    background-size: 400% 400%; animation: theme-shift 18s ease infinite;
+  }
+
+  .theme-grid{ display:flex; flex-wrap:wrap; gap:12px; margin-top: 10px; }
+  .theme-swatch{
+    width: 74px; cursor:pointer; text-align:center; font-size:11px; color: var(--ink-dim);
+  }
+  .theme-swatch-circle{
+    width: 56px; height: 56px; border-radius: 50%; margin: 0 auto 6px;
+    border: 2px solid var(--line);
+  }
+  .theme-swatch.active .theme-swatch-circle{ border-color: var(--gold); box-shadow: 0 0 0 2px rgba(242,193,78,0.3); }
+  .theme-swatch.active{ color: var(--ink); font-weight:600; }
+
   @media (max-width: 640px){
     .wrap{ padding: 20px 16px 60px; }
     .card{ padding: 20px; }
@@ -278,6 +328,12 @@
     border-color: var(--gold);
     border-radius: 12px 12px 4px 12px;
   }
+  .chat-bubble.bare-media{
+    background: transparent; border: none; padding: 0;
+    max-width: none;
+  }
+  .chat-bubble.mine.bare-media{ color: var(--ink); }
+  .chat-bubble.bare-media .voice-play{ background: var(--bg-soft); border: 1px solid var(--line); }
   .chat-image{ max-width: 220px; border-radius: 8px; display:block; overflow: hidden; }
   .demo-match{
     display:flex; align-items:center; gap:14px;
@@ -310,25 +366,26 @@
     display:flex; align-items:center; gap:10px; min-width: 180px;
   }
   .voice-play{
-    width: 30px; height: 30px; border-radius: 50%;
-    background: rgba(0,0,0,0.15);
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--bg-soft); border: 1px solid var(--line);
     display:flex; align-items:center; justify-content:center;
-    font-size: 11px; flex-shrink:0; cursor:pointer;
+    font-size: 12px; flex-shrink:0; cursor:pointer; color: var(--ink);
   }
-  .chat-bubble.mine .voice-play{ background: rgba(0,0,0,0.2); }
-  .voice-wave{ display:flex; align-items:center; gap:2px; flex:1; height: 22px; }
-  .voice-seek{
-    flex: 1; -webkit-appearance: none; appearance: none;
-    height: 3px; border-radius: 2px; background: currentColor; opacity: 0.4;
-    margin: 0; cursor: pointer;
+  .chat-bubble.mine .voice-play{ background: rgba(0,0,0,0.2); border-color: transparent; color: #1a1406; }
+  .voice-waveform-wrap{ position: relative; flex:1; height: 28px; }
+  .voice-waveform{
+    position:absolute; inset:0; display:flex; align-items:center; gap:2px;
   }
-  .voice-seek::-webkit-slider-thumb{
-    -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%;
-    background: currentColor; opacity: 1; cursor: pointer;
+  .voice-waveform span{
+    flex:1; min-width: 2px; border-radius: 2px; height: 20%;
+    background: currentColor; opacity: 0.35;
+    align-self: center;
   }
-  .voice-seek::-moz-range-thumb{
-    width: 11px; height: 11px; border-radius: 50%; border:none;
-    background: currentColor; cursor: pointer;
+  .voice-waveform span.played{ opacity: 0.95; }
+  .voice-seek-overlay{
+    position:absolute; inset:0; width:100%; height:100%;
+    margin:0; opacity:0; cursor:pointer;
+    -webkit-appearance: none; appearance:none; background:transparent;
   }
   .voice-transcript-toggle{
     font-size: 11px; text-decoration: underline; cursor: pointer;
@@ -337,13 +394,6 @@
   .voice-transcript-text{
     font-size: 13px; margin-top: 6px; opacity: 0.9; line-height:1.4;
   }
-  .voice-wave span{
-    width: 3px; border-radius: 2px; background: currentColor; opacity: 0.55;
-    display:inline-block;
-  }
-  .voice-wave span:nth-child(odd){ height: 60%; }
-  .voice-wave span:nth-child(even){ height: 100%; }
-  .voice-wave span:nth-child(3n){ height: 35%; }
   .voice-duration{ font-size: 11px; opacity: 0.75; flex-shrink:0; }
 
   .account-avatar{
@@ -358,7 +408,7 @@
   .chat-video-circle{
     width: 180px; height: 180px; border-radius: 50%;
     object-fit: cover; display:block; cursor:pointer;
-    border: 2px solid var(--gold);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   }
   .video-circle-wrap{ position: relative; width: 180px; height: 180px; border-radius: 50%; overflow: hidden; }
   .video-circle-error{
@@ -413,8 +463,13 @@
     animation: nav-alert-pulse 1.2s ease-in-out infinite;
   }
   .record-live-preview{
-    width: 46px; height: 46px; border-radius: 50%; object-fit: cover;
-    border: 2px solid #ef6f8e; vertical-align: middle;
+    position: fixed;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 170px; height: 170px; border-radius: 50%; object-fit: cover;
+    z-index: 500;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   }
 
   .icon-btn{
@@ -563,7 +618,7 @@ async function loginUser(username, password){
   }
   const doc = await db.collection('users').doc(cred.user.uid).get();
   const data = doc.exists ? doc.data() : {};
-  return { uid: cred.user.uid, name: data.name || username, login: data.login || username, graph: data.graph || null, text: data.text || '', profile: data.profile || null, isAdmin: data.isAdmin === true };
+  return { uid: cred.user.uid, name: data.name || username, login: data.login || username, graph: data.graph || null, text: data.text || '', profile: data.profile || null, isAdmin: data.isAdmin === true, theme: data.theme || 'dark' };
 }
 
 function logoutUser(){
@@ -667,7 +722,7 @@ async function listFriends(){
 }
 
 // ---------------- сообщения (личные + групповые) ----------------
-async function sendMessage(toUid, toName, text, imageData, voiceData, videoData, transcript){
+async function sendMessage(toUid, toName, text, imageData, voiceData, videoData, transcript, waveform){
   if(!firebaseReady) throw backendNotConfiguredError();
   const me = state.user;
   const payload = {
@@ -678,11 +733,12 @@ async function sendMessage(toUid, toName, text, imageData, voiceData, videoData,
   if(voiceData) payload.voiceData = voiceData;
   if(videoData) payload.videoData = videoData;
   if(transcript) payload.transcript = transcript;
+  if(waveform) payload.waveform = waveform;
   if(state.replyingTo){ payload.replyTo = state.replyingTo; state.replyingTo = null; renderReplyBanner(); }
   await db.collection('messages').add(payload);
 }
 
-async function sendGroupMessage(groupId, text, imageData, voiceData, videoData, transcript){
+async function sendGroupMessage(groupId, text, imageData, voiceData, videoData, transcript, waveform){
   if(!firebaseReady) throw backendNotConfiguredError();
   const me = state.user;
   const payload = {
@@ -693,6 +749,7 @@ async function sendGroupMessage(groupId, text, imageData, voiceData, videoData, 
   if(voiceData) payload.voiceData = voiceData;
   if(videoData) payload.videoData = videoData;
   if(transcript) payload.transcript = transcript;
+  if(waveform) payload.waveform = waveform;
   if(state.replyingTo){ payload.replyTo = state.replyingTo; state.replyingTo = null; renderReplyBanner(); }
   await db.collection('messages').add(payload);
 }
@@ -1004,6 +1061,35 @@ function stopTranscription(){
 function formatDuration(sec){
   const m = Math.floor(sec/60), s = sec%60;
   return m + ':' + String(s).padStart(2,'0');
+}
+
+// Настоящая волна по громкости, а не декоративная — разбираем записанный звук на пики.
+async function extractWaveformPeaks(dataUrl, barCount){
+  barCount = barCount || 32;
+  try{
+    const resp = await fetch(dataUrl);
+    const arrayBuffer = await resp.arrayBuffer();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioCtx();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    const channelData = audioBuffer.getChannelData(0);
+    const blockSize = Math.max(1, Math.floor(channelData.length / barCount));
+    const peaks = [];
+    for(let i=0;i<barCount;i++){
+      let max = 0;
+      const start = i*blockSize;
+      for(let j=0;j<blockSize;j++){
+        const v = Math.abs(channelData[start + j] || 0);
+        if(v > max) max = v;
+      }
+      peaks.push(Math.round(max*100)/100);
+    }
+    audioCtx.close();
+    return peaks;
+  }catch(e){
+    console.error('waveform extraction failed', e);
+    return null;
+  }
 }
 
 // ---------------- state ----------------
@@ -1606,20 +1692,38 @@ function renderChatHeaderStatus(){
   if(el2) el2.textContent = state.chatStatusText || '';
 }
 
-function buildVoicePlayer(voiceData, transcript){
+function buildVoicePlayer(voiceData, transcript, waveform){
   const wrap = el('div','');
   const audio = new Audio(voiceData);
   const row = el('div','voice-bubble');
   const playBtn = el('div','voice-play','▶');
+
+  const waveWrap = el('div','voice-waveform-wrap');
+  const waveEl = el('div','voice-waveform');
+  const peaks = (waveform && waveform.length) ? waveform : new Array(32).fill(0).map((_,i)=> 0.3 + 0.5*Math.abs(Math.sin(i*0.7)));
+  const bars = peaks.map(p => {
+    const bar = document.createElement('span');
+    bar.style.height = Math.max(15, Math.round(p*100)) + '%';
+    waveEl.appendChild(bar);
+    return bar;
+  });
   const seek = document.createElement('input');
   seek.type = 'range'; seek.min = '0'; seek.max = '1000'; seek.value = '0';
-  seek.className = 'voice-seek';
+  seek.className = 'voice-seek-overlay';
   let seeking = false;
+  waveWrap.appendChild(waveEl);
+  waveWrap.appendChild(seek);
+
   const durationEl = el('div','voice-duration','0:00');
   row.appendChild(playBtn);
-  row.appendChild(seek);
+  row.appendChild(waveWrap);
   row.appendChild(durationEl);
   wrap.appendChild(row);
+
+  function updateBars(fraction){
+    const activeCount = Math.round(fraction * bars.length);
+    bars.forEach((b,i) => b.classList.toggle('played', i < activeCount));
+  }
 
   if(transcript){
     const toggleBtn = el('div','voice-transcript-toggle','Показать текст');
@@ -1641,13 +1745,16 @@ function buildVoicePlayer(voiceData, transcript){
     if(seeking) return;
     if(!audio.paused) durationEl.textContent = formatDuration(Math.round(audio.currentTime));
     if(isFinite(audio.duration) && audio.duration > 0){
-      seek.value = String(Math.round((audio.currentTime / audio.duration) * 1000));
+      const frac = audio.currentTime / audio.duration;
+      seek.value = String(Math.round(frac * 1000));
+      updateBars(frac);
     }
   });
   audio.addEventListener('ended', () => {
     playBtn.textContent = '▶';
     durationEl.textContent = isFinite(audio.duration) ? formatDuration(Math.round(audio.duration)) : '0:00';
     seek.value = '0';
+    updateBars(0);
   });
   playBtn.onclick = () => {
     if(audio.paused){ audio.play(); playBtn.textContent = '⏸'; }
@@ -1655,9 +1762,10 @@ function buildVoicePlayer(voiceData, transcript){
   };
   seek.addEventListener('input', () => {
     seeking = true;
+    const frac = seek.value/1000;
+    updateBars(frac);
     if(isFinite(audio.duration)){
-      const t = (seek.value/1000) * audio.duration;
-      durationEl.textContent = formatDuration(Math.round(t));
+      durationEl.textContent = formatDuration(Math.round(frac * audio.duration));
     }
   });
   seek.addEventListener('change', () => {
@@ -1797,7 +1905,8 @@ function renderChatMessages(){
 
   visible.forEach((m, i) => {
     const mine = m.fromUid === state.user.uid;
-    const bubble = el('div','chat-bubble' + (mine ? ' mine' : ''));
+    const isBareMedia = (m.voiceData || m.videoData) && !m.text && !m.imageData && !m.replyTo;
+    const bubble = el('div','chat-bubble' + (mine ? ' mine' : '') + (isBareMedia ? ' bare-media' : ''));
     attachLongPressAndRightClick(bubble, (x,y) => showMessageContextMenu(x, y, m, chatId));
 
     if(state.chatWith.isGroup && !mine){
@@ -1816,7 +1925,7 @@ function renderChatMessages(){
       bubble.appendChild(dl);
     }
     if(m.voiceData){
-      bubble.appendChild(buildVoicePlayer(m.voiceData, m.transcript));
+      bubble.appendChild(buildVoicePlayer(m.voiceData, m.transcript, m.waveform));
     }
     if(m.videoData){
       const circleWrap = el('div','video-circle-wrap');
@@ -1918,14 +2027,17 @@ function renderChat(){
     attachBtn.disabled = false; attachBtn.textContent = '📎';
     fileInput.value = '';
   };
-  const doSendVoice = (dataUrl, transcript) => state.chatWith.isGroup
-    ? sendGroupMessage(state.chatWith.groupId, null, null, dataUrl, null, transcript)
-    : sendMessage(state.chatWith.uid, state.chatWith.name, null, null, dataUrl, null, transcript);
+  const doSendVoice = async (dataUrl, transcript) => {
+    const waveform = await extractWaveformPeaks(dataUrl, 32);
+    return state.chatWith.isGroup
+      ? sendGroupMessage(state.chatWith.groupId, null, null, dataUrl, null, transcript, waveform)
+      : sendMessage(state.chatWith.uid, state.chatWith.name, null, null, dataUrl, null, transcript, waveform);
+  };
   const doSendVideo = (dataUrl) => state.chatWith.isGroup
     ? sendGroupMessage(state.chatWith.groupId, null, null, null, dataUrl)
     : sendMessage(state.chatWith.uid, state.chatWith.name, null, null, null, dataUrl);
 
-  const MAX_UPLOAD_BYTES = 900000; // запас под лимит Firestore в 1 МБ
+  const MAX_UPLOAD_CHARS = 700000; // это уже размер итоговой base64-строки, которая реально пишется в Firestore (лимит документа ~1 МБ)
 
   function makeRecordButton(icon, constraints, maxSeconds, onFinish, opts){
     opts = opts || {};
@@ -1946,7 +2058,7 @@ function renderChat(){
             previewEl.srcObject = stream;
             previewEl.autoplay = true; previewEl.muted = true; previewEl.playsInline = true;
             previewEl.className = 'record-live-preview';
-            btn.insertAdjacentElement('afterend', previewEl);
+            document.body.appendChild(previewEl);
           }
         });
         btn.classList.add('recording');
@@ -1966,13 +2078,13 @@ function renderChat(){
       const transcript = opts.transcribe ? stopTranscription() : '';
       try{
         const result = await rec.finished;
-        console.log('recording finished:', { seconds: result.seconds, sizeBytes: result.sizeBytes, icon });
+        console.log('recording finished:', { seconds: result.seconds, sizeBytes: result.sizeBytes, dataUrlChars: result.dataUrl.length, icon });
         if(result.seconds < 1){
           // случайный тап — молча игнорируем
         } else if(result.sizeBytes < 2000){
           showToast('Запись не получилась (пустой файл) — попробуй ещё раз');
-        } else if(result.sizeBytes > MAX_UPLOAD_BYTES){
-          showToast('Запись слишком длинная — попробуй короче');
+        } else if(result.dataUrl.length > MAX_UPLOAD_CHARS){
+          showToast('Запись слишком длинная для отправки — попробуй короче или тише качеством');
         } else {
           await onFinish(result.dataUrl, transcript);
         }
@@ -2007,7 +2119,7 @@ function renderChat(){
   const videoCircleBtn = makeRecordButton('⏺', { video: { width: {ideal: 240}, height: {ideal: 240}, facingMode: 'user' }, audio: true }, 60, doSendVideo, {
     title: 'На телефоне — зажми; на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 60 сек)',
     livePreview: true,
-    recorderOptions: videoMime ? { mimeType: videoMime, videoBitsPerSecond: 90000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 90000, audioBitsPerSecond: 32000 },
+    recorderOptions: videoMime ? { mimeType: videoMime, videoBitsPerSecond: 40000, audioBitsPerSecond: 16000 } : { videoBitsPerSecond: 40000, audioBitsPerSecond: 16000 },
   });
 
   const input = document.createElement('input');
@@ -2316,6 +2428,37 @@ function renderAccountScreen(){
   w.appendChild(renderNav('account'));
   w.appendChild(el('h1','', 'Аккаунт'));
 
+  // --- Тема оформления ---
+  const themeCard = el('div','card');
+  themeCard.style.marginBottom = '16px';
+  themeCard.appendChild(el('div','top-tag','Тема оформления'));
+  const themeGrid = el('div','theme-grid');
+  const currentTheme = state.user.theme || 'dark';
+  const THEME_PREVIEW = {
+    dark: 'linear-gradient(135deg,#111a2e,#1a2338)',
+    light: 'linear-gradient(135deg,#f3f4fa,#ffffff)',
+    aurora: 'linear-gradient(135deg,#123b34,#2a1f57)',
+    sunset: 'linear-gradient(135deg,#5c2a3a,#7a4326)',
+    ocean: 'linear-gradient(135deg,#103a52,#0d2a4a)',
+    forest: 'linear-gradient(135deg,#1c3a25,#24462c)',
+    nebula: 'linear-gradient(135deg,#3a1656,#551a4a)',
+  };
+  THEMES.forEach(t => {
+    const swatch = el('div','theme-swatch' + (t.id === currentTheme ? ' active' : ''));
+    const circle = el('div','theme-swatch-circle');
+    circle.style.background = THEME_PREVIEW[t.id] || '#222';
+    swatch.appendChild(circle);
+    swatch.appendChild(el('div','', t.name));
+    swatch.onclick = async () => {
+      state.user.theme = t.id;
+      await saveTheme(t.id);
+      render();
+    };
+    themeGrid.appendChild(swatch);
+  });
+  themeCard.appendChild(themeGrid);
+  w.appendChild(themeCard);
+
   // --- Фото аккаунта ---
   const avatarCard = el('div','card');
   avatarCard.style.marginBottom = '16px';
@@ -2501,6 +2644,33 @@ function renderAccountScreen(){
   root.appendChild(w);
 }
 
+// ---------------- темы оформления ----------------
+const THEMES = [
+  { id: 'dark', name: 'Тёмная (авто)' },
+  { id: 'light', name: 'Светлая' },
+  { id: 'aurora', name: 'Аврора' },
+  { id: 'sunset', name: 'Закат' },
+  { id: 'ocean', name: 'Океан' },
+  { id: 'forest', name: 'Лес' },
+  { id: 'nebula', name: 'Туманность' },
+];
+
+function applyTheme(themeId){
+  if(themeId && themeId !== 'dark'){
+    document.body.dataset.theme = themeId;
+  } else {
+    delete document.body.dataset.theme;
+  }
+}
+
+async function saveTheme(themeId){
+  applyTheme(themeId);
+  if(!state.user) return;
+  try{
+    await db.collection('users').doc(state.user.uid).update({ theme: themeId });
+  }catch(e){ console.error('theme save failed', e); }
+}
+
 function renderLanding(){
   const w = el('div','wrap');
   w.appendChild(renderNav('landing'));
@@ -2581,9 +2751,17 @@ function renderLanding(){
     if(m.voice){
       const voiceRow = el('div','voice-bubble');
       voiceRow.appendChild(el('div','voice-play','▶'));
-      const wave = el('div','voice-wave');
-      for(let i=0;i<18;i++){ wave.appendChild(el('span','','')); }
-      voiceRow.appendChild(wave);
+      const waveWrap = el('div','voice-waveform-wrap');
+      const wave = el('div','voice-waveform');
+      const demoPeaks = [0.3,0.6,0.9,0.5,0.7,0.4,0.8,0.3,0.5,0.9,0.6,0.4,0.7,0.5,0.8,0.3];
+      demoPeaks.forEach((p,i) => {
+        const bar = document.createElement('span');
+        bar.style.height = Math.round(p*100) + '%';
+        if(i < 5) bar.classList.add('played');
+        wave.appendChild(bar);
+      });
+      waveWrap.appendChild(wave);
+      voiceRow.appendChild(waveWrap);
       voiceRow.appendChild(el('div','voice-duration', m.duration));
       bubble.appendChild(voiceRow);
     }
@@ -2662,11 +2840,12 @@ function renderAuth(){
     btn.textContent = 'Подождите…';
     try{
       const user = isLogin ? await loginUser(username, password) : await registerUser(username, password);
-      state.user = { uid: user.uid, name: user.name, login: user.login || user.name };
+      state.user = { uid: user.uid, name: user.name, login: user.login || user.name, theme: user.theme || 'dark' };
       state.graph = user.graph || null;
       state.text = user.text || '';
       state.profile = user.profile || null;
       state.isAdmin = user.isAdmin === true;
+      applyTheme(user.theme || 'dark');
       state.screen = state.graph ? 'result' : 'story';
       render();
       refreshNotificationCounts().then(render);
@@ -3115,11 +3294,12 @@ if(firebaseReady){
       try{
         const doc = await db.collection('users').doc(fbUser.uid).get();
         const data = doc.exists ? doc.data() : {};
-        state.user = { uid: fbUser.uid, name: data.name || 'Без имени', login: data.login || data.name || '' };
+        state.user = { uid: fbUser.uid, name: data.name || 'Без имени', login: data.login || data.name || '', theme: data.theme || 'dark' };
         state.graph = data.graph || null;
         state.text = data.text || '';
         state.profile = data.profile || null;
         state.isAdmin = data.isAdmin === true;
+        applyTheme(data.theme || 'dark');
         if(state.screen === 'landing'){ state.screen = state.graph ? 'result' : 'story'; }
         refreshNotificationCounts().then(render);
         startNotificationPolling();
