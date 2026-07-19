@@ -20,11 +20,12 @@
     --ink-dim: #8892ad;
     --gold: #f2c14e;
     --edge: #4b3f78;
+    --bg-glow: #131a2c;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background: radial-gradient(ellipse at 30% 0%, #131a2c 0%, var(--bg) 55%);
+    background: radial-gradient(ellipse at 30% 0%, var(--bg-glow) 0%, var(--bg) 55%);
     color: var(--ink);
     font-family: 'Inter', sans-serif;
     min-height: 100vh;
@@ -194,7 +195,7 @@
   body[data-theme="light"]{
     --bg: #f3f4fa; --bg-soft: #ffffff; --panel: #ffffff; --line: #e1e3ee;
     --ink: #1b2030; --ink-dim: #6b7280; --edge: #d7d9ea;
-    --gold: #3457d5;
+    --gold: #3457d5; --bg-glow: #f3f4fa;
   }
   body[data-theme="light"] .card, body[data-theme="light"] .nav, body[data-theme="light"] .chat-bubble{
     box-shadow: 0 2px 10px rgba(20,20,40,0.06);
@@ -267,12 +268,12 @@
     .card{ padding: 20px; }
     h1{ font-size: clamp(26px, 8vw, 36px); }
     .nav{ padding: 8px; }
-    .nav-links{ gap: 6px; }
-    .nav-link{ font-size: 12px; padding: 7px 10px; }
-    .nav-links{ flex-wrap: wrap; gap: 14px; width: 100%; }
+    .nav-link{ font-size: 11px; padding: 6px 9px; }
     .person-row{ flex-wrap: wrap; gap: 10px; }
     .msg-row{ max-width: 88%; }
     .hero-graph{ height: 150px; }
+    .call-grid{ flex-direction: column; }
+    .call-ctrl-btn-labeled span{ display:none; }
   }
 
   .nav-wrapper{
@@ -296,15 +297,18 @@
     cursor: pointer;
     display: inline-block;
   }
-  .nav-links{ display:flex; gap: 8px; align-items:center; flex-wrap: wrap; width: 100%; }
+  .nav-links{ display:flex; gap: 6px; align-items:center; flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; }
+  .nav-links::-webkit-scrollbar{ display:none; }
   .nav-link{
     font-family:'Space Grotesk',sans-serif;
-    font-size: 13px;
+    font-size: 12px;
     color: var(--ink-dim);
     cursor: pointer;
     background: var(--bg-soft);
     border: 1px solid var(--line);
-    padding: 9px 14px;
+    padding: 8px 11px;
+    white-space: nowrap;
+    flex-shrink: 0;
     transition: color .15s ease, background .15s ease, border-color .15s ease;
     border-radius: 10px;
   }
@@ -440,6 +444,14 @@
     font-family:'Space Grotesk',sans-serif; font-weight:700; color:#0b0f19; font-size:24px;
     overflow:hidden; flex-shrink:0;
   }
+  .avatar-circle{
+    border-radius: 50%;
+    background: linear-gradient(135deg, #7c9eff, #c792ea);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; color:#0b0f19;
+    overflow:hidden; flex-shrink:0;
+  }
+  .avatar-circle img{ width:100%; height:100%; object-fit:cover; }
   .account-avatar img{ width:100%; height:100%; object-fit:cover; }
 
   .chat-video-circle{
@@ -554,29 +566,60 @@
   .incoming-call-text{ font-family:'Space Grotesk',sans-serif; font-weight:600; }
 
   .call-overlay{
-    position: fixed; inset: 0; background: #05070f; z-index: 950;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap: 24px;
+    position: fixed; inset: 0; background: #101114; z-index: 950;
+    display:flex; flex-direction:column;
   }
-  .call-title{ font-family:'Space Grotesk',sans-serif; font-size: 18px; color: var(--ink); }
+  .call-topbar{
+    font-family:'Space Grotesk',sans-serif; font-size: 14px; color: #cfd2d8;
+    padding: 14px 20px; flex-shrink: 0;
+  }
+  .call-grid{
+    flex: 1; min-height: 0;
+    display: flex; gap: 12px;
+    padding: 0 20px 16px;
+  }
+  .call-tile{
+    position: relative; flex: 1; min-width: 0;
+    background: #17181c; border-radius: 12px; overflow: hidden;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .call-tile-video{ width:100%; height:100%; object-fit: cover; }
+  .call-tile-label{
+    position: absolute; bottom: 12px; left: 12px;
+    background: rgba(0,0,0,0.55); color:#fff;
+    font-family:'Inter',sans-serif; font-size: 13px;
+    padding: 5px 10px; border-radius: 8px;
+    display:flex; align-items:center; gap:6px;
+  }
   .call-avatar{
     width: 120px; height: 120px; border-radius: 50%;
     background: linear-gradient(135deg, #7c9eff, #c792ea);
     display:flex; align-items:center; justify-content:center;
     font-size: 46px; font-weight:700; color:#0b0f19;
   }
-  .call-remote-video{
-    width: min(90vw, 640px); max-height: 60vh; border-radius: 16px; background:#000;
+  .call-bottom-bar{
+    flex-shrink: 0;
+    display:flex; align-items:center; justify-content:center; gap: 14px;
+    background: #1a1b1f; border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 16px 20px;
   }
-  .call-local-video{
-    position: fixed; bottom: 110px; right: 24px;
-    width: 120px; border-radius: 12px; border: 2px solid var(--gold);
-  }
-  .call-controls{ display:flex; gap: 20px; }
   .call-hangup-btn{
-    width: 60px; height: 60px; border-radius: 50%;
-    background: #ef6f8e; border:none; font-size: 24px; cursor:pointer;
-    color: #1a0a0e;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: #e6453a; border:none; font-size: 22px; cursor:pointer;
+    color: #fff;
+  }
+  .call-ctrl-btn{
+    width: 50px; height: 50px; border-radius: 50%;
+    background: rgba(255,255,255,0.1); border: none;
+    font-size: 20px; cursor: pointer; color: #fff;
+  }
+  .call-ctrl-btn.off{
+    background: rgba(230,69,58,0.35);
+  }
+  .call-ctrl-btn-labeled{
+    width: auto; border-radius: 24px; padding: 0 18px;
+    font-family:'Space Grotesk',sans-serif; font-size: 14px; font-weight:600;
+    display:flex; align-items:center; gap:6px;
   }
   .video-circle-play{
     position: absolute; inset: 0; border-radius: 50%;
@@ -590,12 +633,18 @@
   }
   .record-live-preview{
     position: fixed;
-    bottom: 100px;
+    top: 50%;
     left: 50%;
-    transform: translateX(-50%);
-    width: 170px; height: 170px; border-radius: 50%; object-fit: cover;
-    z-index: 500;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    transform: translate(-50%, -50%);
+    width: min(70vw, 340px); height: min(70vw, 340px);
+    border-radius: 50%; object-fit: cover;
+    z-index: 950;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    border: 3px solid var(--gold);
+  }
+  .record-live-preview-backdrop{
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 940;
   }
 
   .icon-btn{
@@ -701,6 +750,7 @@
   .shell-main{
     flex: 1;
     min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     background: var(--panel);
@@ -711,15 +761,17 @@
   }
   .shell-main .chat-panel-card{
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    min-height: 0;
     border: none;
     padding: 0;
     background: transparent;
   }
   .shell-main .chat-box{
     flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     max-height: none !important;
   }
   .shell-placeholder{
@@ -911,7 +963,7 @@ async function startCall(toUid, toName, type){
   pc.ontrack = (e) => { e.streams[0].getTracks().forEach(t => remoteStream.addTrack(t)); renderCallScreen(); };
 
   const callRef = db.collection('calls').doc();
-  currentCall = { callId: callRef.id, pc, localStream, remoteStream, unsubs: [], role: 'caller', type, otherUid: toUid, otherName: toName, startedAt: null };
+  currentCall = { callId: callRef.id, pc, localStream, remoteStream, unsubs: [], role: 'caller', type, otherUid: toUid, otherName: toName, startedAt: null, screenSharing: false, screenTrack: null };
 
   pc.onicecandidate = (e) => { if(e.candidate) callRef.collection('callerCandidates').add(e.candidate.toJSON()); };
 
@@ -961,7 +1013,7 @@ async function acceptIncomingCall(){
   pc.ontrack = (e) => { e.streams[0].getTracks().forEach(t => remoteStream.addTrack(t)); renderCallScreen(); };
 
   const callRef = db.collection('calls').doc(call.id);
-  currentCall = { callId: call.id, pc, localStream, remoteStream, unsubs: [], role: 'callee', type: call.type, otherUid: call.fromUid, otherName: call.fromName, startedAt: Date.now() };
+  currentCall = { callId: call.id, pc, localStream, remoteStream, unsubs: [], role: 'callee', type: call.type, otherUid: call.fromUid, otherName: call.fromName, startedAt: Date.now(), screenSharing: false, screenTrack: null };
 
   pc.onicecandidate = (e) => { if(e.candidate) callRef.collection('calleeCandidates').add(e.candidate.toJSON()); };
 
@@ -999,6 +1051,7 @@ function endCall(notifyRemote, reason){
   if(notifyRemote !== false && call.notifyEnd){ call.notifyEnd(); }
   try{ call.pc.close(); }catch(e){}
   try{ call.localStream.getTracks().forEach(t => t.stop()); }catch(e){}
+  try{ if(call.screenTrack) call.screenTrack.stop(); }catch(e){}
   renderCallScreen();
 
   let outcome, duration = 0;
@@ -1050,40 +1103,136 @@ function renderCallScreen(){
   overlay.id = 'call-overlay';
   overlay.className = 'call-overlay';
 
-  const title = document.createElement('div');
-  title.className = 'call-title';
-  title.textContent = currentCall.otherName + (currentCall.role === 'caller' ? ' · вызов…' : ' · звонок');
-  overlay.appendChild(title);
+  const topBar = document.createElement('div');
+  topBar.className = 'call-topbar';
+  topBar.textContent = currentCall.otherName + (currentCall.role === 'caller' && !currentCall.startedAt ? ' · вызов…' : '');
+  overlay.appendChild(topBar);
+
+  const grid = document.createElement('div');
+  grid.className = 'call-grid';
+
+  function makeTile(labelName, micOn){
+    const tile = document.createElement('div');
+    tile.className = 'call-tile';
+    const label = document.createElement('div');
+    label.className = 'call-tile-label';
+    const micIcon = document.createElement('span');
+    micIcon.textContent = micOn ? '🎤' : '🔇';
+    label.appendChild(document.createTextNode(labelName + ' '));
+    label.appendChild(micIcon);
+    tile.appendChild(label);
+    return { tile, micIcon };
+  }
+
+  let localMicIconEl, remoteMicIconEl;
 
   if(currentCall.type === 'video'){
+    const remoteTileParts = makeTile(currentCall.otherName, true);
     const remoteVid = document.createElement('video');
-    remoteVid.autoplay = true; remoteVid.playsInline = true; remoteVid.className = 'call-remote-video';
+    remoteVid.autoplay = true; remoteVid.playsInline = true; remoteVid.className = 'call-tile-video';
     remoteVid.srcObject = currentCall.remoteStream;
-    overlay.appendChild(remoteVid);
+    remoteTileParts.tile.insertBefore(remoteVid, remoteTileParts.tile.firstChild);
+    grid.appendChild(remoteTileParts.tile);
+    remoteMicIconEl = remoteTileParts.micIcon;
 
+    const localTileParts = makeTile('Ты', true);
     const localVid = document.createElement('video');
-    localVid.autoplay = true; localVid.playsInline = true; localVid.muted = true; localVid.className = 'call-local-video';
+    localVid.autoplay = true; localVid.playsInline = true; localVid.muted = true; localVid.className = 'call-tile-video';
     localVid.srcObject = currentCall.localStream;
-    overlay.appendChild(localVid);
+    localTileParts.tile.insertBefore(localVid, localTileParts.tile.firstChild);
+    grid.appendChild(localTileParts.tile);
+    localMicIconEl = localTileParts.micIcon;
   } else {
+    const remoteTileParts = makeTile(currentCall.otherName, true);
     const avatar = document.createElement('div');
     avatar.className = 'call-avatar';
     avatar.textContent = (currentCall.otherName || '?')[0].toUpperCase();
-    overlay.appendChild(avatar);
-    // audio-only тоже нужно подключить удалённый звук
+    remoteTileParts.tile.insertBefore(avatar, remoteTileParts.tile.firstChild);
+    grid.appendChild(remoteTileParts.tile);
+    remoteMicIconEl = remoteTileParts.micIcon;
+
     const remoteAudio = document.createElement('audio');
     remoteAudio.autoplay = true;
     remoteAudio.srcObject = currentCall.remoteStream;
     overlay.appendChild(remoteAudio);
   }
+  overlay.appendChild(grid);
 
-  const controls = document.createElement('div');
-  controls.className = 'call-controls';
+  const bar = document.createElement('div');
+  bar.className = 'call-bottom-bar';
+
+  const micBtn = document.createElement('button');
+  micBtn.className = 'call-ctrl-btn';
+  const micEnabled = () => currentCall.localStream.getAudioTracks().every(t => t.enabled);
+  const renderMicBtn = () => {
+    micBtn.textContent = micEnabled() ? '🎤' : '🔇';
+    micBtn.classList.toggle('off', !micEnabled());
+    if(localMicIconEl) localMicIconEl.textContent = micEnabled() ? '🎤' : '🔇';
+  };
+  micBtn.onclick = () => {
+    currentCall.localStream.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
+    renderMicBtn();
+  };
+  renderMicBtn();
+  bar.appendChild(micBtn);
+
+  if(currentCall.type === 'video'){
+    const camBtn = document.createElement('button');
+    camBtn.className = 'call-ctrl-btn';
+    const camEnabled = () => currentCall.localStream.getVideoTracks().every(t => t.enabled);
+    const renderCamBtn = () => { camBtn.textContent = camEnabled() ? '📷' : '🚫'; camBtn.classList.toggle('off', !camEnabled()); };
+    camBtn.onclick = () => {
+      currentCall.localStream.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
+      renderCamBtn();
+    };
+    renderCamBtn();
+    bar.appendChild(camBtn);
+
+    const screenBtn = document.createElement('button');
+    screenBtn.className = 'call-ctrl-btn call-ctrl-btn-labeled';
+    const renderScreenBtn = () => {
+      screenBtn.innerHTML = '';
+      screenBtn.appendChild(document.createTextNode('🖥️ '));
+      const lbl = document.createElement('span'); lbl.textContent = 'Демонстрация';
+      screenBtn.appendChild(lbl);
+      screenBtn.classList.toggle('off', !currentCall.screenSharing);
+    };
+    screenBtn.onclick = async () => {
+      if(!currentCall.screenSharing){
+        try{
+          const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+          const screenTrack = screenStream.getVideoTracks()[0];
+          const sender = currentCall.pc.getSenders().find(s => s.track && s.track.kind === 'video');
+          if(sender) await sender.replaceTrack(screenTrack);
+          currentCall.screenTrack = screenTrack;
+          currentCall.screenSharing = true;
+          screenTrack.onended = () => stopScreenShare();
+          renderScreenBtn();
+        }catch(e){
+          console.error('screen share failed', e);
+          showToast('Не удалось начать демонстрацию экрана');
+        }
+      } else {
+        stopScreenShare();
+      }
+    };
+    function stopScreenShare(){
+      const camTrack = currentCall.localStream.getVideoTracks()[0];
+      const sender = currentCall.pc.getSenders().find(s => s.track && s.track.kind === 'video');
+      if(sender && camTrack) sender.replaceTrack(camTrack);
+      if(currentCall.screenTrack){ currentCall.screenTrack.stop(); currentCall.screenTrack = null; }
+      currentCall.screenSharing = false;
+      renderScreenBtn();
+    }
+    renderScreenBtn();
+    bar.appendChild(screenBtn);
+  }
+
   const hangupBtn = document.createElement('button');
   hangupBtn.className = 'call-hangup-btn'; hangupBtn.textContent = '📵';
   hangupBtn.onclick = () => endCall(true);
-  controls.appendChild(hangupBtn);
-  overlay.appendChild(controls);
+  bar.appendChild(hangupBtn);
+  overlay.appendChild(bar);
 
   document.body.appendChild(overlay);
 }
@@ -1750,7 +1899,12 @@ function renderPeople(){
     withScores.forEach(({ p, compat }) => {
       const row = el('div','person-row');
       const left = el('div');
-      left.appendChild(el('div','name', p.name));
+      left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
+      const pAvatar = avatarCircleEl(p.name, 40);
+      if(p.uid) fillAvatarAsync(pAvatar, p.uid);
+      left.appendChild(pAvatar);
+      const nameCol = el('div','');
+      nameCol.appendChild(el('div','name', p.name));
       let metaText = (p.graph.nodes||[]).filter(n=>!n.isHub).length + ' узлов · ' + (p.graph.clusters||[]).length + ' тем';
       const key = p.uid || p.name;
       if(matchedInterestByUid[key]){
@@ -1760,7 +1914,8 @@ function renderPeople(){
       if(compat && compat.sharedClusters.length){
         metaText += ' · общее: ' + compat.sharedClusters.join(', ');
       }
-      left.appendChild(el('div','meta', metaText));
+      nameCol.appendChild(el('div','meta', metaText));
+      left.appendChild(nameCol);
       row.appendChild(left);
 
       const right = el('div','');
@@ -2007,16 +2162,67 @@ function renderFriends(){
     const grid = el('div','people-grid');
     state.friendsList.forEach(f => {
       const row = el('div','person-row');
-      row.appendChild(el('div','name', f.name));
-      const msgBtn = el('button','btn ghost','Написать →');
-      msgBtn.onclick = () => { openChat(f.uid, f.name); };
-      row.appendChild(msgBtn);
+      const left = el('div','');
+      left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
+      const fAvatar = avatarCircleEl(f.name, 36);
+      fillAvatarAsync(fAvatar, f.uid);
+      left.appendChild(fAvatar);
+      left.appendChild(el('div','name', f.name));
+      row.appendChild(left);
+      const msgIcon = el('button','icon-btn','✉️');
+      msgIcon.title = 'Написать';
+      msgIcon.onclick = () => { openChat(f.uid, f.name); };
+      row.appendChild(msgIcon);
       grid.appendChild(row);
     });
     card.appendChild(grid);
   }
   w.appendChild(card);
   root.appendChild(w);
+}
+
+// ---------------- аватары (отдельная коллекция — не разбухает основной документ пользователя) ----------------
+const avatarCache = {};
+
+async function saveAvatar(uid, dataUrl){
+  if(!firebaseReady) throw backendNotConfiguredError();
+  await db.collection('avatars').doc(uid).set({ data: dataUrl });
+  avatarCache[uid] = dataUrl;
+}
+
+async function getAvatar(uid){
+  if(!uid) return null;
+  if(uid in avatarCache) return avatarCache[uid];
+  if(!firebaseReady) return null;
+  try{
+    const doc = await db.collection('avatars').doc(uid).get();
+    const url = (doc.exists && doc.data().data) || null;
+    avatarCache[uid] = url;
+    return url;
+  }catch(e){
+    console.error('getAvatar failed', e);
+    return null;
+  }
+}
+
+function avatarCircleEl(name, size){
+  const div = el('div','avatar-circle', (name||'?')[0].toUpperCase());
+  div.style.width = size+'px'; div.style.height = size+'px';
+  div.style.fontSize = Math.round(size*0.42)+'px';
+  return div;
+}
+
+// Ставит аватар в готовый div (avatarCircleEl), как только он подгрузится — без блокировки отрисовки.
+function fillAvatarAsync(div, uid){
+  if(!uid) return;
+  getAvatar(uid).then(url => {
+    if(url){
+      div.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = url;
+      div.appendChild(img);
+    }
+  });
 }
 
 function compressImageToDataUrl(file, maxW){
@@ -2349,6 +2555,21 @@ async function openForwardPickerMulti(messageIds){
 
 // Большие data:URL иногда плохо воспроизводятся напрямую (особенно в мобильных браузерах) —
 // превращаем в настоящий Blob и играем через object URL, это надёжнее.
+// Пробуем реально проиграть записанное видео на этом же устройстве — если браузер сам не может
+// декодировать то, что записал, лучше сказать об этом сразу, чем отправить нерабочий файл собеседнику.
+function testVideoPlayable(dataUrl){
+  return new Promise((resolve) => {
+    const url = dataUrlToObjectUrl(dataUrl);
+    const vid = document.createElement('video');
+    vid.muted = true; vid.playsInline = true; vid.preload = 'auto';
+    const timeout = setTimeout(() => { cleanup(); resolve({ ok:false, code:'timeout' }); }, 4000);
+    function cleanup(){ clearTimeout(timeout); URL.revokeObjectURL(url); }
+    vid.addEventListener('loadeddata', () => { cleanup(); resolve({ ok:true }); }, { once:true });
+    vid.addEventListener('error', () => { const code = vid.error ? vid.error.code : '?'; cleanup(); resolve({ ok:false, code }); }, { once:true });
+    vid.src = url;
+  });
+}
+
 function dataUrlToObjectUrl(dataUrl){
   try{
     const [header, base64] = dataUrl.split(',');
@@ -2574,6 +2795,11 @@ function buildChatPanel(container){
 
   const headerRow = el('div','');
   headerRow.style.display='flex'; headerRow.style.justifyContent='space-between'; headerRow.style.alignItems='flex-start'; headerRow.style.gap='12px'; headerRow.style.flexWrap='wrap';
+  const titleWrap = el('div','');
+  titleWrap.style.display='flex'; titleWrap.style.alignItems='center'; titleWrap.style.gap='12px';
+  const chatAvatar = avatarCircleEl(state.chatWith.name, 44);
+  if(!state.chatWith.isGroup) fillAvatarAsync(chatAvatar, state.chatWith.uid);
+  titleWrap.appendChild(chatAvatar);
   const titleCol = el('div','');
   titleCol.appendChild(el('h1','', state.chatWith.name));
   if(!state.chatWith.isGroup){
@@ -2581,7 +2807,8 @@ function buildChatPanel(container){
     statusEl.id = 'chat-status-text';
     titleCol.appendChild(statusEl);
   }
-  headerRow.appendChild(titleCol);
+  titleWrap.appendChild(titleCol);
+  headerRow.appendChild(titleWrap);
 
   const wallpaperFileInput = document.createElement('input');
   wallpaperFileInput.type = 'file'; wallpaperFileInput.accept = 'image/*'; wallpaperFileInput.style.display = 'none';
@@ -2607,7 +2834,9 @@ function buildChatPanel(container){
   headerRow.appendChild(wallpaperBtn);
   headerRow.appendChild(wallpaperFileInput);
   if(!state.chatWith.isGroup){
-    const callBtn = el('button','btn ghost','📞 Позвонить');
+    const callBtn = el('button','icon-btn', `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1.1-.2 1.2.4 2.5.6 3.8.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.6.6 3.8.1.4 0 .8-.2 1.1L6.6 10.8z" fill="currentColor"/></svg>`);
+    callBtn.title = 'Позвонить';
+    callBtn.style.color = 'var(--ink)';
     callBtn.onclick = (e) => {
       e.stopPropagation();
       closeContextMenu();
@@ -2639,7 +2868,7 @@ function buildChatPanel(container){
   card.appendChild(replyBannerSlot);
 
   const inputRow = el('div','');
-  inputRow.style.display='flex'; inputRow.style.gap='10px'; inputRow.style.marginTop='14px'; inputRow.style.alignItems='center';
+  inputRow.style.display='flex'; inputRow.style.gap='10px'; inputRow.style.marginTop='14px'; inputRow.style.alignItems='center'; inputRow.style.flexShrink='0';
   const fileInput = document.createElement('input');
   fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.style.display = 'none';
   const attachBtn = el('button','btn ghost','📎');
@@ -2681,6 +2910,7 @@ function buildChatPanel(container){
     btn.title = opts.title || '';
     let active = null;
     let previewEl = null;
+    let previewBackdrop = null;
     let maxTimer = null;
 
     async function begin(){
@@ -2692,6 +2922,9 @@ function buildChatPanel(container){
           btn.textContent = '⏹ ' + formatDuration(sec);
         }, opts.recorderOptions, stream => {
           if(opts.livePreview){
+            previewBackdrop = document.createElement('div');
+            previewBackdrop.className = 'record-live-preview-backdrop';
+            document.body.appendChild(previewBackdrop);
             previewEl = document.createElement('video');
             previewEl.srcObject = stream;
             previewEl.autoplay = true; previewEl.muted = true; previewEl.playsInline = true;
@@ -2715,6 +2948,7 @@ function buildChatPanel(container){
       rec.stop();
       btn.disabled = true; btn.textContent = '…';
       if(previewEl){ previewEl.remove(); previewEl = null; }
+      if(previewBackdrop){ previewBackdrop.remove(); previewBackdrop = null; }
       const transcript = opts.transcribe ? stopTranscription() : '';
       try{
         const result = await rec.finished;
@@ -2726,6 +2960,14 @@ function buildChatPanel(container){
           showToast('Запись не получилась (пустой файл) — попробуй ещё раз');
         } else if(result.dataUrl.length > MAX_UPLOAD_CHARS){
           showToast('Запись слишком длинная для отправки — попробуй короче или тише качеством');
+        } else if(constraints.video){
+          // проверяем на этом же устройстве, что видео реально проигрывается — иначе не отправляем вслепую
+          const playable = await testVideoPlayable(result.dataUrl);
+          if(!playable.ok){
+            showToast('Это устройство не смогло воспроизвести свою же запись (код ' + playable.code + ') — формат видео здесь не поддерживается, отправка отменена');
+          } else {
+            await onFinish(result.dataUrl, transcript);
+          }
         } else {
           await onFinish(result.dataUrl, transcript);
         }
@@ -2734,6 +2976,7 @@ function buildChatPanel(container){
         showToast('Не получилось отправить запись: ' + (e.message || e.name || 'ошибка'));
       }
       if(previewEl){ previewEl.remove(); previewEl = null; }
+      if(previewBackdrop){ previewBackdrop.remove(); previewBackdrop = null; }
       btn.disabled = false;
       btn.classList.remove('recording');
       btn.textContent = icon;
@@ -2753,7 +2996,7 @@ function buildChatPanel(container){
     return btn;
   }
 
-  const videoMime = pickSupportedMimeType(['video/webm;codecs=vp8,opus','video/webm']);
+  const videoMime = pickSupportedMimeType(['video/mp4','video/webm;codecs=vp8,opus','video/webm']);
   const voiceBtn = makeRecordButton('🎙', { audio: true }, 300, doSendVoice, {
     title: 'На телефоне — зажми; на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 5 минут)',
     transcribe: true,
@@ -2862,9 +3105,12 @@ function renderMessagesTab(){
       const row = el('div','person-row' + (t.unread ? ' unread-row' : '') + (isOpen ? ' thread-open' : ''));
       const left = el('div','');
       left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
+      const displayName = t.isGroup ? (t.groupName || 'Группа') : t.otherName;
+      const threadAvatar = avatarCircleEl(displayName, 40);
+      if(!t.isGroup) fillAvatarAsync(threadAvatar, t.otherUid);
+      left.appendChild(threadAvatar);
       if(t.unread) left.appendChild(el('span','unread-dot'));
       const nameCol = el('div','');
-      const displayName = t.isGroup ? (t.groupName || 'Группа') : t.otherName;
       nameCol.appendChild(el('div', t.unread ? 'name unread-name' : 'name', displayName));
       const preview = t.latest ? messagePreviewText(t.latest) : 'Пока нет сообщений';
       nameCol.appendChild(el('div','meta', preview + (t.latest ? ' · ' + timeAgoShort(t.latest.ts) : '')));
@@ -3154,14 +3400,9 @@ function renderAccountScreen(){
   avatarCard.appendChild(el('div','top-tag','Фото'));
   const avatarRow = el('div','');
   avatarRow.style.display='flex'; avatarRow.style.alignItems='center'; avatarRow.style.gap='16px';
-  const avatarPreview = document.createElement('div');
-  avatarPreview.className = 'account-avatar';
-  if(state.profile?.avatar){
-    const img = document.createElement('img'); img.src = state.profile.avatar;
-    avatarPreview.appendChild(img);
-  } else {
-    avatarPreview.textContent = (state.user.name || '?')[0].toUpperCase();
-  }
+  const avatarPreview = avatarCircleEl(state.user.name, 64);
+  avatarPreview.style.fontSize = '24px';
+  fillAvatarAsync(avatarPreview, state.user.uid);
   avatarRow.appendChild(avatarPreview);
   const avatarFileInput = document.createElement('input');
   avatarFileInput.type = 'file'; avatarFileInput.accept = 'image/*';
@@ -3172,17 +3413,15 @@ function renderAccountScreen(){
     if(!file) return;
     avatarBtn.disabled = true; avatarBtn.textContent = 'Загружаем…';
     try{
-      const dataUrl = await compressImageToDataUrl(file, 140);
-      const profile = { ...(state.profile||{}), avatar: dataUrl };
-      await db.collection('users').doc(state.user.uid).update({ profile });
-      state.profile = profile;
+      const dataUrl = await compressImageToDataUrl(file, 160);
+      await saveAvatar(state.user.uid, dataUrl);
       showToast('Фото обновлено ✓');
       render();
     }catch(e){
       console.error('avatar upload failed', e);
       showToast('Не сохранилось: ' + (e.message || e.code || 'ошибка'));
-      avatarBtn.disabled = false; avatarBtn.textContent = 'Загрузить фото';
     }
+    avatarBtn.disabled = false; avatarBtn.textContent = 'Загрузить фото';
   };
   avatarRow.appendChild(avatarBtn);
   avatarRow.appendChild(avatarFileInput);
