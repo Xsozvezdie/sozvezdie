@@ -360,7 +360,48 @@
     object-fit: cover; display:block; cursor:pointer;
     border: 2px solid var(--gold);
   }
-  .video-circle-wrap{ position: relative; width: 180px; height: 180px; }
+  .video-circle-wrap{ position: relative; width: 180px; height: 180px; border-radius: 50%; overflow: hidden; }
+  .video-circle-error{
+    width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+    background: var(--bg-soft); color: var(--ink-dim); font-size: 12px; text-align:center; padding: 10px;
+    border-radius: 50%; box-sizing: border-box;
+  }
+
+  .msg-time{
+    font-size: 10px; opacity: 0.6; text-align: right; margin-top: 4px;
+  }
+  .download-chip{
+    font-size: 11px; opacity: 0.8; cursor: pointer; margin-top: 6px; text-decoration: underline;
+    display: inline-block;
+  }
+
+  .context-menu{
+    position: fixed; z-index: 1000;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 6px; box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+    min-width: 170px;
+  }
+  .context-menu-title{
+    font-size: 11px; color: var(--ink-dim); padding: 8px 10px 4px;
+  }
+  .context-menu-item{
+    padding: 10px 12px; font-size: 14px; border-radius: 8px; cursor: pointer;
+  }
+  .context-menu-item:hover{ background: var(--bg-soft); color: var(--gold); }
+
+  .reply-banner{
+    display:flex; justify-content:space-between; align-items:center;
+    background: var(--bg-soft); border-left: 3px solid var(--gold);
+    border-radius: 8px; padding: 8px 12px; margin-top: 10px; font-size: 13px;
+  }
+  .reply-banner-close{ background:none; border:none; color: var(--ink-dim); cursor:pointer; font-size:14px; }
+  .reply-quote{
+    font-size: 12px; opacity: 0.7; border-left: 2px solid currentColor; padding-left: 8px; margin-bottom: 6px;
+  }
+  .pinned-banner{
+    background: var(--bg-soft); border: 1px solid var(--gold); border-radius: 10px;
+    padding: 8px 14px; font-size: 13px; margin-bottom: 12px;
+  }
   .video-circle-play{
     position: absolute; inset: 0; border-radius: 50%;
     display:flex; align-items:center; justify-content:center;
@@ -637,6 +678,7 @@ async function sendMessage(toUid, toName, text, imageData, voiceData, videoData,
   if(voiceData) payload.voiceData = voiceData;
   if(videoData) payload.videoData = videoData;
   if(transcript) payload.transcript = transcript;
+  if(state.replyingTo){ payload.replyTo = state.replyingTo; state.replyingTo = null; renderReplyBanner(); }
   await db.collection('messages').add(payload);
 }
 
@@ -651,6 +693,7 @@ async function sendGroupMessage(groupId, text, imageData, voiceData, videoData, 
   if(voiceData) payload.voiceData = voiceData;
   if(videoData) payload.videoData = videoData;
   if(transcript) payload.transcript = transcript;
+  if(state.replyingTo){ payload.replyTo = state.replyingTo; state.replyingTo = null; renderReplyBanner(); }
   await db.collection('messages').add(payload);
 }
 
@@ -715,6 +758,36 @@ function listenToMessages(chatId, callback){
       msgs.sort((a,b) => (a.ts||0) - (b.ts||0));
       callback(msgs);
     }, err => console.error('chat listen failed', err));
+}
+
+async function deleteMessageForMe(msgId){
+  await db.collection('messages').doc(msgId).update({
+    deletedFor: firebase.firestore.FieldValue.arrayUnion(state.user.uid)
+  });
+}
+
+async function deleteMessageForEveryone(msgId){
+  await db.collection('messages').doc(msgId).delete();
+}
+
+async function togglePinMessage(chatId, msgId, pin){
+  if(pin){
+    const snap = await db.collection('messages').where('chatId','==',chatId).where('pinned','==',true).get();
+    await Promise.all(snap.docs.map(d => d.ref.update({ pinned: false })));
+  }
+  await db.collection('messages').doc(msgId).update({ pinned: pin });
+}
+
+function messagePreviewText(m){
+  if(m.text) return m.text;
+  if(m.imageData) return '📷 Фото';
+  if(m.voiceData) return '🎙 Голосовое';
+  if(m.videoData) return '⏺ Видео-кружочек';
+  return 'Сообщение';
+}
+
+async function forwardMessage(m, toUid, toName){
+  await sendMessage(toUid, toName, m.text || null, m.imageData || null, m.voiceData || null, m.videoData || null, m.transcript || null);
 }
 
 function listenToChat(otherUid, callback){
@@ -1474,7 +1547,7 @@ function openChat(uid, name){
   if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
   state.screen = 'chat';
   state.chatWith = { uid, name, isGroup: false };
-  state.chatMessages = [];
+  state.chatMessages = []; state.replyingTo = null;
   state.otherLastRead = 0;
   state.chatStatusText = '';
   render();
@@ -1506,7 +1579,7 @@ function openGroupChat(groupId, groupName){
   if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
   state.screen = 'chat';
   state.chatWith = { groupId, name: groupName, isGroup: true };
-  state.chatMessages = [];
+  state.chatMessages = []; state.replyingTo = null;
   state.otherLastRead = 0;
   state.chatStatusText = '';
   render();
@@ -1596,28 +1669,151 @@ function buildVoicePlayer(voiceData, transcript){
   return wrap;
 }
 
+function formatClockTime(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+function closeContextMenu(){
+  const existing = document.getElementById('msg-context-menu');
+  if(existing) existing.remove();
+  document.removeEventListener('click', closeContextMenu);
+}
+
+function showMessageContextMenu(x, y, m, chatId){
+  closeContextMenu();
+  const menu = el('div','context-menu');
+  menu.id = 'msg-context-menu';
+  const mine = m.fromUid === state.user.uid;
+
+  function item(label, onClick){
+    const it = el('div','context-menu-item', label);
+    it.onclick = (e) => { e.stopPropagation(); closeContextMenu(); onClick(); };
+    menu.appendChild(it);
+  }
+
+  item('Ответить', () => {
+    state.replyingTo = { id: m.id, preview: messagePreviewText(m).slice(0,80), fromName: mine ? 'Себе' : (m.fromName || state.chatWith.name) };
+    renderReplyBanner();
+  });
+  item('Копировать', () => {
+    navigator.clipboard?.writeText(messagePreviewText(m)).then(() => showToast('Скопировано'));
+  });
+  item('Переслать', () => { openForwardPicker(m); });
+  item(m.pinned ? 'Открепить' : 'Закрепить', async () => {
+    await togglePinMessage(chatId, m.id, !m.pinned);
+  });
+  item('Удалить у себя', async () => { await deleteMessageForMe(m.id); });
+  if(mine){
+    item('Удалить у всех', async () => { await deleteMessageForEveryone(m.id); });
+  }
+
+  document.body.appendChild(menu);
+  const menuW = 190, menuH = menu.offsetHeight || 220;
+  menu.style.left = Math.min(x, window.innerWidth - menuW - 10) + 'px';
+  menu.style.top = Math.min(y, window.innerHeight - menuH - 10) + 'px';
+  setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+}
+
+function attachLongPressAndRightClick(el2, handler){
+  el2.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    handler(e.clientX, e.clientY);
+  });
+  let pressTimer = null;
+  el2.addEventListener('touchstart', (e) => {
+    const touch = e.touches[0];
+    pressTimer = setTimeout(() => handler(touch.clientX, touch.clientY), 500);
+  }, { passive: true });
+  el2.addEventListener('touchend', () => clearTimeout(pressTimer));
+  el2.addEventListener('touchmove', () => clearTimeout(pressTimer));
+}
+
+function renderReplyBanner(){
+  const box = document.getElementById('reply-banner-slot');
+  if(!box) return;
+  box.innerHTML = '';
+  if(!state.replyingTo) return;
+  const banner = el('div','reply-banner');
+  const text = el('div','', 'Ответ на: ' + state.replyingTo.preview);
+  const closeBtn = el('button','reply-banner-close','✕');
+  closeBtn.onclick = () => { state.replyingTo = null; renderReplyBanner(); };
+  banner.appendChild(text);
+  banner.appendChild(closeBtn);
+  box.appendChild(banner);
+}
+
+async function openForwardPicker(m){
+  let friends = [];
+  try{ friends = await listFriends(); }catch(e){ console.error(e); }
+  if(!friends.length){ showToast('Нет друзей, кому переслать'); return; }
+  const menu = el('div','context-menu');
+  menu.id = 'msg-context-menu';
+  menu.appendChild(el('div','context-menu-title','Переслать кому:'));
+  friends.forEach(f => {
+    const it = el('div','context-menu-item', f.name);
+    it.onclick = async (e) => {
+      e.stopPropagation(); closeContextMenu();
+      try{ await forwardMessage(m, f.uid, f.name); showToast('Переслано → ' + f.name); }
+      catch(err){ console.error(err); showToast('Не получилось переслать'); }
+    };
+    menu.appendChild(it);
+  });
+  document.body.appendChild(menu);
+  menu.style.left = '50%'; menu.style.top = '50%';
+  menu.style.transform = 'translate(-50%,-50%)';
+  setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+}
+
+function downloadDataUrl(dataUrl, filename){
+  const a = document.createElement('a');
+  a.href = dataUrl; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
 function renderChatMessages(){
   const box = document.getElementById('chat-messages');
   if(!box) return;
   box.innerHTML = '';
+
+  const chatId = state.chatWith.isGroup ? ('g_' + state.chatWith.groupId) : pairId(state.user.uid, state.chatWith.uid);
+  const visible = state.chatMessages.filter(m => !(m.deletedFor||[]).includes(state.user.uid));
+
+  const pinned = visible.find(m => m.pinned);
+  if(pinned){
+    const pinBar = el('div','pinned-banner');
+    pinBar.appendChild(el('div','','📌 ' + messagePreviewText(pinned)));
+    box.appendChild(pinBar);
+  }
+
   // индекс последнего МОЕГО сообщения, которое собеседник уже видел (для подписи "просмотрено")
   let lastSeenMineIndex = -1;
   if(!state.chatWith.isGroup){
-    state.chatMessages.forEach((m, i) => {
+    visible.forEach((m, i) => {
       if(m.fromUid === state.user.uid && (m.ts||0) <= (state.otherLastRead||0)) lastSeenMineIndex = i;
     });
   }
-  state.chatMessages.forEach((m, i) => {
+
+  visible.forEach((m, i) => {
     const mine = m.fromUid === state.user.uid;
     const bubble = el('div','chat-bubble' + (mine ? ' mine' : ''));
+    attachLongPressAndRightClick(bubble, (x,y) => showMessageContextMenu(x, y, m, chatId));
+
     if(state.chatWith.isGroup && !mine){
       bubble.appendChild(el('div','chat-sender', m.fromName));
+    }
+    if(m.replyTo){
+      bubble.appendChild(el('div','reply-quote', '↩ ' + m.replyTo.preview));
     }
     if(m.imageData){
       const img = document.createElement('img');
       img.src = m.imageData;
       img.className = 'chat-image';
       bubble.appendChild(img);
+      const dl = el('div','download-chip','⬇ Сохранить');
+      dl.onclick = (e) => { e.stopPropagation(); downloadDataUrl(m.imageData, 'photo-' + m.ts + '.jpg'); };
+      bubble.appendChild(dl);
     }
     if(m.voiceData){
       bubble.appendChild(buildVoicePlayer(m.voiceData, m.transcript));
@@ -1627,17 +1823,24 @@ function renderChatMessages(){
       const vid = document.createElement('video');
       vid.src = m.videoData;
       vid.className = 'chat-video-circle';
-      vid.loop = true; vid.muted = false; vid.playsInline = true;
+      vid.loop = true; vid.muted = false; vid.playsInline = true; vid.preload = 'auto';
       const playOverlay = el('div','video-circle-play','▶');
-      let started = false;
-      vid.onclick = () => {
-        if(vid.paused){ vid.play(); playOverlay.style.display = 'none'; started = true; }
+      vid.onclick = (e) => {
+        e.stopPropagation();
+        if(vid.paused){ vid.play(); playOverlay.style.display = 'none'; }
         else { vid.pause(); playOverlay.style.display = 'flex'; }
       };
-      vid.addEventListener('ended', () => {});
+      vid.addEventListener('error', () => {
+        console.error('video message failed to load', m.id, vid.error);
+        circleWrap.innerHTML = '';
+        circleWrap.appendChild(el('div','video-circle-error','Видео не загрузилось'));
+      });
       circleWrap.appendChild(vid);
       circleWrap.appendChild(playOverlay);
       bubble.appendChild(circleWrap);
+      const dl = el('div','download-chip','⬇ Сохранить');
+      dl.onclick = (e) => { e.stopPropagation(); downloadDataUrl(m.videoData, 'video-' + m.ts + '.webm'); };
+      bubble.appendChild(dl);
     }
     if(m.text){
       const textEl = document.createElement('div');
@@ -1645,9 +1848,17 @@ function renderChatMessages(){
       if(m.imageData) textEl.style.marginTop = '6px';
       bubble.appendChild(textEl);
     }
+    const timeEl = el('div','msg-time', formatClockTime(m.ts));
+    bubble.appendChild(timeEl);
+
     box.appendChild(bubble);
     if(i === lastSeenMineIndex){
-      box.appendChild(el('div','seen-caption','просмотрено ·˖✧'));
+      const seenCap = el('div','seen-caption','просмотрено ·˖✧');
+      seenCap.style.cursor = 'pointer';
+      seenCap.onclick = () => {
+        seenCap.textContent = 'прочитано в ' + formatClockTime(state.otherLastRead);
+      };
+      box.appendChild(seenCap);
     }
   });
   box.scrollTop = box.scrollHeight;
@@ -1678,6 +1889,10 @@ function renderChat(){
   box.id = 'chat-messages';
   box.className = 'chat-box';
   card.appendChild(box);
+
+  const replyBannerSlot = el('div','');
+  replyBannerSlot.id = 'reply-banner-slot';
+  card.appendChild(replyBannerSlot);
 
   const inputRow = el('div','');
   inputRow.style.display='flex'; inputRow.style.gap='10px'; inputRow.style.marginTop='14px'; inputRow.style.alignItems='center';
@@ -1751,33 +1966,46 @@ function renderChat(){
       const transcript = opts.transcribe ? stopTranscription() : '';
       try{
         const result = await rec.finished;
-        if(result.seconds >= 1){
-          if(result.sizeBytes > MAX_UPLOAD_BYTES){
-            showToast('Запись слишком длинная — попробуй короче');
-          } else {
-            await onFinish(result.dataUrl, transcript);
-          }
+        console.log('recording finished:', { seconds: result.seconds, sizeBytes: result.sizeBytes, icon });
+        if(result.seconds < 1){
+          // случайный тап — молча игнорируем
+        } else if(result.sizeBytes < 2000){
+          showToast('Запись не получилась (пустой файл) — попробуй ещё раз');
+        } else if(result.sizeBytes > MAX_UPLOAD_BYTES){
+          showToast('Запись слишком длинная — попробуй короче');
+        } else {
+          await onFinish(result.dataUrl, transcript);
         }
-      }catch(e){ console.error('recording send failed', e); }
+      }catch(e){
+        console.error('recording send failed', e);
+        showToast('Не получилось отправить запись: ' + (e.message || e.name || 'ошибка'));
+      }
       btn.disabled = false;
       btn.classList.remove('recording');
       btn.textContent = icon;
     }
 
-    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); begin(); });
-    btn.addEventListener('pointerup', finish);
-    btn.addEventListener('pointerleave', () => { if(active) finish(); });
-    btn.addEventListener('pointercancel', () => { if(active) finish(); });
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if(e.pointerType === 'mouse'){
+        if(active) finish(); else begin();
+      } else {
+        begin();
+      }
+    });
+    btn.addEventListener('pointerup', (e) => { if(e.pointerType !== 'mouse') finish(); });
+    btn.addEventListener('pointerleave', (e) => { if(active && e.pointerType !== 'mouse') finish(); });
+    btn.addEventListener('pointercancel', (e) => { if(active && e.pointerType !== 'mouse') finish(); });
     return btn;
   }
 
   const videoMime = pickSupportedMimeType(['video/webm;codecs=vp8,opus','video/webm']);
   const voiceBtn = makeRecordButton('🎙', { audio: true }, 60, doSendVoice, {
-    title: 'Зажми, чтобы записать голосовое (до 60 сек)',
+    title: 'На телефоне — зажми; на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 60 сек)',
     transcribe: true,
   });
   const videoCircleBtn = makeRecordButton('⏺', { video: { width: {ideal: 240}, height: {ideal: 240}, facingMode: 'user' }, audio: true }, 60, doSendVideo, {
-    title: 'Зажми, чтобы записать видео-кружочек (до 60 сек)',
+    title: 'На телефоне — зажми; на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 60 сек)',
     livePreview: true,
     recorderOptions: videoMime ? { mimeType: videoMime, videoBitsPerSecond: 90000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 90000, audioBitsPerSecond: 32000 },
   });
