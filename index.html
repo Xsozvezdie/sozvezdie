@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Созвездие</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
 
@@ -846,33 +844,25 @@
 <div id="root"></div>
 
 <script>
-// ---------------- backend (Firebase Firestore) ----------------
-// Вставь сюда свои ключи из консоли Firebase (Project settings -> General -> Your apps -> SDK setup).
-const firebaseConfig = {
-  apiKey: "AIzaSyAni9Eg6fIJoGPD_E5VDLCVuO8yYzCBMIc",
-  authDomain: "sozvezdie-3f7e6.firebaseapp.com",
-  projectId: "sozvezdie-3f7e6",
-  storageBucket: "sozvezdie-3f7e6.firebasestorage.app",
-  messagingSenderId: "845619165839",
-  appId: "1:845619165839:web:051ce4b807386aa8e38efa"
-};
-
-let db = null;
-let auth = null;
-let firebaseReady = false;
-try{
-  if(firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('ВСТАВЬ') === -1){
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.firestore();
-    auth = firebase.auth();
-    firebaseReady = true;
-  }
-}catch(e){
-  console.error('Firebase init failed', e);
+function backendNotConfiguredError(){
+  return new Error('База данных не подключена: проверь supabaseConfig в начале <script>.');
 }
 
-function backendNotConfiguredError(){
-  return new Error('База данных не подключена: вставь конфиг Firebase в начало <script> (переменная firebaseConfig).');
+// ---------------- backend (Supabase) ----------------
+const supabaseConfig = {
+  url: "https://lbjtrwiutmboiyspwrvx.supabase.co",
+  anonKey: "sb_publishable_cBSuHVV-F0zA_32Ak5yJYw_Fsw1dDAS",
+};
+
+let sb = null;
+let supabaseReady = false;
+try{
+  if(supabaseConfig.url && supabaseConfig.anonKey){
+    sb = window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey);
+    supabaseReady = true;
+  }
+}catch(e){
+  console.error('Supabase init failed', e);
 }
 
 // Логины у нас без email, но Firebase Auth умеет только email+пароль,
@@ -890,81 +880,82 @@ function usernameToEmail(name){
 }
 
 async function registerUser(username, password){
-  if(!firebaseReady) throw backendNotConfiguredError();
+  if(!supabaseReady) throw backendNotConfiguredError();
   const email = usernameToEmail(username);
-  let cred;
-  try{
-    cred = await auth.createUserWithEmailAndPassword(email, password);
-  }catch(e){
-    if(e.code === 'auth/email-already-in-use') throw new Error('Это имя уже занято — выбери другое.');
-    if(e.code === 'auth/weak-password') throw new Error('Пароль слишком короткий — минимум 6 символов.');
-    throw new Error(e.message);
+  const { data, error } = await sb.auth.signUp({ email, password });
+  if(error){
+    if(error.status === 422 || /already registered|already exists/i.test(error.message)) throw new Error('Это имя уже занято — выбери другое.');
+    if(/password/i.test(error.message)) throw new Error('Пароль слишком короткий — минимум 6 символов.');
+    throw new Error(error.message);
   }
-  await db.collection('users').doc(cred.user.uid).set({ name: username, login: username, ts: Date.now() });
-  return { uid: cred.user.uid, name: username, login: username };
+  const uid = data.user.id;
+  const { error: profileError } = await sb.from('profiles').insert({ id: uid, login: username, name: username });
+  if(profileError) throw new Error(profileError.message);
+  return { uid, name: username, login: username };
 }
 
 async function loginUser(username, password){
-  if(!firebaseReady) throw backendNotConfiguredError();
+  if(!supabaseReady) throw backendNotConfiguredError();
   const email = usernameToEmail(username);
-  let cred;
-  try{
-    cred = await auth.signInWithEmailAndPassword(email, password);
-  }catch(e){
-    if(e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password'){
-      throw new Error('Неверный логин или пароль.');
-    }
-    throw new Error(e.message);
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if(error){
+    throw new Error('Неверный логин или пароль.');
   }
-  const doc = await db.collection('users').doc(cred.user.uid).get();
-  const data = doc.exists ? doc.data() : {};
-  return { uid: cred.user.uid, name: data.name || username, login: data.login || username, graph: data.graph || null, text: data.text || '', profile: data.profile || null, isAdmin: data.isAdmin === true, theme: data.theme || 'dark' };
+  const uid = data.user.id;
+  const { data: profileRow } = await sb.from('profiles').select('*').eq('id', uid).single();
+  return {
+    uid,
+    name: profileRow?.name || username,
+    login: profileRow?.login || username,
+    graph: profileRow?.graph || null,
+    text: profileRow?.bio_text || '',
+    profile: profileRow?.profile || null,
+    isAdmin: profileRow?.is_admin === true,
+    theme: profileRow?.theme || 'dark',
+  };
 }
 
 function logoutUser(){
-  if(auth) auth.signOut();
+  if(sb) sb.auth.signOut();
 }
 
 async function changeLogin(newLogin, currentPassword){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  const user = auth.currentUser;
-  if(!user) throw new Error('Сессия истекла, войди заново.');
+  if(!supabaseReady) throw backendNotConfiguredError();
   const oldEmail = usernameToEmail(state.user.login);
-  const cred = firebase.auth.EmailAuthProvider.credential(oldEmail, currentPassword);
-  try{
-    await user.reauthenticateWithCredential(cred);
-  }catch(e){
-    throw new Error('Неверный текущий пароль.');
-  }
+  const { error: reauthError } = await sb.auth.signInWithPassword({ email: oldEmail, password: currentPassword });
+  if(reauthError) throw new Error('Неверный текущий пароль.');
   const newEmail = usernameToEmail(newLogin);
-  try{
-    await user.updateEmail(newEmail);
-  }catch(e){
-    if(e.code === 'auth/email-already-in-use') throw new Error('Такой логин уже занят.');
-    throw new Error(e.message);
+  const { error } = await sb.auth.updateUser({ email: newEmail });
+  if(error){
+    if(/already registered|exists/i.test(error.message)) throw new Error('Такой логин уже занят.');
+    throw new Error(error.message);
   }
-  await db.collection('users').doc(user.uid).update({ login: newLogin });
+  const { error: profileError } = await sb.from('profiles').update({ login: newLogin }).eq('id', state.user.uid);
+  if(profileError) throw new Error(profileError.message);
 }
 
 async function changeDisplayName(newName){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  await db.collection('users').doc(state.user.uid).update({ name: newName });
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('profiles').update({ name: newName }).eq('id', state.user.uid);
+  if(error) throw new Error(error.message);
 }
 
 async function saveUserGraph(uid, text, graph){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  await db.collection('users').doc(uid).set({ text, graph, ts: Date.now() }, { merge: true });
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('profiles').update({ bio_text: text, graph }).eq('id', uid);
+  if(error) throw new Error(error.message);
 }
 
 async function fetchAllUsers(){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  const snap = await db.collection('users').orderBy('ts', 'desc').get();
-  return snap.docs.map(d => ({ uid: d.id, ...d.data() })).filter(u => u.graph);
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { data, error } = await sb.from('profiles').select('*').not('graph', 'is', null).order('created_at', { ascending: false });
+  if(error) throw new Error(error.message);
+  return data.map(u => ({ uid: u.id, ...u }));
 }
 
 // ---------------- друзья ----------------
-// ---------------- звонки (WebRTC + Firestore как канал сигнализации) ----------------
-// Без своего сервера сигнализации: договариваемся о соединении через документы в Firestore,
+// ---------------- звонки (WebRTC + Supabase Realtime как канал сигнализации) ----------------
+// Без своего сервера сигнализации: договариваемся о соединении через строки в базе,
 // а сам голос/видео потом идёт напрямую между браузерами (peer-to-peer).
 // Ограничение: используется только публичный STUN, без TURN — в редких случаях
 // (жёсткий NAT/корпоративная сеть) соединение может не установиться напрямую.
@@ -976,19 +967,22 @@ let incomingCallDoc = null;
 
 function listenForIncomingCalls(){
   if(incomingCallUnsub || !state.user) return;
-  incomingCallUnsub = db.collection('calls')
-    .where('toUid','==',state.user.uid)
-    .where('status','==','ringing')
-    .onSnapshot(snap => {
-      const doc = snap.docs.find(d => !d.metadata.hasPendingWrites);
-      if(doc && !currentCall){
-        incomingCallDoc = { id: doc.id, ...doc.data() };
-        renderIncomingCallBanner();
-      } else if(!doc && incomingCallDoc){
-        incomingCallDoc = null;
-        renderIncomingCallBanner();
-      }
-    }, err => console.error('incoming call listen failed', err));
+  async function refetch(){
+    const { data } = await sb.from('calls').select('*').eq('to_uid', state.user.uid).eq('status', 'ringing').limit(1);
+    const row = data && data[0];
+    if(row && !currentCall){
+      incomingCallDoc = { id: row.id, fromUid: row.from_uid, fromName: row.from_name, toUid: row.to_uid, toName: row.to_name, type: row.type, offer: row.offer };
+      renderIncomingCallBanner();
+    } else if(!row && incomingCallDoc){
+      incomingCallDoc = null;
+      renderIncomingCallBanner();
+    }
+  }
+  refetch();
+  const channel = sb.channel('incoming-calls-' + state.user.uid)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'calls', filter: `to_uid=eq.${state.user.uid}` }, refetch)
+    .subscribe();
+  incomingCallUnsub = () => sb.removeChannel(channel);
 }
 
 function stopListeningForIncomingCalls(){
@@ -998,7 +992,7 @@ function stopListeningForIncomingCalls(){
 }
 
 async function startCall(toUid, toName, type){
-  if(!firebaseReady) throw backendNotConfiguredError();
+  if(!supabaseReady) throw backendNotConfiguredError();
   if(currentCall){ showToast('Уже есть активный звонок'); return; }
   const constraints = type === 'video' ? { audio: true, video: true } : { audio: true };
   let localStream;
@@ -1013,35 +1007,40 @@ async function startCall(toUid, toName, type){
   const remoteStream = new MediaStream();
   pc.ontrack = (e) => { e.streams[0].getTracks().forEach(t => remoteStream.addTrack(t)); renderCallScreen(); };
 
-  const callRef = db.collection('calls').doc();
-  currentCall = { callId: callRef.id, pc, localStream, remoteStream, unsubs: [], role: 'caller', type, otherUid: toUid, otherName: toName, startedAt: null, screenSharing: false, screenTrack: null };
-
-  pc.onicecandidate = (e) => { if(e.candidate) callRef.collection('callerCandidates').add(e.candidate.toJSON()); };
-
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  await callRef.set({
-    fromUid: state.user.uid, fromName: state.user.name, toUid, toName,
-    type, status: 'ringing', offer: { sdp: offer.sdp, type: offer.type }, ts: Date.now()
-  });
 
-  const unsub1 = callRef.onSnapshot(async (doc) => {
-    const data = doc.data();
-    if(!data) return;
-    if(data.status === 'declined'){ endCall(false, 'declined'); }
-    if(data.status === 'ended'){ endCall(false); }
-    if(data.answer && pc.currentRemoteDescription === null){
-      await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-      currentCall.startedAt = Date.now();
-    }
-  });
-  const unsub2 = callRef.collection('calleeCandidates').onSnapshot(snap => {
-    snap.docChanges().forEach(change => {
-      if(change.type === 'added') pc.addIceCandidate(new RTCIceCandidate(change.doc.data())).catch(()=>{});
-    });
-  });
-  currentCall.unsubs.push(unsub1, unsub2);
-  currentCall.notifyEnd = () => callRef.update({ status: 'ended' }).catch(()=>{});
+  const { data: callRow, error } = await sb.from('calls').insert({
+    from_uid: state.user.uid, from_name: state.user.name, to_uid: toUid, to_name: toName,
+    type, status: 'ringing', offer: { sdp: offer.sdp, type: offer.type }, ts: Date.now()
+  }).select().single();
+  if(error){ showToast('Не удалось начать звонок'); return; }
+  const callId = callRow.id;
+
+  currentCall = { callId, pc, localStream, remoteStream, unsubs: [], role: 'caller', type, otherUid: toUid, otherName: toName, startedAt: null, screenSharing: false, screenTrack: null };
+
+  pc.onicecandidate = (e) => { if(e.candidate) sb.from('call_candidates').insert({ call_id: callId, side: 'caller', candidate: e.candidate.toJSON() }); };
+
+  const channel1 = sb.channel('call-' + callId)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${callId}` }, async (payload) => {
+      const data = payload.new;
+      if(!data) return;
+      if(data.status === 'declined'){ endCall(false, 'declined'); }
+      if(data.status === 'ended'){ endCall(false); }
+      if(data.answer && pc.currentRemoteDescription === null){
+        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        currentCall.startedAt = Date.now();
+      }
+    })
+    .subscribe();
+  const channel2 = sb.channel('call-candidates-callee-' + callId)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_candidates', filter: `call_id=eq.${callId}` }, (payload) => {
+      const row = payload.new;
+      if(row && row.side === 'callee') pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
+    })
+    .subscribe();
+  currentCall.unsubs.push(() => sb.removeChannel(channel1), () => sb.removeChannel(channel2));
+  currentCall.notifyEnd = () => sb.from('calls').update({ status: 'ended' }).eq('id', callId).then(()=>{}).catch(()=>{});
   renderCallScreen();
 }
 
@@ -1063,33 +1062,35 @@ async function acceptIncomingCall(){
   const remoteStream = new MediaStream();
   pc.ontrack = (e) => { e.streams[0].getTracks().forEach(t => remoteStream.addTrack(t)); renderCallScreen(); };
 
-  const callRef = db.collection('calls').doc(call.id);
   currentCall = { callId: call.id, pc, localStream, remoteStream, unsubs: [], role: 'callee', type: call.type, otherUid: call.fromUid, otherName: call.fromName, startedAt: Date.now(), screenSharing: false, screenTrack: null };
 
-  pc.onicecandidate = (e) => { if(e.candidate) callRef.collection('calleeCandidates').add(e.candidate.toJSON()); };
+  pc.onicecandidate = (e) => { if(e.candidate) sb.from('call_candidates').insert({ call_id: call.id, side: 'callee', candidate: e.candidate.toJSON() }); };
 
   await pc.setRemoteDescription(new RTCSessionDescription(call.offer));
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
-  await callRef.update({ status: 'active', answer: { sdp: answer.sdp, type: answer.type } });
+  await sb.from('calls').update({ status: 'active', answer: { sdp: answer.sdp, type: answer.type } }).eq('id', call.id);
 
-  const unsub1 = callRef.onSnapshot(doc => {
-    const data = doc.data();
-    if(data && data.status === 'ended') endCall(false);
-  });
-  const unsub2 = callRef.collection('callerCandidates').onSnapshot(snap => {
-    snap.docChanges().forEach(change => {
-      if(change.type === 'added') pc.addIceCandidate(new RTCIceCandidate(change.doc.data())).catch(()=>{});
-    });
-  });
-  currentCall.unsubs.push(unsub1, unsub2);
-  currentCall.notifyEnd = () => callRef.update({ status: 'ended' }).catch(()=>{});
+  const channel1 = sb.channel('call-' + call.id)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${call.id}` }, (payload) => {
+      const data = payload.new;
+      if(data && data.status === 'ended') endCall(false);
+    })
+    .subscribe();
+  const channel2 = sb.channel('call-candidates-caller-' + call.id)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_candidates', filter: `call_id=eq.${call.id}` }, (payload) => {
+      const row = payload.new;
+      if(row && row.side === 'caller') pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
+    })
+    .subscribe();
+  currentCall.unsubs.push(() => sb.removeChannel(channel1), () => sb.removeChannel(channel2));
+  currentCall.notifyEnd = () => sb.from('calls').update({ status: 'ended' }).eq('id', call.id).then(()=>{}).catch(()=>{});
   renderCallScreen();
 }
 
 async function declineIncomingCall(){
   if(!incomingCallDoc) return;
-  try{ await db.collection('calls').doc(incomingCallDoc.id).update({ status: 'declined' }); }catch(e){}
+  try{ await sb.from('calls').update({ status: 'declined' }).eq('id', incomingCallDoc.id); }catch(e){}
   incomingCallDoc = null;
   renderIncomingCallBanner();
 }
@@ -1115,15 +1116,16 @@ function endCall(notifyRemote, reason){
 }
 
 async function logCallMessage(otherUid, otherName, type, outcome, duration){
-  if(!firebaseReady) return;
-  await db.collection('messages').add({
-    chatId: pairId(state.user.uid, otherUid),
-    fromUid: state.user.uid, fromName: state.user.name, toUid: otherUid, toName: otherName,
-    ts: Date.now(), callSummary: { type, outcome, duration }
+  if(!supabaseReady) return;
+  await sb.from('messages').insert({
+    chat_id: pairId(state.user.uid, otherUid),
+    from_uid: state.user.uid, from_name: state.user.name, to_uid: otherUid, to_name: otherName,
+    ts: Date.now(), call_summary: { type, outcome, duration }
   });
 }
 
 function renderIncomingCallBanner(){
+
   let el2 = document.getElementById('incoming-call-banner');
   if(el2) el2.remove();
   if(!incomingCallDoc) return;
@@ -1311,132 +1313,177 @@ function pairId(uidA, uidB){
   return [uidA, uidB].sort().join('_');
 }
 
+function mapFriendRequestRow(r){
+  return { id: r.id, fromUid: r.from_uid, fromName: r.from_name, toUid: r.to_uid, toName: r.to_name, status: r.status, ts: r.ts };
+}
+
 async function getFriendRequestBetween(uidA, uidB){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  const q1 = await db.collection('friendRequests').where('fromUid','==',uidA).where('toUid','==',uidB).limit(1).get();
-  if(!q1.empty) return { id: q1.docs[0].id, ...q1.docs[0].data() };
-  const q2 = await db.collection('friendRequests').where('fromUid','==',uidB).where('toUid','==',uidA).limit(1).get();
-  if(!q2.empty) return { id: q2.docs[0].id, ...q2.docs[0].data() };
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { data: d1 } = await sb.from('friend_requests').select('*').eq('from_uid', uidA).eq('to_uid', uidB).limit(1);
+  if(d1 && d1.length) return mapFriendRequestRow(d1[0]);
+  const { data: d2 } = await sb.from('friend_requests').select('*').eq('from_uid', uidB).eq('to_uid', uidA).limit(1);
+  if(d2 && d2.length) return mapFriendRequestRow(d2[0]);
   return null;
 }
 
 async function sendFriendRequest(toUid, toName){
-  if(!firebaseReady) throw backendNotConfiguredError();
+  if(!supabaseReady) throw backendNotConfiguredError();
   const me = state.user;
   const existing = await getFriendRequestBetween(me.uid, toUid);
   if(existing){
     if(existing.status === 'pending' && existing.fromUid === toUid){
-      await db.collection('friendRequests').doc(existing.id).update({ status: 'accepted' });
+      await sb.from('friend_requests').update({ status: 'accepted' }).eq('id', existing.id);
       return { ...existing, status: 'accepted' };
     }
     return existing;
   }
-  const doc = await db.collection('friendRequests').add({
-    fromUid: me.uid, fromName: me.name, toUid, toName, status: 'pending', ts: Date.now()
-  });
-  return { id: doc.id, fromUid: me.uid, fromName: me.name, toUid, toName, status: 'pending' };
+  const { data, error } = await sb.from('friend_requests').insert({
+    from_uid: me.uid, from_name: me.name, to_uid: toUid, to_name: toName, status: 'pending', ts: Date.now()
+  }).select().single();
+  if(error) throw new Error(error.message);
+  return mapFriendRequestRow(data);
 }
 
 async function respondFriendRequest(requestId, accept){
-  if(!firebaseReady) throw backendNotConfiguredError();
+  if(!supabaseReady) throw backendNotConfiguredError();
   if(accept){
-    await db.collection('friendRequests').doc(requestId).update({ status: 'accepted' });
+    await sb.from('friend_requests').update({ status: 'accepted' }).eq('id', requestId);
   } else {
-    await db.collection('friendRequests').doc(requestId).delete();
+    await sb.from('friend_requests').delete().eq('id', requestId);
   }
 }
 
 async function listIncomingRequests(){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  const snap = await db.collection('friendRequests').where('toUid','==',state.user.uid).where('status','==','pending').get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { data, error } = await sb.from('friend_requests').select('*').eq('to_uid', state.user.uid).eq('status', 'pending');
+  if(error) throw new Error(error.message);
+  return data.map(mapFriendRequestRow);
 }
 
 async function listFriends(){
-  if(!firebaseReady) throw backendNotConfiguredError();
+  if(!supabaseReady) throw backendNotConfiguredError();
   const uid = state.user.uid;
   const [q1, q2] = await Promise.all([
-    db.collection('friendRequests').where('fromUid','==',uid).where('status','==','accepted').get(),
-    db.collection('friendRequests').where('toUid','==',uid).where('status','==','accepted').get(),
+    sb.from('friend_requests').select('*').eq('from_uid', uid).eq('status', 'accepted'),
+    sb.from('friend_requests').select('*').eq('to_uid', uid).eq('status', 'accepted'),
   ]);
   const friends = [];
-  q1.docs.forEach(d => { const v = d.data(); friends.push({ uid: v.toUid, name: v.toName }); });
-  q2.docs.forEach(d => { const v = d.data(); friends.push({ uid: v.fromUid, name: v.fromName }); });
+  (q1.data||[]).forEach(v => { friends.push({ uid: v.to_uid, name: v.to_name }); });
+  (q2.data||[]).forEach(v => { friends.push({ uid: v.from_uid, name: v.from_name }); });
   return friends;
 }
 
 // ---------------- сообщения (личные + групповые) ----------------
-async function sendMessage(toUid, toName, text, imageData, voiceData, videoData, transcript, waveform, fileData, fileName){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  const me = state.user;
-  const payload = {
-    chatId: pairId(me.uid, toUid), fromUid: me.uid, fromName: me.name, toUid, toName, ts: Date.now()
+
+// Загружаем файл (фото/видео/голос/документ) в настоящее файловое хранилище Supabase
+// и возвращаем публичную ссылку — раньше всё это лежало прямо в базе как base64,
+// именно это и было вероятной причиной, что видео-кружочки не проигрывались на части устройств.
+async function uploadMediaToStorage(dataUrl, kind){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const [header, base64] = dataUrl.split(',');
+  const mimeMatch = header.match(/data:(.*?);base64/);
+  const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mime });
+  const ext = (mime.split('/')[1] || 'bin').split(';')[0].split('+')[0];
+  const path = `${state.user.uid}/${kind}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await sb.storage.from('media').upload(path, blob, { contentType: mime });
+  if(error) throw new Error(error.message);
+  const { data } = sb.storage.from('media').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// Приводим строки из базы (snake_case, ссылки вместо base64) к тем же именам полей
+// (camelCase), которые уже использует весь остальной код отрисовки — чтобы не переписывать
+// разметку сообщений заново.
+function mapMessageRow(r){
+  return {
+    id: r.id, chatId: r.chat_id, fromUid: r.from_uid, fromName: r.from_name,
+    toUid: r.to_uid, toName: r.to_name, groupId: r.group_id,
+    text: r.text, imageData: r.image_url, voiceData: r.voice_url, videoData: r.video_url,
+    fileData: r.file_url, fileName: r.file_name, transcript: r.transcript, waveform: r.waveform,
+    replyTo: r.reply_to, pinned: r.pinned, deletedFor: r.deleted_for || [], callSummary: r.call_summary, ts: r.ts,
   };
-  if(text) payload.text = text;
-  if(imageData) payload.imageData = imageData;
-  if(voiceData) payload.voiceData = voiceData;
-  if(videoData) payload.videoData = videoData;
-  if(transcript) payload.transcript = transcript;
-  if(waveform) payload.waveform = waveform;
-  if(fileData){ payload.fileData = fileData; payload.fileName = fileName || 'файл'; }
-  if(state.replyingTo){ payload.replyTo = state.replyingTo; state.replyingTo = null; renderReplyBanner(); }
-  await db.collection('messages').add(payload);
+}
+
+async function sendMessage(toUid, toName, text, imageData, voiceData, videoData, transcript, waveform, fileData, fileName){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const me = state.user;
+  const row = {
+    chat_id: pairId(me.uid, toUid), from_uid: me.uid, from_name: me.name, to_uid: toUid, to_name: toName, ts: Date.now()
+  };
+  if(text) row.text = text;
+  if(imageData) row.image_url = await uploadMediaToStorage(imageData, 'images');
+  if(voiceData) row.voice_url = await uploadMediaToStorage(voiceData, 'voice');
+  if(videoData) row.video_url = await uploadMediaToStorage(videoData, 'video');
+  if(fileData){ row.file_url = await uploadMediaToStorage(fileData, 'files'); row.file_name = fileName || 'файл'; }
+  if(transcript) row.transcript = transcript;
+  if(waveform) row.waveform = waveform;
+  if(state.replyingTo){ row.reply_to = state.replyingTo; state.replyingTo = null; renderReplyBanner(); }
+  const { error } = await sb.from('messages').insert(row);
+  if(error) throw new Error(error.message);
 }
 
 async function sendGroupMessage(groupId, text, imageData, voiceData, videoData, transcript, waveform, fileData, fileName){
-  if(!firebaseReady) throw backendNotConfiguredError();
+  if(!supabaseReady) throw backendNotConfiguredError();
   const me = state.user;
-  const payload = {
-    chatId: 'g_' + groupId, groupId, fromUid: me.uid, fromName: me.name, ts: Date.now()
+  const row = {
+    chat_id: 'g_' + groupId, group_id: groupId, from_uid: me.uid, from_name: me.name, ts: Date.now()
   };
-  if(text) payload.text = text;
-  if(imageData) payload.imageData = imageData;
-  if(voiceData) payload.voiceData = voiceData;
-  if(videoData) payload.videoData = videoData;
-  if(transcript) payload.transcript = transcript;
-  if(waveform) payload.waveform = waveform;
-  if(fileData){ payload.fileData = fileData; payload.fileName = fileName || 'файл'; }
-  if(state.replyingTo){ payload.replyTo = state.replyingTo; state.replyingTo = null; renderReplyBanner(); }
-  await db.collection('messages').add(payload);
+  if(text) row.text = text;
+  if(imageData) row.image_url = await uploadMediaToStorage(imageData, 'images');
+  if(voiceData) row.voice_url = await uploadMediaToStorage(voiceData, 'voice');
+  if(videoData) row.video_url = await uploadMediaToStorage(videoData, 'video');
+  if(fileData){ row.file_url = await uploadMediaToStorage(fileData, 'files'); row.file_name = fileName || 'файл'; }
+  if(transcript) row.transcript = transcript;
+  if(waveform) row.waveform = waveform;
+  if(state.replyingTo){ row.reply_to = state.replyingTo; state.replyingTo = null; renderReplyBanner(); }
+  const { error } = await sb.from('messages').insert(row);
+  if(error) throw new Error(error.message);
 }
 
 async function createGroup(name, memberUidsAndNames){
-  if(!firebaseReady) throw backendNotConfiguredError();
+  if(!supabaseReady) throw backendNotConfiguredError();
   const me = state.user;
   const memberNames = { [me.uid]: me.name };
   const members = [me.uid];
   memberUidsAndNames.forEach(m => { members.push(m.uid); memberNames[m.uid] = m.name; });
-  const doc = await db.collection('groups').add({ name, members, memberNames, createdBy: me.uid, ts: Date.now() });
-  return doc.id;
+  const { data, error } = await sb.from('groups').insert({ name, members, member_names: memberNames, created_by: me.uid, ts: Date.now() }).select().single();
+  if(error) throw new Error(error.message);
+  return data.id;
 }
 
 async function markChatRead(chatId){
-  if(!state.user) return;
+  if(!state.user || !supabaseReady) return;
   try{
-    await db.collection('users').doc(state.user.uid).update({ ['lastRead.' + chatId]: Date.now() });
+    await sb.from('chat_reads').upsert({ user_id: state.user.uid, chat_id: chatId, last_read: Date.now() });
   }catch(e){ console.error('mark read failed', e); }
 }
 
 async function getUnreadChatsCount(){
-  if(!state.user) return 0;
-  const meDoc = await db.collection('users').doc(state.user.uid).get();
-  const lastRead = (meDoc.exists && meDoc.data().lastRead) || {};
-  const snap = await db.collection('messages').where('toUid','==',state.user.uid).get();
-  const groupSnap = await db.collection('groups').where('members','array-contains',state.user.uid).get();
-  const groupIds = new Set(groupSnap.docs.map(d => 'g_' + d.id));
+  if(!state.user || !supabaseReady) return 0;
+  const me = state.user.uid;
+  const [{ data: reads }, { data: sent }, { data: received }, { data: groupsData }] = await Promise.all([
+    sb.from('chat_reads').select('*').eq('user_id', me),
+    sb.from('messages').select('chat_id, ts, from_uid').eq('from_uid', me),
+    sb.from('messages').select('chat_id, ts, from_uid').eq('to_uid', me),
+    sb.from('groups').select('id').contains('members', [me]),
+  ]);
+  const lastRead = {};
+  (reads||[]).forEach(r => { lastRead[r.chat_id] = r.last_read; });
+  const groupIds = new Set((groupsData||[]).map(g => 'g_' + g.id));
   const latestByChat = {};
-  snap.docs.forEach(d => {
-    const m = d.data();
-    if(!latestByChat[m.chatId] || m.ts > latestByChat[m.chatId]) latestByChat[m.chatId] = m.ts;
+  [...(sent||[]), ...(received||[])].forEach(m => {
+    if(!latestByChat[m.chat_id] || m.ts > latestByChat[m.chat_id]) latestByChat[m.chat_id] = m.ts;
   });
-  // групповые сообщения не от меня тоже считаем непрочитанными
   if(groupIds.size){
-    const groupMsgsSnap = await Promise.all([...groupIds].map(gid => db.collection('messages').where('chatId','==',gid).get()));
-    groupMsgsSnap.forEach(gs => gs.docs.forEach(d => {
-      const m = d.data();
-      if(m.fromUid === state.user.uid) return;
-      if(!latestByChat[m.chatId] || m.ts > latestByChat[m.chatId]) latestByChat[m.chatId] = m.ts;
-    }));
+    const { data: groupMsgs } = await sb.from('messages').select('chat_id, ts, from_uid').in('chat_id', [...groupIds]);
+    (groupMsgs||[]).forEach(m => {
+      if(m.from_uid === me) return;
+      if(!latestByChat[m.chat_id] || m.ts > latestByChat[m.chat_id]) latestByChat[m.chat_id] = m.ts;
+    });
   }
   let count = 0;
   Object.keys(latestByChat).forEach(chatId => {
@@ -1454,31 +1501,37 @@ async function refreshNotificationCounts(){
   }catch(e){ console.error('notif refresh failed', e); }
 }
 
+// Живые обновления через Supabase Realtime (аналог onSnapshot из Firestore).
+// Подход попроще: при любом изменении просто перезапрашиваем весь список сообщений чата.
 function listenToMessages(chatId, callback){
-  return db.collection('messages').where('chatId','==',chatId)
-    .onSnapshot(snap => {
-      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      msgs.sort((a,b) => (a.ts||0) - (b.ts||0));
-      callback(msgs);
-    }, err => console.error('chat listen failed', err));
+  async function refetch(){
+    const { data, error } = await sb.from('messages').select('*').eq('chat_id', chatId).order('ts', { ascending: true });
+    if(error){ console.error('chat listen failed', error); return; }
+    callback((data||[]).map(mapMessageRow));
+  }
+  refetch();
+  const channel = sb.channel('messages-' + chatId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` }, refetch)
+    .subscribe();
+  return () => sb.removeChannel(channel);
 }
 
 async function deleteMessageForMe(msgId){
-  await db.collection('messages').doc(msgId).update({
-    deletedFor: firebase.firestore.FieldValue.arrayUnion(state.user.uid)
-  });
+  const { data } = await sb.from('messages').select('deleted_for').eq('id', msgId).single();
+  const deletedFor = new Set(data?.deleted_for || []);
+  deletedFor.add(state.user.uid);
+  await sb.from('messages').update({ deleted_for: [...deletedFor] }).eq('id', msgId);
 }
 
 async function deleteMessageForEveryone(msgId){
-  await db.collection('messages').doc(msgId).delete();
+  await sb.from('messages').delete().eq('id', msgId);
 }
 
 async function togglePinMessage(chatId, msgId, pin){
   if(pin){
-    const snap = await db.collection('messages').where('chatId','==',chatId).where('pinned','==',true).get();
-    await Promise.all(snap.docs.map(d => d.ref.update({ pinned: false })));
+    await sb.from('messages').update({ pinned: false }).eq('chat_id', chatId).eq('pinned', true);
   }
-  await db.collection('messages').doc(msgId).update({ pinned: pin });
+  await sb.from('messages').update({ pinned: pin }).eq('id', msgId);
 }
 
 function messagePreviewText(m){
@@ -1497,25 +1550,24 @@ function messagePreviewText(m){
 }
 
 async function forwardMessage(m, toUid, toName){
-  await sendMessage(toUid, toName, m.text || null, m.imageData || null, m.voiceData || null, m.videoData || null, m.transcript || null);
+  await sendMessage(toUid, toName, m.text || null, m.imageData || null, m.voiceData || null, m.videoData || null, m.transcript || null, null, m.fileData || null, m.fileName || null);
 }
 
 function listenToChat(otherUid, callback){
   return listenToMessages(pairId(state.user.uid, otherUid), callback);
 }
 
-// Собирает список всех переписок (личных и групповых) с превью последнего сообщения.
 async function listChatThreads(){
   const me = state.user.uid;
-  const [sentSnap, receivedSnap, groupsSnap, meDoc] = await Promise.all([
-    db.collection('messages').where('fromUid','==',me).get(),
-    db.collection('messages').where('toUid','==',me).get(),
-    db.collection('groups').where('members','array-contains',me).get(),
-    db.collection('users').doc(me).get(),
+  const [{ data: sent }, { data: received }, { data: groupsData }, { data: reads }] = await Promise.all([
+    sb.from('messages').select('*').eq('from_uid', me),
+    sb.from('messages').select('*').eq('to_uid', me),
+    sb.from('groups').select('*').contains('members', [me]),
+    sb.from('chat_reads').select('*').eq('user_id', me),
   ]);
   const byChatId = {};
-  function ingest(doc){
-    const m = doc.data();
+  function ingest(row){
+    const m = mapMessageRow(row);
     const existing = byChatId[m.chatId];
     if(!existing || (m.ts||0) > (existing.latest?.ts||0)){
       byChatId[m.chatId] = {
@@ -1528,28 +1580,37 @@ async function listChatThreads(){
       };
     }
   }
-  sentSnap.docs.forEach(ingest);
-  receivedSnap.docs.forEach(ingest);
+  (sent||[]).forEach(ingest);
+  (received||[]).forEach(ingest);
 
-  const groupMsgLists = await Promise.all(groupsSnap.docs.map(d => db.collection('messages').where('chatId','==','g_'+d.id).get()));
-  groupsSnap.docs.forEach((d, i) => {
-    const g = d.data();
-    const chatId = 'g_' + d.id;
-    groupMsgLists[i].docs.forEach(md => {
-      const m = md.data();
+  const groupIds = (groupsData||[]).map(g => g.id);
+  let groupMsgsByGroup = {};
+  if(groupIds.length){
+    const { data: groupMsgs } = await sb.from('messages').select('*').in('group_id', groupIds);
+    (groupMsgs||[]).forEach(row => {
+      const m = mapMessageRow(row);
+      if(!groupMsgsByGroup[m.groupId]) groupMsgsByGroup[m.groupId] = [];
+      groupMsgsByGroup[m.groupId].push(m);
+    });
+  }
+  (groupsData||[]).forEach(g => {
+    const chatId = 'g_' + g.id;
+    const msgs = groupMsgsByGroup[g.id] || [];
+    msgs.forEach(m => {
       const existing = byChatId[chatId];
       if(!existing || (m.ts||0) > (existing.latest?.ts||0)){
-        byChatId[chatId] = { chatId, isGroup:true, groupId: d.id, groupName: g.name, latest: m };
+        byChatId[chatId] = { chatId, isGroup:true, groupId: g.id, groupName: g.name, latest: m };
       }
     });
     if(!byChatId[chatId]){
-      byChatId[chatId] = { chatId, isGroup:true, groupId: d.id, groupName: g.name, latest: null };
+      byChatId[chatId] = { chatId, isGroup:true, groupId: g.id, groupName: g.name, latest: null };
     } else {
       byChatId[chatId].groupName = g.name;
     }
   });
 
-  const lastRead = (meDoc.exists && meDoc.data().lastRead) || {};
+  const lastRead = {};
+  (reads||[]).forEach(r => { lastRead[r.chat_id] = r.last_read; });
   const threads = Object.values(byChatId).map(t => ({
     ...t,
     unread: !!(t.latest && t.latest.fromUid !== me && (t.latest.ts||0) > (lastRead[t.chatId]||0))
@@ -1560,8 +1621,8 @@ async function listChatThreads(){
 
 // ---------------- статус "в сети" ----------------
 async function updateLastActive(){
-  if(!state.user || !firebaseReady) return;
-  try{ await db.collection('users').doc(state.user.uid).update({ lastActive: Date.now() }); }
+  if(!state.user || !supabaseReady) return;
+  try{ await sb.from('profiles').update({ last_active: Date.now() }).eq('id', state.user.uid); }
   catch(e){ /* тихо игнорируем */ }
 }
 
@@ -1577,18 +1638,18 @@ function formatLastSeen(ts){
 
 // Статус виден только если ОБА участника не скрыли его — как в Telegram.
 async function getStatusText(otherUid){
-  if(!state.user || !firebaseReady) return null;
+  if(!state.user || !supabaseReady) return null;
   try{
-    const [meDoc, otherDoc] = await Promise.all([
-      db.collection('users').doc(state.user.uid).get(),
-      db.collection('users').doc(otherUid).get(),
+    const [{ data: me }, { data: other }] = await Promise.all([
+      sb.from('profiles').select('show_status').eq('id', state.user.uid).single(),
+      sb.from('profiles').select('show_status, last_active').eq('id', otherUid).single(),
     ]);
-    const myShow = !meDoc.exists || meDoc.data().showStatus !== false;
+    const myShow = !me || me.show_status !== false;
     if(!myShow) return null;
-    if(!otherDoc.exists) return null;
-    const otherShow = otherDoc.data().showStatus !== false;
+    if(!other) return null;
+    const otherShow = other.show_status !== false;
     if(!otherShow) return null;
-    return formatLastSeen(otherDoc.data().lastActive);
+    return formatLastSeen(other.last_active);
   }catch(e){ return null; }
 }
 
@@ -1621,23 +1682,24 @@ function showToast(msg){
 
 // ---------------- поддержка ----------------
 async function sendSupportMessage(text){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  await db.collection('supportMessages').add({
-    fromUid: state.user.uid, fromName: state.user.name, text, ts: Date.now(), resolved: false
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('support_messages').insert({
+    from_uid: state.user.uid, from_name: state.user.name, text, ts: Date.now(), resolved: false
   });
+  if(error) throw new Error(error.message);
 }
 
 async function listSupportMessages(){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  const snap = await db.collection('supportMessages').get();
-  const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  msgs.sort((a,b) => (b.ts||0) - (a.ts||0));
-  return msgs;
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { data, error } = await sb.from('support_messages').select('*').order('ts', { ascending: false });
+  if(error) throw new Error(error.message);
+  return data.map(r => ({ id: r.id, fromUid: r.from_uid, fromName: r.from_name, text: r.text, ts: r.ts, resolved: r.resolved }));
 }
 
 async function markSupportResolved(id, resolved){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  await db.collection('supportMessages').doc(id).update({ resolved });
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('support_messages').update({ resolved }).eq('id', id);
+  if(error) throw new Error(error.message);
 }
 
 // ---------------- запись голосовых и видео-кружочков ----------------
@@ -2258,18 +2320,19 @@ function renderFriends(){
 const avatarCache = {};
 
 async function saveAvatar(uid, dataUrl){
-  if(!firebaseReady) throw backendNotConfiguredError();
-  await db.collection('avatars').doc(uid).set({ data: dataUrl });
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('avatars').upsert({ user_id: uid, data: dataUrl });
+  if(error) throw new Error(error.message);
   avatarCache[uid] = dataUrl;
 }
 
 async function getAvatar(uid){
   if(!uid) return null;
   if(uid in avatarCache) return avatarCache[uid];
-  if(!firebaseReady) return null;
+  if(!supabaseReady) return null;
   try{
-    const doc = await db.collection('avatars').doc(uid).get();
-    const url = (doc.exists && doc.data().data) || null;
+    const { data } = await sb.from('avatars').select('data').eq('user_id', uid).single();
+    const url = data?.data || null;
     avatarCache[uid] = url;
     return url;
   }catch(e){
@@ -2359,11 +2422,21 @@ function openChat(uid, name){
     }
   });
   // видит ли собеседник мои сообщения — обновляем "просмотрено" в реальном времени
-  otherLastReadUnsub = db.collection('users').doc(uid).onSnapshot(doc => {
-    const lr = (doc.exists && doc.data().lastRead) || {};
-    state.otherLastRead = lr[chatId] || 0;
-    if(state.screen === 'messages') renderChatMessages();
-  });
+  otherLastReadUnsub = (() => {
+    async function refetchOtherRead(){
+      const { data } = await sb.from('chat_reads').select('last_read').eq('user_id', uid).eq('chat_id', chatId).single();
+      state.otherLastRead = data?.last_read || 0;
+      if(state.screen === 'messages') renderChatMessages();
+    }
+    refetchOtherRead();
+    const channel = sb.channel('chatread-' + uid + '-' + chatId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_reads', filter: `user_id=eq.${uid}` }, (payload) => {
+        const row = payload.new || payload.old;
+        if(row && row.chat_id === chatId) refetchOtherRead();
+      })
+      .subscribe();
+    return () => sb.removeChannel(channel);
+  })();
   getStatusText(uid).then(txt => {
     state.chatStatusText = txt;
     if(state.screen === 'messages') renderChatHeaderStatus();
@@ -2903,7 +2976,8 @@ function openContactInfoPanel(){
     try{
       const dataUrl = await compressImageToDataUrl(file, 700);
       const profile = { ...(state.profile||{}), chatWallpaper: dataUrl };
-      await db.collection('users').doc(state.user.uid).update({ profile });
+      const { error } = await sb.from('profiles').update({ profile }).eq('id', state.user.uid);
+      if(error) throw new Error(error.message);
       state.profile = profile;
       showToast('Фон сохранён ✓');
       applyChatWallpaper();
@@ -3517,7 +3591,8 @@ function renderAccountScreen(){
     applyBgMotion(motionCheckbox.checked);
     const profile = { ...(state.profile||{}), bgMotion: motionCheckbox.checked };
     try{
-      await db.collection('users').doc(state.user.uid).update({ profile });
+      const { error } = await sb.from('profiles').update({ profile }).eq('id', state.user.uid);
+      if(error) throw new Error(error.message);
       state.profile = profile;
     }catch(e){ console.error('bgMotion save failed', e); showToast('Не удалось сохранить'); }
   };
@@ -3688,7 +3763,8 @@ function renderAccountScreen(){
     };
     const newName = nameInput.value.trim() || state.user.name;
     try{
-      await db.collection('users').doc(state.user.uid).update({ profile, showStatus: statusCheckbox.checked });
+      const { error } = await sb.from('profiles').update({ profile, show_status: statusCheckbox.checked }).eq('id', state.user.uid);
+      if(error) throw new Error(error.message);
       if(newName !== state.user.name) await changeDisplayName(newName);
       state.profile = profile;
       state.user.name = newName;
@@ -3747,7 +3823,8 @@ async function saveTheme(themeId){
   applyTheme(themeId);
   if(!state.user) return;
   try{
-    await db.collection('users').doc(state.user.uid).update({ theme: themeId });
+    const { error } = await sb.from('profiles').update({ theme: themeId }).eq('id', state.user.uid);
+    if(error) console.error('theme save failed', error);
   }catch(e){ console.error('theme save failed', e); }
 }
 
@@ -4378,18 +4455,17 @@ function drawGraph(container, graph){
   });
 }
 
-if(firebaseReady){
-  auth.onAuthStateChanged(async (fbUser) => {
-    if(fbUser && !state.user){
+if(supabaseReady){
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if(session?.user && !state.user){
       try{
-        const doc = await db.collection('users').doc(fbUser.uid).get();
-        const data = doc.exists ? doc.data() : {};
-        state.user = { uid: fbUser.uid, name: data.name || 'Без имени', login: data.login || data.name || '', theme: data.theme || 'dark' };
-        state.graph = data.graph || null;
-        state.text = data.text || '';
-        state.profile = data.profile || null;
-        state.isAdmin = data.isAdmin === true;
-        applyTheme(data.theme || 'dark');
+        const { data: profileRow } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
+        state.user = { uid: session.user.id, name: profileRow?.name || 'Без имени', login: profileRow?.login || profileRow?.name || '', theme: profileRow?.theme || 'dark' };
+        state.graph = profileRow?.graph || null;
+        state.text = profileRow?.bio_text || '';
+        state.profile = profileRow?.profile || null;
+        state.isAdmin = profileRow?.is_admin === true;
+        applyTheme(profileRow?.theme || 'dark');
         applyBgMotion(state.profile?.bgMotion === true);
         if(state.screen === 'landing'){ openMessagesTab(); }
         refreshNotificationCounts().then(render);
