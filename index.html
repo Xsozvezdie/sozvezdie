@@ -876,7 +876,7 @@ function hashUsername(name){
   return h.toString(36) + s.length.toString(36);
 }
 function usernameToEmail(name){
-  return 'u' + hashUsername(name) + '@sozvezdie.local';
+  return 'u' + hashUsername(name) + '@sozvezdie-users.com';
 }
 
 async function registerUser(username, password){
