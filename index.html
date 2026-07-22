@@ -55,6 +55,14 @@
     letter-spacing: -0.01em;
   }
   h1 span{ color: var(--gold); }
+  .chat-header-name{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight: 700;
+    font-size: 19px;
+    line-height: 1.2;
+    margin: 0;
+    letter-spacing: normal;
+  }
   p.lead{
     font-size: 16px;
     line-height: 1.6;
@@ -365,6 +373,24 @@
     border-style: dashed;
   }
   .person-row-incomplete .name{ color: var(--ink-dim); }
+
+  .folder-tabs-row{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom: 14px; }
+  .folder-tab{
+    font-size: 12.5px; padding: 7px 12px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--bg-soft); color: var(--ink-dim);
+    cursor: pointer; font-family:'Inter',sans-serif; white-space: nowrap;
+  }
+  .folder-tab.active{ border-color: var(--gold); color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, transparent); }
+  .folder-tab-add{ font-weight: 700; }
+  .folder-create-row{ display:flex; gap:6px; align-items:center; }
+  .folder-create-input{
+    font-size: 12.5px; padding: 6px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--bg-soft); color: var(--ink);
+    width: 130px; margin-bottom: 0;
+  }
+  .pin-badge{ font-size: 11px; }
+  .thread-menu-btn{ flex-shrink:0; font-size: 18px; line-height:1; padding: 4px 8px; }
+  .notes-row .avatar-circle{ background: linear-gradient(135deg, #f2c14e, #e6a13a); }
   .person-row:hover{ border-color: var(--gold); }
   .person-row .name{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; }
   .person-row .meta{ font-size:12px; color: var(--ink-dim); margin-top:3px; }
@@ -378,9 +404,9 @@
   .meta{ font-size:12px; color: var(--ink-dim); margin-top:4px; }
 
   .chat-box{
-    display:flex; flex-direction:column; gap:8px;
+    display:flex; flex-direction:column; gap:10px;
     max-height: 420px; min-height: 200px; overflow-y:auto;
-    padding: 4px 12px;
+    padding: 8px 22px;
   }
   .chat-bubble{
     background: color-mix(in srgb, var(--bg-soft) 78%, transparent);
@@ -388,9 +414,10 @@
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     border: 1px solid var(--line);
-    border-radius: 12px 12px 12px 4px;
-    padding: 10px 14px;
-    font-size: 14px;
+    border-radius: 14px 14px 14px 4px;
+    padding: 12px 16px;
+    font-size: 15.5px;
+    line-height: 1.4;
     max-width: 100%;
     word-break: break-word;
   }
@@ -640,7 +667,8 @@
     background: #17181c; border-radius: 12px; overflow: hidden;
     display:flex; align-items:center; justify-content:center;
   }
-  .call-tile-video{ width:100%; height:100%; object-fit: cover; }
+  .call-tile-video{ position:absolute; inset:0; width:100%; height:100%; object-fit: cover; }
+  .call-tile-video.cam-off{ display:none; }
   .call-tile-label{
     position: absolute; bottom: 12px; left: 12px;
     background: rgba(0,0,0,0.55); color:#fff;
@@ -727,6 +755,19 @@
   }
   .contact-info-name{ text-align:center; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; }
   .contact-info-status{ text-align:center; color: var(--ink-dim); font-size:13px; margin-bottom: 24px; }
+
+  .contact-info-tabs{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom: 14px; }
+  .contact-info-tab{
+    font-size: 12.5px; padding: 7px 12px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--bg-soft); color: var(--ink-dim);
+    cursor: pointer; font-family:'Inter',sans-serif;
+  }
+  .contact-info-tab.active{ border-color: var(--gold); color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, transparent); }
+  .contact-info-tab-content{ max-height: 320px; overflow-y:auto; }
+  .contact-media-grid{ display:grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .contact-media-thumb{ width:100%; aspect-ratio: 1; object-fit:cover; border-radius: 8px; cursor:pointer; background: var(--bg-soft); }
+  .contact-file-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+  .contact-link-row{ display:block; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; color: var(--gold); word-break: break-all; }
   .record-live-preview{
     position: fixed;
     top: 50%;
@@ -794,6 +835,39 @@
   .image-preview-img{
     max-width: 100%; max-height: 100%; border-radius: 8px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  }
+
+  .send-preview-overlay{
+    position: fixed; inset: 0; z-index: 985;
+    background: rgba(4,4,8,0.85);
+    display:flex; align-items:center; justify-content:center;
+    padding: 24px;
+  }
+  .send-preview-box{
+    position: relative; max-width: 480px; width: 100%;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 16px; display:flex; flex-direction:column; gap: 14px;
+  }
+  .send-preview-close{
+    position: absolute; top: -14px; right: -14px;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+    cursor: pointer; font-size: 14px;
+  }
+  .send-preview-img{
+    max-width: 100%; max-height: 60vh; border-radius: 10px;
+    object-fit: contain; display:block; margin: 0 auto;
+    background: #000;
+  }
+  .send-preview-caption-row{ display:flex; gap: 10px; align-items:center; }
+  .send-preview-caption-row .send-preview-caption-input{
+    flex: 1; background: var(--bg-soft); border: 1px solid var(--line); color: var(--ink);
+    padding: 12px 16px; border-radius: 999px; font-size: 15px; font-family:'Inter',sans-serif;
+    margin-bottom: 0;
+  }
+  .send-preview-send{
+    width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+    display:flex; align-items:center; justify-content:center; font-size: 18px; padding: 0;
   }
 
 
@@ -1143,13 +1217,31 @@ function stopListeningForIncomingCalls(){
   renderIncomingCallBanner();
 }
 
+// Запрашиваем камеру+микрофон всегда (для единого интерфейса звонка),
+// но если камера недоступна/запрещена (например, в некоторых браузерах) —
+// откатываемся на аудио-only, чтобы звонок всё равно состоялся.
+async function getCallStream(type){
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    if(type !== 'video'){
+      stream.getVideoTracks().forEach(t => { t.enabled = false; });
+    }
+    return { stream, hasCamera: true };
+  }catch(e){
+    console.warn('camera unavailable, falling back to audio-only', e);
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    return { stream, hasCamera: false };
+  }
+}
+
 async function startCall(toUid, toName, type){
   if(!supabaseReady) throw backendNotConfiguredError();
   if(currentCall){ showToast('Уже есть активный звонок'); return; }
   const constraints = type === 'video' ? { audio: true, video: true } : { audio: true };
-  let localStream;
+  let localStream, hasCamera;
   try{
-    localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    const res = await getCallStream(type);
+    localStream = res.stream; hasCamera = res.hasCamera;
   }catch(e){
     showToast('Нет доступа к микрофону/камере: ' + (e.name || e.message));
     return;
@@ -1182,7 +1274,7 @@ async function startCall(toUid, toName, type){
   if(error){ showToast('Не удалось начать звонок'); return; }
   const callId = callRow.id;
 
-  currentCall = { callId, pc, localStream, remoteStream, unsubs: [], speakingCleanup: [], role: 'caller', type, otherUid: toUid, otherName: toName, startedAt: null, screenSharing: false, screenTrack: null };
+  currentCall = { callId, pc, localStream, remoteStream, unsubs: [], speakingCleanup: [], role: 'caller', type, hasCamera, otherUid: toUid, otherName: toName, startedAt: null, screenSharing: false, screenTrack: null };
   currentCall.speakingCleanup.push(attachSpeakingDetector(localStream, 'call-tile-local', true));
 
   pc.onicecandidate = (e) => { if(e.candidate) sb.from('call_candidates').insert({ call_id: callId, side: 'caller', candidate: e.candidate.toJSON() }); };
@@ -1217,9 +1309,10 @@ async function acceptIncomingCall(){
   incomingCallDoc = null;
   renderIncomingCallBanner();
   const constraints = call.type === 'video' ? { audio: true, video: true } : { audio: true };
-  let localStream;
+  let localStream, hasCamera;
   try{
-    localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    const res = await getCallStream(call.type);
+    localStream = res.stream; hasCamera = res.hasCamera;
   }catch(e){
     showToast('Нет доступа к микрофону/камере: ' + (e.name || e.message));
     return;
@@ -1237,7 +1330,7 @@ async function acceptIncomingCall(){
     }
   };
 
-  currentCall = { callId: call.id, pc, localStream, remoteStream, unsubs: [], speakingCleanup: [], role: 'callee', type: call.type, otherUid: call.fromUid, otherName: call.fromName, startedAt: Date.now(), screenSharing: false, screenTrack: null };
+  currentCall = { callId: call.id, pc, localStream, remoteStream, unsubs: [], speakingCleanup: [], role: 'callee', type: call.type, hasCamera, otherUid: call.fromUid, otherName: call.fromName, startedAt: Date.now(), screenSharing: false, screenTrack: null };
   currentCall.speakingCleanup.push(attachSpeakingDetector(localStream, 'call-tile-local', true));
   pc.oniceconnectionstatechange = () => {
     console.log('ICE state (callee):', pc.iceConnectionState);
@@ -1399,44 +1492,67 @@ function renderCallScreen(){
   }
 
   let localMicIconEl, remoteMicIconEl;
-
   const remoteMediaEls = [];
 
-  if(currentCall.type === 'video'){
-    const remoteTileParts = makeTile(currentCall.otherName, true);
-    remoteTileParts.tile.id = 'call-tile-remote';
-    const remoteVid = document.createElement('video');
-    remoteVid.autoplay = true; remoteVid.playsInline = true; remoteVid.className = 'call-tile-video';
-    remoteVid.srcObject = currentCall.remoteStream;
-    remoteTileParts.tile.insertBefore(remoteVid, remoteTileParts.tile.firstChild);
-    grid.appendChild(remoteTileParts.tile);
-    remoteMicIconEl = remoteTileParts.micIcon;
-    remoteMediaEls.push(remoteVid);
-
-    const localTileParts = makeTile('Ты', true);
-    localTileParts.tile.id = 'call-tile-local';
-    const localVid = document.createElement('video');
-    localVid.autoplay = true; localVid.playsInline = true; localVid.muted = true; localVid.className = 'call-tile-video';
-    localVid.srcObject = currentCall.localStream;
-    localTileParts.tile.insertBefore(localVid, localTileParts.tile.firstChild);
-    grid.appendChild(localTileParts.tile);
-    localMicIconEl = localTileParts.micIcon;
-  } else {
-    const remoteTileParts = makeTile(currentCall.otherName, true);
-    remoteTileParts.tile.id = 'call-tile-remote';
-    const avatar = document.createElement('div');
-    avatar.className = 'call-avatar';
-    avatar.textContent = (currentCall.otherName || '?')[0].toUpperCase();
-    remoteTileParts.tile.insertBefore(avatar, remoteTileParts.tile.firstChild);
-    grid.appendChild(remoteTileParts.tile);
-    remoteMicIconEl = remoteTileParts.micIcon;
-
-    const remoteAudio = document.createElement('audio');
-    remoteAudio.autoplay = true;
-    remoteAudio.srcObject = currentCall.remoteStream;
-    overlay.appendChild(remoteAudio);
-    remoteMediaEls.push(remoteAudio);
+  // --- удалённая сторона: всегда видео-тайл (аудио тоже идёт через него — это надёжный путь),
+  //     аватар показывается поверх, если камера собеседника выключена/отсутствует ---
+  const remoteTileParts = makeTile(currentCall.otherName, true);
+  remoteTileParts.tile.id = 'call-tile-remote';
+  const remoteVid = document.createElement('video');
+  remoteVid.autoplay = true; remoteVid.playsInline = true; remoteVid.className = 'call-tile-video';
+  remoteVid.srcObject = currentCall.remoteStream;
+  const remoteAvatar = document.createElement('div');
+  remoteAvatar.className = 'call-avatar';
+  remoteAvatar.textContent = (currentCall.otherName || '?')[0].toUpperCase();
+  const updateRemoteAvatarVisibility = () => {
+    const track = currentCall.remoteStream.getVideoTracks()[0];
+    const camOn = !!track && !track.muted && track.enabled;
+    remoteVid.classList.toggle('cam-off', !camOn);
+    remoteAvatar.style.display = camOn ? 'none' : 'flex';
+  };
+  remoteTileParts.tile.insertBefore(remoteAvatar, remoteTileParts.tile.firstChild);
+  remoteTileParts.tile.insertBefore(remoteVid, remoteTileParts.tile.firstChild);
+  updateRemoteAvatarVisibility();
+  if(!currentCall.remoteVideoListenersAttached){
+    currentCall.remoteVideoListenersAttached = true;
+    currentCall.remoteStream.addEventListener('addtrack', (ev) => {
+      if(ev.track && ev.track.kind === 'video'){
+        ev.track.onmute = updateRemoteAvatarVisibility;
+        ev.track.onunmute = updateRemoteAvatarVisibility;
+      }
+      updateRemoteAvatarVisibility();
+    });
+    const existingVideoTrack = currentCall.remoteStream.getVideoTracks()[0];
+    if(existingVideoTrack){
+      existingVideoTrack.onmute = updateRemoteAvatarVisibility;
+      existingVideoTrack.onunmute = updateRemoteAvatarVisibility;
+    }
   }
+  grid.appendChild(remoteTileParts.tile);
+  remoteMicIconEl = remoteTileParts.micIcon;
+  remoteMediaEls.push(remoteVid);
+
+  // --- своя сторона: тоже видео-тайл, аватар поверх, если камера выключена ---
+  const localTileParts = makeTile('Ты', true);
+  localTileParts.tile.id = 'call-tile-local';
+  const localVid = document.createElement('video');
+  localVid.autoplay = true; localVid.playsInline = true; localVid.muted = true; localVid.className = 'call-tile-video';
+  localVid.srcObject = currentCall.localStream;
+  const localAvatar = document.createElement('div');
+  localAvatar.className = 'call-avatar';
+  localAvatar.textContent = 'Я';
+  const updateLocalAvatarVisibility = () => {
+    const track = currentCall.localStream.getVideoTracks()[0];
+    const camOn = !!track && track.enabled;
+    localVid.classList.toggle('cam-off', !camOn);
+    localAvatar.style.display = camOn ? 'none' : 'flex';
+  };
+  localTileParts.tile.insertBefore(localAvatar, localTileParts.tile.firstChild);
+  localTileParts.tile.insertBefore(localVid, localTileParts.tile.firstChild);
+  updateLocalAvatarVisibility();
+  currentCall.updateLocalAvatarVisibility = updateLocalAvatarVisibility;
+  grid.appendChild(localTileParts.tile);
+  localMicIconEl = localTileParts.micIcon;
   overlay.appendChild(grid);
 
   // Некоторые браузеры блокируют автовоспроизведение звука от собеседника
@@ -1477,7 +1593,7 @@ function renderCallScreen(){
   renderMicBtn();
   bar.appendChild(micBtn);
 
-  if(currentCall.type === 'video'){
+  if(currentCall.hasCamera){
     const camBtn = document.createElement('button');
     camBtn.className = 'call-ctrl-btn';
     const camEnabled = () => currentCall.localStream.getVideoTracks().every(t => t.enabled);
@@ -1485,6 +1601,7 @@ function renderCallScreen(){
     camBtn.onclick = () => {
       currentCall.localStream.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
       renderCamBtn();
+      if(currentCall.updateLocalAvatarVisibility) currentCall.updateLocalAvatarVisibility();
     };
     renderCamBtn();
     bar.appendChild(camBtn);
@@ -1907,6 +2024,41 @@ function showToast(msg){
     t.classList.remove('show');
     setTimeout(() => t.remove(), 350);
   }, 2400);
+}
+
+function showImageSendPreview(dataUrl, onSend, onCancel){
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'send-preview-close'; closeBtn.textContent = '✕';
+  closeBtn.onclick = () => { ov.remove(); if(onCancel) onCancel(); };
+  box.appendChild(closeBtn);
+
+  const img = document.createElement('img');
+  img.src = dataUrl; img.className = 'send-preview-img';
+  box.appendChild(img);
+
+  const capRow = document.createElement('div');
+  capRow.className = 'send-preview-caption-row';
+  const capInput = document.createElement('input');
+  capInput.type = 'text'; capInput.placeholder = 'Подпись к фото…';
+  capInput.className = 'send-preview-caption-input';
+  const sendBtn = document.createElement('button');
+  sendBtn.className = 'btn send-preview-send'; sendBtn.innerHTML = CHAT_ICONS.attach.replace('width="20" height="20"','width="18" height="18"') || 'Отправить';
+  sendBtn.textContent = '➤';
+  sendBtn.onclick = () => { ov.remove(); onSend(capInput.value.trim()); };
+  capInput.onkeydown = (e) => { if(e.key === 'Enter'){ e.preventDefault(); sendBtn.click(); } };
+  capRow.appendChild(capInput);
+  capRow.appendChild(sendBtn);
+  box.appendChild(capRow);
+
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov){ ov.remove(); if(onCancel) onCancel(); } };
+  document.body.appendChild(ov);
+  setTimeout(() => capInput.focus(), 0);
 }
 
 function openImagePreview(src){
@@ -3234,17 +3386,46 @@ function openContactInfoPanel(){
 
   const bigAvatar = avatarCircleEl(state.chatWith.name, 120);
   bigAvatar.classList.add('contact-info-avatar-big');
-  if(!state.chatWith.isGroup) fillAvatarAsync(bigAvatar, state.chatWith.uid);
+  if(!state.chatWith.isGroup){
+    fillAvatarAsync(bigAvatar, state.chatWith.uid);
+    bigAvatar.style.cursor = 'pointer';
+    bigAvatar.onclick = async () => {
+      const url = await getAvatar(state.chatWith.uid);
+      if(url) openImagePreview(url);
+    };
+  }
   panel.appendChild(bigAvatar);
   panel.appendChild(el('div','contact-info-name', state.chatWith.name));
   panel.appendChild(el('div','contact-info-status', state.chatWith.isGroup ? 'Группа' : (state.chatStatusText || '')));
 
+  if(!state.chatWith.isGroup && state.chatWith.uid){
+    const schemaSlot = el('div','');
+    panel.appendChild(schemaSlot);
+    sb.from('profiles').select('graph').eq('id', state.chatWith.uid).single().then(({ data }) => {
+      const graph = data?.graph;
+      if(graph && (graph.nodes||[]).length){
+        const schemaBtn = el('button','btn ghost', '🕸️ <span>Открыть схему</span>');
+        schemaBtn.style.display = 'flex'; schemaBtn.style.alignItems = 'center'; schemaBtn.style.gap = '8px'; schemaBtn.style.justifyContent = 'center';
+        schemaBtn.style.width = '100%'; schemaBtn.style.marginBottom = '14px';
+        schemaBtn.onclick = () => {
+          state.selectedPerson = { uid: state.chatWith.uid, name: state.chatWith.name, graph };
+          state.screen = 'personView';
+          document.getElementById('contact-info-overlay')?.remove();
+          render();
+        };
+        schemaSlot.appendChild(schemaBtn);
+      }
+    }).catch(e => console.error('profile graph load failed', e));
+  }
+
   const card = el('div','card');
   const wallpaperFileInput = document.createElement('input');
   wallpaperFileInput.type = 'file'; wallpaperFileInput.accept = 'image/*'; wallpaperFileInput.style.display = 'none';
+  const wallpaperRow = el('div','');
+  wallpaperRow.style.display = 'flex'; wallpaperRow.style.gap = '8px';
   const wallpaperBtn = el('button','btn ghost', CHAT_ICONS.wallpaper + ' <span>Изменить фон чата</span>');
   wallpaperBtn.style.display = 'flex'; wallpaperBtn.style.alignItems = 'center'; wallpaperBtn.style.gap = '8px'; wallpaperBtn.style.justifyContent = 'center';
-  wallpaperBtn.style.width = '100%';
+  wallpaperBtn.style.flex = '1';
   wallpaperBtn.onclick = () => wallpaperFileInput.click();
   wallpaperFileInput.onchange = async () => {
     const file = wallpaperFileInput.files[0];
@@ -3264,9 +3445,109 @@ function openContactInfoPanel(){
     }
     wallpaperBtn.disabled = false; wallpaperBtn.innerHTML = CHAT_ICONS.wallpaper + ' <span>Изменить фон чата</span>';
   };
-  card.appendChild(wallpaperBtn);
-  card.appendChild(wallpaperFileInput);
+  wallpaperRow.appendChild(wallpaperBtn);
+  wallpaperRow.appendChild(wallpaperFileInput);
+
+  if(state.profile?.chatWallpaper){
+    const removeWallpaperBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.stop);
+    removeWallpaperBtn.title = 'Удалить фон чата';
+    removeWallpaperBtn.onclick = async () => {
+      removeWallpaperBtn.disabled = true;
+      try{
+        const profile = { ...(state.profile||{}) };
+        delete profile.chatWallpaper;
+        const { error } = await sb.from('profiles').update({ profile }).eq('id', state.user.uid);
+        if(error) throw new Error(error.message);
+        state.profile = profile;
+        showToast('Фон удалён ✓');
+        applyChatWallpaper();
+        removeWallpaperBtn.remove();
+      }catch(e){
+        console.error('wallpaper remove failed', e);
+        showToast('Не удалось удалить: ' + (e.message || e.code || 'ошибка'));
+        removeWallpaperBtn.disabled = false;
+      }
+    };
+    wallpaperRow.appendChild(removeWallpaperBtn);
+  }
+  card.appendChild(wallpaperRow);
   panel.appendChild(card);
+
+  // --- Вкладки: медиафайлы / файлы / ссылки / голосовые сообщения ---
+  const mediaCard = el('div','card');
+  const tabsRow = el('div','contact-info-tabs');
+  const content = el('div','contact-info-tab-content');
+
+  const urlRe = /(https?:\/\/[^\s]+)/gi;
+  const allMsgs = state.chatMessages || [];
+  const dataByKey = {
+    media: allMsgs.filter(m => m.imageData || m.videoData),
+    files: allMsgs.filter(m => m.fileData),
+    voice: allMsgs.filter(m => m.voiceData),
+    links: (() => {
+      const found = [];
+      allMsgs.forEach(m => { if(m.text){ const urls = m.text.match(urlRe); if(urls) urls.forEach(u => found.push(u)); } });
+      return found;
+    })(),
+  };
+  const tabs = [
+    { key: 'media', label: '🖼️ Медиа' },
+    { key: 'files', label: '📎 Файлы' },
+    { key: 'links', label: '🔗 Ссылки' },
+    { key: 'voice', label: '🎙 Голосовые' },
+  ];
+  function activateTab(key){
+    [...tabsRow.children].forEach(b => b.classList.toggle('active', b.dataset.key === key));
+    content.innerHTML = '';
+    const items = dataByKey[key];
+    if(!items.length){ content.appendChild(el('div','empty','Пока пусто')); return; }
+    if(key === 'media'){
+      const grid = el('div','contact-media-grid');
+      items.slice().reverse().forEach(m => {
+        if(m.imageData){
+          const thumb = document.createElement('img');
+          thumb.src = m.imageData; thumb.className = 'contact-media-thumb';
+          thumb.onclick = () => openImagePreview(m.imageData);
+          grid.appendChild(thumb);
+        } else if(m.videoData){
+          const vid = document.createElement('video');
+          vid.src = m.videoData; vid.className = 'contact-media-thumb'; vid.muted = true; vid.playsInline = true;
+          grid.appendChild(vid);
+        }
+      });
+      content.appendChild(grid);
+    } else if(key === 'files'){
+      items.slice().reverse().forEach(m => {
+        const row = el('div','contact-file-row');
+        row.appendChild(el('span','', '📎 ' + (m.fileName || 'Файл')));
+        const dl = el('button','btn ghost','Скачать');
+        dl.onclick = () => downloadDataUrl(m.fileData, m.fileName || 'file');
+        row.appendChild(dl);
+        content.appendChild(row);
+      });
+    } else if(key === 'links'){
+      items.slice().reverse().forEach(url => {
+        const a = document.createElement('a');
+        a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = url;
+        a.className = 'contact-link-row';
+        content.appendChild(a);
+      });
+    } else if(key === 'voice'){
+      items.slice().reverse().forEach(m => {
+        content.appendChild(buildVoicePlayer(m.voiceData, m.transcript, m.waveform));
+      });
+    }
+  }
+  tabs.forEach(t => {
+    const btn = el('button','contact-info-tab', t.label + ' (' + dataByKey[t.key].length + ')');
+    btn.dataset.key = t.key;
+    btn.onclick = () => activateTab(t.key);
+    tabsRow.appendChild(btn);
+  });
+  mediaCard.appendChild(tabsRow);
+  mediaCard.appendChild(content);
+  activateTab('media');
+  panel.appendChild(mediaCard);
 
   overlay.appendChild(panel);
   document.body.appendChild(overlay);
@@ -3292,7 +3573,7 @@ function buildChatPanel(container){
   if(!state.chatWith.isGroup) fillAvatarAsync(chatAvatar, state.chatWith.uid);
   titleWrap.appendChild(chatAvatar);
   const titleCol = el('div','');
-  titleCol.appendChild(el('h1','', state.chatWith.name));
+  titleCol.appendChild(el('h1','chat-header-name', state.chatWith.name));
   if(!state.chatWith.isGroup){
     const statusEl = el('div','meta', state.chatStatusText || '');
     statusEl.id = 'chat-status-text';
@@ -3301,7 +3582,7 @@ function buildChatPanel(container){
   titleWrap.appendChild(titleCol);
   headerRow.appendChild(titleWrap);
 
-  if(!state.chatWith.isGroup){
+  if(!state.chatWith.isGroup && state.chatWith.uid !== state.user.uid){
     const callBtn = el('button','icon-btn', CHAT_ICONS.call);
     callBtn.title = 'Позвонить';
     callBtn.style.color = 'var(--ink)';
@@ -3346,9 +3627,9 @@ function buildChatPanel(container){
   const attachBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.attach);
   attachBtn.style.flexShrink = '0';
   attachBtn.onclick = () => fileInput.click();
-  const doSendImage = (dataUrl) => state.chatWith.isGroup
-    ? sendGroupMessage(state.chatWith.groupId, null, dataUrl)
-    : sendMessage(state.chatWith.uid, state.chatWith.name, null, dataUrl);
+  const doSendImage = (dataUrl, caption) => state.chatWith.isGroup
+    ? sendGroupMessage(state.chatWith.groupId, caption || null, dataUrl)
+    : sendMessage(state.chatWith.uid, state.chatWith.name, caption || null, dataUrl);
   const doSendFile = (dataUrl, fileName) => state.chatWith.isGroup
     ? sendGroupMessage(state.chatWith.groupId, null, null, null, null, null, null, dataUrl, fileName)
     : sendMessage(state.chatWith.uid, state.chatWith.name, null, null, null, null, null, null, dataUrl, fileName);
@@ -3358,23 +3639,34 @@ function buildChatPanel(container){
   fileInput.onchange = async () => {
     const file = fileInput.files[0];
     if(!file) return;
+    if(file.type.startsWith('image/')){
+      attachBtn.disabled = true; attachBtn.textContent = '…';
+      try{
+        const dataUrl = await compressImageToDataUrl(file);
+        attachBtn.disabled = false; attachBtn.innerHTML = CHAT_ICONS.attach;
+        fileInput.value = '';
+        showImageSendPreview(dataUrl, async (caption) => {
+          try{ await doSendImage(dataUrl, caption); }
+          catch(e){ console.error('image send failed', e); showToast('Не удалось отправить фото'); }
+        });
+      }catch(e){
+        console.error('image prep failed', e);
+        attachBtn.disabled = false; attachBtn.innerHTML = CHAT_ICONS.attach;
+      }
+      return;
+    }
     attachBtn.disabled = true; attachBtn.textContent = '…';
     try{
-      if(file.type.startsWith('image/')){
-        const dataUrl = await compressImageToDataUrl(file);
-        await doSendImage(dataUrl);
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      if(dataUrl.length > 15000000){
+        showToast('Файл слишком большой для отправки (лимит ~10 МБ)');
       } else {
-        const dataUrl = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        if(dataUrl.length > 15000000){
-          showToast('Файл слишком большой для отправки (лимит ~10 МБ)');
-        } else {
-          await doSendFile(dataUrl, file.name);
-        }
+        await doSendFile(dataUrl, file.name);
       }
     }catch(e){ console.error('file send failed', e); }
     attachBtn.disabled = false; attachBtn.innerHTML = CHAT_ICONS.attach;
@@ -3531,7 +3823,7 @@ function applyChatWallpaper(){
   if(!box) return;
   const wp = state.profile?.chatWallpaper;
   if(wp){
-    box.style.backgroundImage = `linear-gradient(rgba(10,14,26,0.72), rgba(10,14,26,0.72)), url(${wp})`;
+    box.style.backgroundImage = `url(${wp})`;
     box.style.backgroundSize = 'cover';
     box.style.backgroundPosition = 'center';
     box.style.backgroundAttachment = 'local';
@@ -3565,6 +3857,47 @@ function timeAgoShort(ts){
   return Math.round(diffH / 24) + ' дн';
 }
 
+async function updateProfileFields(patch){
+  const profile = { ...(state.profile||{}), ...patch };
+  const { error } = await sb.from('profiles').update({ profile }).eq('id', state.user.uid);
+  if(error) throw new Error(error.message);
+  state.profile = profile;
+}
+
+async function toggleChatPin(chatId){
+  const pinned = new Set(state.profile?.pinnedChats || []);
+  if(pinned.has(chatId)) pinned.delete(chatId); else pinned.add(chatId);
+  try{ await updateProfileFields({ pinnedChats: [...pinned] }); renderMessagesTab(); }
+  catch(e){ console.error('pin toggle failed', e); showToast('Не удалось закрепить'); }
+}
+
+async function createChatFolder(name){
+  if(!name || !name.trim()) return;
+  const folders = [...(state.profile?.chatFolders || [])];
+  folders.push({ id: 'f' + Date.now(), name: name.trim(), chatIds: [] });
+  try{ await updateProfileFields({ chatFolders: folders }); renderMessagesTab(); }
+  catch(e){ console.error('folder create failed', e); showToast('Не удалось создать вкладку'); }
+}
+
+async function toggleChatInFolder(folderId, chatId){
+  const folders = (state.profile?.chatFolders || []).map(f => {
+    if(f.id !== folderId) return f;
+    const has = (f.chatIds||[]).includes(chatId);
+    return { ...f, chatIds: has ? f.chatIds.filter(id => id !== chatId) : [...(f.chatIds||[]), chatId] };
+  });
+  try{ await updateProfileFields({ chatFolders: folders }); renderMessagesTab(); }
+  catch(e){ console.error('folder toggle failed', e); showToast('Не удалось обновить вкладку'); }
+}
+
+async function deleteChatFolder(folderId){
+  const folders = (state.profile?.chatFolders || []).filter(f => f.id !== folderId);
+  try{
+    await updateProfileFields({ chatFolders: folders });
+    if(state.activeChatFolder === folderId) state.activeChatFolder = null;
+    renderMessagesTab();
+  }catch(e){ console.error('folder delete failed', e); showToast('Не удалось удалить вкладку'); }
+}
+
 function renderMessagesTab(){
   const w = el('div','wrap shell-page');
   w.appendChild(renderNav('messages'));
@@ -3579,19 +3912,89 @@ function renderMessagesTab(){
   sidebarHeader.appendChild(createGroupBtn);
   sidebar.appendChild(sidebarHeader);
 
+  // --- вкладки папок: "Все" + пользовательские папки, чат остаётся и там, и там ---
+  const folders = state.profile?.chatFolders || [];
+  const folderTabsRow = el('div','folder-tabs-row');
+  const allTab = el('button','folder-tab' + (!state.activeChatFolder ? ' active' : ''), 'Все');
+  allTab.onclick = () => { state.activeChatFolder = null; renderMessagesTab(); };
+  folderTabsRow.appendChild(allTab);
+  folders.forEach(f => {
+    const tab = el('button','folder-tab' + (state.activeChatFolder === f.id ? ' active' : ''), f.name);
+    tab.onclick = () => { state.activeChatFolder = f.id; renderMessagesTab(); };
+    tab.oncontextmenu = (e) => {
+      e.preventDefault();
+      if(confirm(`Удалить вкладку «${f.name}»? Диалоги останутся во «Все».`)) deleteChatFolder(f.id);
+    };
+    folderTabsRow.appendChild(tab);
+  });
+  const addFolderBtn = el('button','folder-tab folder-tab-add','+');
+  addFolderBtn.title = 'Новая вкладка';
+  addFolderBtn.onclick = () => {
+    const inputWrap = el('div','folder-create-row');
+    const input = document.createElement('input');
+    input.type = 'text'; input.placeholder = 'Название вкладки'; input.className = 'folder-create-input';
+    const confirmBtn = el('button','btn','✓');
+    confirmBtn.onclick = () => { createChatFolder(input.value); };
+    input.onkeydown = (e) => { if(e.key === 'Enter'){ e.preventDefault(); createChatFolder(input.value); } };
+    inputWrap.appendChild(input); inputWrap.appendChild(confirmBtn);
+    addFolderBtn.replaceWith(inputWrap);
+    setTimeout(() => input.focus(), 0);
+  };
+  folderTabsRow.appendChild(addFolderBtn);
+  sidebar.appendChild(folderTabsRow);
+
   if(state.threadsLoading){
     sidebar.appendChild(el('div','footer-note','Загружаем…'));
   } else if(state.threadsError){
     sidebar.appendChild(el('div','err', state.threadsError));
-  } else if(!state.threads || state.threads.length === 0){
-    sidebar.appendChild(el('div','empty','Пока нет переписок — напиши кому-нибудь из «Друзей».'));
   } else {
     const grid = el('div','people-grid');
-    state.threads.forEach(t => {
+
+    // --- "Заметки" — чат с самим собой, всегда закреплён первым ---
+    const notesChatId = pairId(state.user.uid, state.user.uid);
+    const notesOpen = !!(state.chatWith && !state.chatWith.isGroup && state.chatWith.uid === state.user.uid);
+    const notesThread = (state.threads||[]).find(t => t.chatId === notesChatId);
+    if(!state.activeChatFolder){
+      const notesRow = el('div','person-row notes-row' + (notesOpen ? ' thread-open' : ''));
+      const left = el('div','');
+      left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
+      const notesAvatar = el('div','avatar-circle','📝');
+      notesAvatar.style.width='40px'; notesAvatar.style.height='40px'; notesAvatar.style.fontSize='18px';
+      left.appendChild(notesAvatar);
+      const nameCol = el('div','');
+      nameCol.appendChild(el('div','name','Заметки'));
+      const notesPreview = notesThread?.latest ? messagePreviewText(notesThread.latest) + ' · ' + timeAgoShort(notesThread.latest.ts) : 'Сохраняй сюда что угодно';
+      nameCol.appendChild(el('div','meta', notesPreview));
+      left.appendChild(nameCol);
+      notesRow.appendChild(left);
+      notesRow.onclick = () => openChat(state.user.uid, 'Заметки');
+      grid.appendChild(notesRow);
+    }
+
+    let visibleThreads = (state.threads||[]).filter(t => t.chatId !== notesChatId);
+    if(state.activeChatFolder){
+      const folder = folders.find(f => f.id === state.activeChatFolder);
+      const ids = new Set(folder?.chatIds || []);
+      visibleThreads = visibleThreads.filter(t => ids.has(t.chatId));
+    }
+    const pinnedSet = new Set(state.profile?.pinnedChats || []);
+    visibleThreads.sort((a,b) => {
+      const ap = pinnedSet.has(a.chatId) ? 1 : 0, bp = pinnedSet.has(b.chatId) ? 1 : 0;
+      if(ap !== bp) return bp - ap;
+      return (b.latest?.ts||0) - (a.latest?.ts||0);
+    });
+
+    if(visibleThreads.length === 0 && !notesThread && !state.activeChatFolder){
+      sidebar.appendChild(el('div','empty','Пока нет переписок — напиши кому-нибудь из «Друзей».'));
+    } else if(visibleThreads.length === 0 && state.activeChatFolder){
+      grid.appendChild(el('div','empty','В этой вкладке пока нет диалогов. Добавь их через меню « ⋯ » на переписке.'));
+    }
+    visibleThreads.forEach(t => {
       const isOpen = state.chatWith && (
         (t.isGroup && state.chatWith.isGroup && state.chatWith.groupId === t.groupId) ||
         (!t.isGroup && !state.chatWith.isGroup && state.chatWith.uid === t.otherUid)
       );
+      const isPinned = pinnedSet.has(t.chatId);
       const row = el('div','person-row' + (t.unread ? ' unread-row' : '') + (isOpen ? ' thread-open' : ''));
       const left = el('div','');
       left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
@@ -3601,11 +4004,45 @@ function renderMessagesTab(){
       left.appendChild(threadAvatar);
       if(t.unread) left.appendChild(el('span','unread-dot'));
       const nameCol = el('div','');
-      nameCol.appendChild(el('div', t.unread ? 'name unread-name' : 'name', displayName));
+      const nameRow = el('div','');
+      nameRow.style.display='flex'; nameRow.style.alignItems='center'; nameRow.style.gap='5px';
+      nameRow.appendChild(el('span', t.unread ? 'name unread-name' : 'name', displayName));
+      if(isPinned) nameRow.appendChild(el('span','pin-badge','📌'));
+      nameCol.appendChild(nameRow);
       const preview = t.latest ? messagePreviewText(t.latest) : 'Пока нет сообщений';
       nameCol.appendChild(el('div','meta', preview + (t.latest ? ' · ' + timeAgoShort(t.latest.ts) : '')));
       left.appendChild(nameCol);
       row.appendChild(left);
+
+      const menuBtn = el('button','icon-btn thread-menu-btn','⋯');
+      menuBtn.onclick = (e) => {
+        e.stopPropagation();
+        closeContextMenu();
+        const menu = el('div','context-menu');
+        menu.id = 'msg-context-menu';
+        const pinItem = el('div','context-menu-item', isPinned ? '📌 Открепить' : '📌 Закрепить');
+        pinItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); toggleChatPin(t.chatId); };
+        menu.appendChild(pinItem);
+        if(folders.length){
+          menu.appendChild(el('div','context-menu-title','Добавить во вкладку'));
+          folders.forEach(f => {
+            const has = (f.chatIds||[]).includes(t.chatId);
+            const item = el('div','context-menu-item', (has ? '☑ ' : '☐ ') + f.name);
+            item.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); toggleChatInFolder(f.id, t.chatId); };
+            menu.appendChild(item);
+          });
+        }
+        document.body.appendChild(menu);
+        const rect = menuBtn.getBoundingClientRect();
+        let left2 = rect.left;
+        const menuWidth = menu.offsetWidth || 190;
+        if(left2 + menuWidth > window.innerWidth - 8) left2 = window.innerWidth - menuWidth - 8;
+        menu.style.left = left2 + 'px';
+        menu.style.top = (rect.bottom + 6) + 'px';
+        setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+      };
+      row.appendChild(menuBtn);
+
       row.onclick = () => {
         if(t.isGroup) openGroupChat(t.groupId, t.groupName || 'Группа');
         else openChat(t.otherUid, t.otherName);
