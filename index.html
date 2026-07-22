@@ -374,13 +374,14 @@
   .chat-box{
     display:flex; flex-direction:column; gap:8px;
     max-height: 420px; min-height: 200px; overflow-y:auto;
-    padding-right: 4px;
+    padding: 4px 12px;
   }
   .chat-bubble{
-    background: rgba(17,24,40,0.55);
+    background: color-mix(in srgb, var(--bg-soft) 78%, transparent);
+    color: var(--ink);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 1px solid var(--line);
     border-radius: 12px 12px 12px 4px;
     padding: 10px 14px;
     font-size: 14px;
@@ -992,7 +993,14 @@ async function fetchAllUsers(){
 // а сам голос/видео потом идёт напрямую между браузерами (peer-to-peer).
 // Ограничение: используется только публичный STUN, без TURN — в редких случаях
 // (жёсткий NAT/корпоративная сеть) соединение может не установиться напрямую.
-const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const RTC_CONFIG = { iceServers: [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun.relay.metered.ca:80' },
+  { urls: 'turn:global.relay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:global.relay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+] };
 
 let currentCall = null; // { callId, pc, localStream, remoteStream, unsubs:[], role, type }
 let incomingCallUnsub = null;
@@ -1780,7 +1788,7 @@ function recordMedia(constraints, maxSeconds, onTick, recorderOptions, onStreamR
     const finished = new Promise((resolve, reject) => {
       recorder.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        const blob = new Blob(chunks, { type: recorder.mimeType || (constraints.video ? 'video/webm' : 'audio/webm') });
         const reader = new FileReader();
         reader.onload = () => resolve({ dataUrl: reader.result, seconds, sizeBytes: blob.size });
         reader.onerror = reject;
@@ -3122,7 +3130,11 @@ function buildChatPanel(container){
       menu.appendChild(opt1); menu.appendChild(opt2);
       document.body.appendChild(menu);
       const rect = callBtn.getBoundingClientRect();
-      menu.style.left = rect.left + 'px';
+      const menuWidth = menu.offsetWidth || 170;
+      let left = rect.left;
+      if(left + menuWidth > window.innerWidth - 8){ left = window.innerWidth - menuWidth - 8; }
+      if(left < 8) left = 8;
+      menu.style.left = left + 'px';
       menu.style.top = (rect.bottom + 6) + 'px';
       setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
     };
@@ -3286,7 +3298,7 @@ function buildChatPanel(container){
     return btn;
   }
 
-  const videoMime = pickSupportedMimeType(['video/mp4','video/webm;codecs=vp8,opus','video/webm']);
+  const videoMime = pickSupportedMimeType(['video/webm;codecs=vp8,opus','video/webm','video/mp4']);
   const voiceBtn = makeRecordButton(CHAT_ICONS.mic, { audio: true }, 300, doSendVoice, {
     title: 'На телефоне — зажми; на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 5 минут)',
     transcribe: true,
