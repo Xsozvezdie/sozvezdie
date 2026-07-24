@@ -913,6 +913,10 @@
     overflow: hidden;
   }
   .graph-page-header{ flex-shrink: 0; }
+  .graph-page-header-top{
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .graph-add-info-btn{ flex-shrink: 0; font-size: 13px; padding: 8px 14px; }
   .graph-page-title{
     font-family:'Space Grotesk',sans-serif;
     font-weight: 700;
@@ -4972,7 +4976,14 @@ function renderLoading(){
 
 const STOPWORDS = new Set(['я','и','в','во','на','с','со','что','чтобы','это','эта','эти','этот','этом','этой','этих','эту','меня','мне','мной','мой','моя','моё','мои','моего','моей','моих','к','ко','по','из','изо','у','а','но','как','то','же','бы','для','от','ото','до','об','обо','о','не','ни','так','вот','ещё','уже','очень','тоже','его','её','их','ему','ей','им','он','она','они','мы','вы','ты','нас','вас','нам','вам','когда','если','или','там','тут','где','куда','который','которая','которое','которые','которых','которым','которой','которыми','себя','себе','собой','быть','был','была','было','были','есть','нет','да','ведь','лишь','только','всё','все','всех','всем','всей','всего','такой','такая','такое','такие','потому','поэтому','кто','чем','чём','чего','ним','ней','них','один','одна','одно','одни','одной','одних','одним','одному']);
 
-const GENERIC_FILLER = new Set(['помогает','помогло','начал','начала','начали','вижу','вижу','чувствую','кажется','стараюсь','пытаюсь','хочу','хочет','буду','будет','можно','нужно','нравится','стало','является','являются','можем','смогу','делаю','делает','говорю','говорит','думаю','думает','знаю','знает']);
+const GENERIC_FILLER = new Set(['помогает','помогло','начал','начала','начали','вижу','чувствую','кажется','стараюсь','пытаюсь','хочу','хочет','буду','будет','можно','нужно','нравится','нравятся','стало','является','являются','можем','смогу','делаю','делает','говорю','говорит','думаю','думает','знаю','знает',
+  // ценностно-описательные и медиа-глаголы: сам глагол не несёт смысла отдельным узлом —
+  // важно то существительное, которое после него следует (не "Ценю искренность", а просто "Искренность")
+  'ценю','считаю','верю','люблю','любим','смотрю','читаю','важно','интересуюсь','интересуется','например',
+  // общие слова-обёртки для конкретизации (после них обычно идёт цитата с точным названием)
+  'направление','специальность','профессия',
+  // общие малозначимые прилагательные/наречия
+  'компьютерные','компьютерных','различные','разные','всякие','некоторые']);
 
 // Слова, которые формально совпадают с темой категории, но сами по себе — не тезис (просто глагол-самоотсылка).
 // Такие слова не должны становиться единственным словом узла — им всегда нужен сосед по смыслу.
@@ -4982,7 +4993,7 @@ const CATEGORY_KEYWORDS = {
   'Работа и учёба': ['бизнес','диплом','должност','задач','карьер','клиент','коллег','менеджер','начальник','подбор','продаж','проект','производств','профессионал','работ','студент','универ','учё','учус','юрист'],
   'Увлечения': ['готов','занима','игра','играю','музык','путешеств','рисова','спорт','творчеств','трейдинг','увлека','фотограф','хобби','шахмат'],
   'Люди рядом': ['близк','брат','девушк','друз','жена','муж','отношени','парен','партнер','родител','семь','сестр'],
-  'Ценности': ['важно','верю','не люблю','принцип','раздража','смысл','считаю','терпеть не могу','ценю','честност'],
+  'Ценности': ['важно','верю','границ','искренност','не люблю','ответственност','принцип','раздража','смысл','считаю','терпеть не могу','уважени','ценю','честност'],
   'Медиа и мысли': ['антиутоп','истори','книг','подкаст','сериал','смотрю','фильм','читаю'],
 };
 
@@ -4997,6 +5008,29 @@ const ALIAS_MAP = {
   'стим': 'Steam', 'плейстейшн': 'PlayStation', 'пс5': 'PlayStation 5', 'пс4': 'PlayStation 4',
   'вб': 'Wildberries', 'озон': 'Ozon',
 };
+// Глаголы самоописания -> канонический узел-существительное. Это ключевая правка:
+// "играю" и "поиграть" теперь ведут к ОДНОМУ и тому же узлу "Игры" — вместо двух
+// параллельных несвязанных ниток получается один общий узел с двумя ветками от него.
+const VERB_ROOT_MAP = {
+  'учусь':'Учёба', 'учиться':'Учёба', 'учится':'Учёба', 'учился':'Учёба', 'училась':'Учёба', 'учащийся':'Учёба',
+  'работаю':'Работа', 'работать':'Работа', 'работает':'Работа', 'работал':'Работа', 'работала':'Работа',
+  'играю':'Игры', 'играть':'Игры', 'поиграть':'Игры', 'играет':'Игры', 'играл':'Игры', 'играла':'Игры',
+  'занимаюсь':'Занятие', 'заниматься':'Занятие', 'занимается':'Занятие',
+  'увлекаюсь':'Увлечение', 'увлекается':'Увлечение', 'увлекаться':'Увлечение',
+};
+
+// Небольшой growable-словарь «словоформа -> именительный падеж» для частых слов —
+// как и ALIAS_MAP, это не полноценная морфология, а список конкретных соответствий,
+// который можно и нужно пополнять по мере появления новых частых кейсов.
+const LEMMA_MAP = {
+  'юриста':'Юрист', 'юристом':'Юрист', 'юристу':'Юрист',
+  'трейдингом':'Трейдинг', 'трейдингу':'Трейдинг',
+  'программированием':'Программирование', 'программированию':'Программирование',
+  'шахматами':'Шахматы',
+  'триллеры':'Триллеры', 'триллеров':'Триллеры',
+  'веб-разработкой':'Веб-разработка', 'веб-разработку':'Веб-разработка', 'веб-разработки':'Веб-разработка',
+};
+
 function matchAlias(lowerToken){
   for(const key of Object.keys(ALIAS_MAP)){
     if(lowerToken === key) return ALIAS_MAP[key];
@@ -5006,21 +5040,32 @@ function matchAlias(lowerToken){
 }
 
 function cleanToken(w){
-  return w.replace(/[^\p{L}\p{N}]/gu, '');
+  // Дефис сохраняем (веб-разработка, IT-специалист и т.п.) — только обрезаем его по краям.
+  return w.replace(/[^\p{L}\p{N}\-]/gu, '').replace(/^-+|-+$/g, '');
+}
+
+// Разбивает строку по разделителю, но не трогает то, что внутри кавычек «...»/"..."
+// (иначе, например, запятая внутри цитаты могла бы разорвать её на части).
+function splitProtectingQuotes(str, sepRegex){
+  const quotes = [];
+  const masked = str.replace(/[«"]([^«»"]+)[»"]/g, (m) => {
+    quotes.push(m);
+    return `\u0000${quotes.length-1}\u0000`;
+  });
+  return masked.split(sepRegex).map(p => p.trim()).filter(Boolean)
+    .map(p => p.replace(/\u0000(\d+)\u0000/g, (_, i) => quotes[Number(i)]));
 }
 
 function splitIntoClauses(text){
   const rawSentences = text.split(/(?<=[.!?])\s+|\n+/).map(s=>s.trim()).filter(Boolean);
+  // Раньше запятая разбивала предложение на отдельные мысли только если во фразе было
+  // больше 6 слов — из-за этого короткие перечисления через запятую (например, "книги -
+  // антиутопии" сразу после "фильмы нравятся триллеры") оставались одной фразой и потом
+  // склеивались в один искусственный хвост цепочки, хотя это две разные, никак не связанные
+  // мысли. Теперь запятая разбивает всегда — это гораздо более надёжный сигнал границы мысли.
   let clauses = [];
-  rawSentences.forEach(s=>{
-    const wordCount = s.split(/\s+/).filter(Boolean).length;
-    if(wordCount > 6 && s.includes(',')){
-      clauses.push(...s.split(',').map(c=>c.trim()).filter(Boolean));
-    } else {
-      clauses.push(s);
-    }
-  });
-  return clauses.filter(c => c.split(/\s+/).filter(Boolean).length >= 2);
+  rawSentences.forEach(s => { clauses.push(...splitProtectingQuotes(s, /,/)); });
+  return clauses.map(c=>c.trim()).filter(Boolean);
 }
 
 function categorize(clause){
@@ -5039,8 +5084,12 @@ function wordImportance(rawWord){
   if(!token) return { token: '', score: -1 };
   const lower = token.toLowerCase();
   if(STOPWORDS.has(lower)) return { token, score: -1 };
-  if(matchAlias(lower)) return { token, score: 8 };
   if(GENERIC_FILLER.has(lower)) return { token, score: 0 };
+  // Глагол самоописания ("играю"/"поиграть") -> общий узел-существительное ("Игры").
+  // locked: true — чтобы это готовое понятие не склеивалось со случайным соседним словом.
+  if(VERB_ROOT_MAP[lower]) return { token: VERB_ROOT_MAP[lower], score: 9, locked: true };
+  if(LEMMA_MAP[lower]) return { token: LEMMA_MAP[lower], score: 8, locked: true };
+  if(matchAlias(lower)) return { token: matchAlias(lower), score: 8, locked: true };
 
   let score = 1;
   for(const words of Object.values(CATEGORY_KEYWORDS)){
@@ -5123,25 +5172,29 @@ function extractConceptChain(clause){
     return fallback ? [fallback] : [];
   }
 
-  const maxAutoConcepts = Math.max(1, 4 - quotedPhrases.length);
-  const top = [...scored].sort((a,b) => b.score - a.score).slice(0, maxAutoConcepts);
-  let ordered = top.map(w => ({ pos: w.pos, tokens: [w.token], isQuoted: false }));
-  quotedPhrases.forEach(q => ordered.push({ pos: q.pos, tokens: [q.label], isQuoted: true }));
+  // Раньше тут был жёсткий потолок (не больше 4 минус число цитат) понятий на фразу —
+  // из-за этого лишние тезисы молча терялись. Теперь берём ВСЕ понятия, прошедшие порог:
+  // ни один тезис не должен теряться просто потому, что их оказалось "слишком много".
+  let ordered = scored.map(w => ({ pos: w.pos, tokens: [w.token], isQuoted: false, locked: !!w.locked }));
+  quotedPhrases.forEach(q => ordered.push({ pos: q.pos, tokens: [q.label], isQuoted: true, locked: true }));
   ordered.sort((a,b) => a.pos - b.pos);
 
-  // соседние по тексту обычные слова склеиваем в одну фразу-понятие; кавычечные не трогаем — они уже цельные
+  // Соседние по тексту обычные слова склеиваем в одну фразу-понятие. Но НЕ трогаем то, что
+  // уже "заперто" (цитаты и слова, уже приведённые к чистой канонической форме через
+  // VERB_ROOT_MAP/LEMMA_MAP/алиасы) — раньше именно из-за этого, например, "юриста"
+  // склеивалось со случайным соседним словом "направление" в мусорную фразу.
   const merged = [];
   ordered.forEach(w => {
     const prev = merged[merged.length - 1];
-    if(!w.isQuoted && prev && !prev.isQuoted && w.pos === prev.lastPos + 1){
+    if(!w.isQuoted && !w.locked && prev && !prev.isQuoted && !prev.locked && w.pos === prev.lastPos + 1){
       prev.tokens.push(...w.tokens);
       prev.lastPos = w.pos;
     } else {
-      merged.push({ tokens: [...w.tokens], lastPos: w.pos, isQuoted: w.isQuoted });
+      merged.push({ tokens: [...w.tokens], lastPos: w.pos, isQuoted: w.isQuoted, locked: w.locked });
     }
   });
 
-  return merged.map(m => m.isQuoted ? m.tokens.join(' ') : normalizeConceptLabel(m.tokens.join(' ')));
+  return merged.map(m => (m.isQuoted || m.locked) ? m.tokens.join(' ') : normalizeConceptLabel(m.tokens.join(' ')));
 }
 
 function extractGraphLocally(text){
@@ -5153,31 +5206,41 @@ function extractGraphLocally(text){
   const edges = [];
   const chainRootsByCluster = {};
 
-  usable.forEach(clause => {
-    const cluster = categorize(clause);
-    const chain = extractConceptChain(clause);
-    if(!chain.length) return;
-    const weight = Math.min(3, 1 + Math.floor(clause.split(/\s+/).filter(Boolean).length / 8));
+  usable.forEach(commaClause => {
+    // Категория определяется по всей фразе целиком (до разбивки по «и») — так у неё
+    // остаётся весь контекст для распознавания темы. А вот в цепочку понятий разные
+    // части через «и» уже не сцепляются друг с другом — это сочинительная связь
+    // (сиблинги, как "программирование и веб-разработка"), а не иерархия одного в другом.
+    const cluster = categorize(commaClause);
+    const andPieces = splitProtectingQuotes(commaClause, /\s+и\s+/);
 
-    const chainIds = chain.map(label => {
-      const key = label.toLowerCase();
-      if(nodeByLabel.has(key)) return nodeByLabel.get(key).id;
-      const id = 'n' + nodes.length;
-      const node = { id, label, cluster, weight };
-      nodes.push(node);
-      nodeByLabel.set(key, node);
-      return id;
+    andPieces.forEach(piece => {
+      const chain = extractConceptChain(piece);
+      if(!chain.length) return;
+      const weight = Math.min(3, 1 + Math.floor(piece.split(/\s+/).filter(Boolean).length / 8));
+
+      const chainIds = chain.map(label => {
+        const key = label.toLowerCase();
+        if(nodeByLabel.has(key)) return nodeByLabel.get(key).id;
+        const id = 'n' + nodes.length;
+        const node = { id, label, cluster, weight };
+        nodes.push(node);
+        nodeByLabel.set(key, node);
+        return id;
+      });
+
+      // цепочка внутри фразы: понятие1 → понятие2 → понятие3
+      for(let k = 1; k < chainIds.length; k++){
+        // не дублируем ребро, если оба узла уже встречались раньше (общий узел вроде "Игры")
+        const already = edges.some(e => e.source === chainIds[k-1] && e.target === chainIds[k]);
+        if(!already) edges.push({ source: chainIds[k-1], target: chainIds[k] });
+      }
+
+      if(!chainRootsByCluster[cluster]) chainRootsByCluster[cluster] = [];
+      if(!chainRootsByCluster[cluster].includes(chainIds[0])){
+        chainRootsByCluster[cluster].push(chainIds[0]);
+      }
     });
-
-    // цепочка внутри фразы: понятие1 → понятие2 → понятие3
-    for(let k = 1; k < chainIds.length; k++){
-      edges.push({ source: chainIds[k-1], target: chainIds[k] });
-    }
-
-    if(!chainRootsByCluster[cluster]) chainRootsByCluster[cluster] = [];
-    if(!chainRootsByCluster[cluster].includes(chainIds[0])){
-      chainRootsByCluster[cluster].push(chainIds[0]);
-    }
   });
 
   const clusters = Object.keys(chainRootsByCluster);
@@ -5324,7 +5387,12 @@ function renderResult(){
   w.appendChild(renderNav('mine'));
 
   const headerBlock = el('div','graph-page-header');
-  headerBlock.appendChild(el('div','eyebrow', `Граф — ${state.user.name}`));
+  const headerTopRow = el('div','graph-page-header-top');
+  headerTopRow.appendChild(el('div','eyebrow', `Граф — ${state.user.name}`));
+  const addInfoBtn = el('button','btn ghost graph-add-info-btn','+ Добавить информацию');
+  addInfoBtn.onclick = () => { state.screen='story'; render(); };
+  headerTopRow.appendChild(addInfoBtn);
+  headerBlock.appendChild(headerTopRow);
   headerBlock.appendChild(el('h1','graph-page-title', 'Вот из чего ты состоишь.'));
 
   const legend = el('div','legend');
@@ -5341,7 +5409,7 @@ function renderResult(){
   if(state.saveStatus === 'saving'){
     headerBlock.appendChild(el('div','footer-note','Сохраняем…'));
   } else if(state.saveStatus === 'saved'){
-    headerBlock.appendChild(el('div','footer-note','Сохранено ✓ — теперь твоя схема видна во вкладке «Люди».'));
+    headerBlock.appendChild(el('div','footer-note','Сохранено ✓ — теперь твоя схема видна во вкладке «Люди». Правая кнопка мыши на кружке — удалить.'));
   } else if(state.saveStatus === 'error'){
     headerBlock.appendChild(el('div','err','Не сохранилось: ' + state.saveError));
   }
@@ -5353,24 +5421,6 @@ function renderResult(){
   svgWrap.style.height = '100%';
   card.appendChild(svgWrap);
   w.appendChild(card);
-
-  const row = el('div','graph-page-actions');
-  const editBtn = el('button','btn ghost','Переписать текст о себе');
-  editBtn.onclick = () => { state.screen='story'; render(); };
-  const logoutBtn = el('button','btn ghost','Выйти');
-  logoutBtn.onclick = () => {
-    if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
-    if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
-    stopNotificationPolling();
-    stopListeningForIncomingCalls();
-    if(currentCall) endCall(true);
-    logoutUser();
-    state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
-    render();
-  };
-  row.appendChild(editBtn);
-  row.appendChild(logoutBtn);
-  w.appendChild(row);
 
   root.appendChild(w);
   drawGraph(svgWrap, state.graph);
@@ -5390,15 +5440,15 @@ function drawGraph(container, graph){
     .attr('width', '100%').attr('height', height)
     .attr('viewBox', `0 0 ${width} ${height}`);
 
-  const nodes = graph.nodes.map(n => ({ ...n, r: n.isHub ? 30 : (9 + (n.weight||1)*8) }));
+  const nodes = graph.nodes.map(n => ({ ...n, r: n.isHub ? 28 : (7 + (n.weight||1)*5) }));
   const nodeIds = new Set(nodes.map(n=>n.id));
   const links = (graph.edges || []).filter(e => nodeIds.has(e.source) && nodeIds.has(e.target)).map(e => ({...e}));
 
   const sim = d3.forceSimulation(nodes)
-    .force('link', d3.forceLink(links).id(d=>d.id).distance(d => 90 + Math.max(d.source.label?.length||0, d.target.label?.length||0)*2.6).strength(0.55))
-    .force('charge', d3.forceManyBody().strength(d => d.isHub ? -700 : -420))
+    .force('link', d3.forceLink(links).id(d=>d.id).distance(d => 100 + Math.max(d.source.label?.length||0, d.target.label?.length||0)*2.8).strength(0.55))
+    .force('charge', d3.forceManyBody().strength(d => d.isHub ? -750 : -480))
     .force('center', d3.forceCenter(width/2, height/2))
-    .force('collide', d3.forceCollide(d => d.r + d.label.length * 3.6 + 6));
+    .force('collide', d3.forceCollide(d => d.r + d.label.length * 4.2 + 14));
 
   const link = svg.append('g').selectAll('line')
     .data(links).enter().append('line')
@@ -5412,10 +5462,22 @@ function drawGraph(container, graph){
     .attr('fill', d => d.isHub ? colorForCluster(d.cluster, graph.clusters) + '26' : nodeFillColor)
     .attr('stroke', d => colorForCluster(d.cluster, graph.clusters))
     .attr('stroke-width', d => d.isHub ? 3 : 2.5)
+    .style('cursor', 'pointer')
     .call(d3.drag()
       .on('start', (event,d)=>{ if(!event.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
       .on('drag', (event,d)=>{ d.fx=event.x; d.fy=event.y; })
-      .on('end', (event,d)=>{ if(!event.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }));
+      .on('end', (event,d)=>{ if(!event.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }))
+    .on('contextmenu', (event, d) => {
+      event.preventDefault();
+      showConfirmModal(`Удалить «${d.label}» из схемы?`, async () => {
+        state.graph.nodes = state.graph.nodes.filter(n => n.id !== d.id);
+        state.graph.edges = (state.graph.edges || []).filter(e => e.source !== d.id && e.target !== d.id && e.source?.id !== d.id && e.target?.id !== d.id);
+        try{
+          await saveUserGraph(state.user.uid, state.text, state.graph);
+        }catch(e){ console.error('save after delete failed', e); showToast('Не удалось сохранить удаление'); }
+        render();
+      });
+    });
 
   const label = svg.append('g').selectAll('text')
     .data(nodes).enter().append('text')
