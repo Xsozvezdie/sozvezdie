@@ -926,10 +926,30 @@
     letter-spacing: normal;
   }
   .graph-page-actions{ flex-shrink: 0; display:flex; gap:12px; margin-top: 14px; flex-wrap: wrap; }
-  .graph-card-full{
+  .graph-body-row{
     flex: 1;
     min-height: 0;
-    width: 100%;
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+  }
+  .legend-side{
+    flex-shrink: 0;
+    width: 160px;
+    flex-direction: column;
+    align-content: flex-start;
+    overflow-y: auto;
+    padding-top: 4px;
+  }
+  @media (max-width: 720px){
+    .graph-body-row{ flex-direction: column; }
+    .legend-side{ width: 100%; flex-direction: row; max-height: none; }
+  }
+  .graph-card-full{
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    width: auto;
     box-sizing: border-box;
     overflow: hidden;
     padding: 14px;
@@ -2494,8 +2514,12 @@ function renderPeople(){
       const nameCol = el('div','');
       nameCol.appendChild(el('div','name', p.name));
       let metaText;
+      const graphVisible = (state.profile?.schemaVisible !== false) && (p.profile?.schemaVisible !== false);
       if(!hasGraph){
         metaText = 'ещё не заполнил(а) схему интересов';
+      } else if(!graphVisible){
+        metaText = 'схема скрыта';
+        if(compat) metaText += ` · совпадение: ${compat.percent}%`;
       } else {
         metaText = (p.graph.nodes||[]).filter(n=>!n.isHub).length + ' узлов · ' + (p.graph.clusters||[]).length + ' тем';
         const key = p.uid || p.name;
@@ -2503,7 +2527,10 @@ function renderPeople(){
           const cnt = matchCountByUid[key] || 1;
           metaText += ` · совпадений: ${cnt} (${matchedInterestByUid[key]})`;
         }
-        if(compat && compat.sharedClusters.length){
+        if(compat && compat.matches.length){
+          const topLabels = compat.matches.slice(0, 3).map(m => m.a);
+          metaText += ' · похоже: ' + topLabels.join(', ');
+        } else if(compat && compat.sharedClusters.length){
           metaText += ' · общее: ' + compat.sharedClusters.join(', ');
         }
       }
@@ -2608,6 +2635,11 @@ function renderPersonView(){
   w.appendChild(friendBox);
   renderFriendActionInto(friendBox, p);
 
+  // Схема видна только если видимость включена И у меня, И у собеседника — если кто-то
+  // из двоих скрыл свою схему, детали (список совпадений, сам граф) не показываются.
+  // Процент совместимости при этом всё равно виден обеим сторонам.
+  const graphVisible = (state.profile?.schemaVisible !== false) && (p.profile?.schemaVisible !== false);
+
   if(state.graph){
     const compat = computeCompatibility(state.graph, p.graph);
     const compatCard = el('div','card');
@@ -2617,14 +2649,25 @@ function renderPersonView(){
     row.appendChild(el('div','compat-badge', compat.percent + '%'));
     row.appendChild(el('div','', 'совпадение с тобой'));
     compatCard.appendChild(row);
-    if(compat.sharedClusters.length){
-      compatCard.appendChild(el('div','meta', 'Общие темы: ' + compat.sharedClusters.join(', ')));
-    }
-    const exactMatches = compat.matches.filter(m => m.type === 'exact');
-    if(exactMatches.length){
-      compatCard.appendChild(el('div','meta', 'Совпало почти дословно: ' + exactMatches.map(m=>m.a).join(', ')));
+    if(!graphVisible){
+      compatCard.appendChild(el('div','meta', 'Схема скрыта — детали совпадений недоступны.'));
+    } else if(compat.matches.length){
+      const topLabels = compat.matches.slice(0, 5).map(m=>m.a);
+      compatCard.appendChild(el('div','meta', 'Похожи по: ' + topLabels.join(', ')));
+    } else if(compat.sharedClusters.length){
+      // Конкретных совпадающих интересов нет — но по темам в целом вы близки.
+      compatCard.appendChild(el('div','meta', 'Общие темы (без конкретных совпадений): ' + compat.sharedClusters.join(', ')));
     }
     w.appendChild(compatCard);
+  }
+
+  if(!graphVisible){
+    const hiddenNote = el('div','card', state.profile?.schemaVisible === false
+      ? 'Ты скрыл(а) свою схему — пока это включено, чужие схемы тоже не показываются.'
+      : 'Пользователь скрыл свою схему интересов.');
+    w.appendChild(hiddenNote);
+    root.appendChild(w);
+    return;
   }
 
   const legend = el('div','legend');
@@ -4640,6 +4683,18 @@ function renderAccountScreen(){
   statusLabel.appendChild(document.createTextNode('Показывать мой статус «в сети» другим (если выключишь — тоже перестанешь видеть чужой)'));
   card.appendChild(statusLabel);
 
+  const schemaVisLabel = document.createElement('label');
+  schemaVisLabel.style.display='flex'; schemaVisLabel.style.alignItems='center'; schemaVisLabel.style.gap='10px';
+  schemaVisLabel.style.marginTop = '10px'; schemaVisLabel.style.fontSize = '13px'; schemaVisLabel.style.color = 'var(--ink-dim)';
+  schemaVisLabel.style.cursor = 'pointer';
+  const schemaVisCheckbox = document.createElement('input');
+  schemaVisCheckbox.type = 'checkbox'; schemaVisCheckbox.style.width='auto'; schemaVisCheckbox.style.marginBottom='0';
+  schemaVisCheckbox.checked = state.profile?.schemaVisible !== false;
+  schemaVisCheckbox.onchange = () => scheduleProfileAutosave();
+  schemaVisLabel.appendChild(schemaVisCheckbox);
+  schemaVisLabel.appendChild(document.createTextNode('Показывать мою схему интересов другим (если выключишь — сам(а) тоже перестанешь видеть чужие схемы; проценты совместимости у всех останутся видны)'));
+  card.appendChild(schemaVisLabel);
+
   nameInput.addEventListener('blur', () => scheduleProfileAutosave());
   nameInput.addEventListener('keydown', e => { if(e.key === 'Enter') scheduleProfileAutosave(); });
 
@@ -4652,6 +4707,7 @@ function renderAccountScreen(){
       country: countrySelect.value,
       city: cityField ? cityField.value.trim() : '',
       showStatus: statusCheckbox.checked,
+      schemaVisible: schemaVisCheckbox.checked,
     };
     const newName = nameInput.value.trim() || state.user.name;
     try{
@@ -4979,11 +5035,18 @@ const STOPWORDS = new Set(['я','и','в','во','на','с','со','что','ч
 const GENERIC_FILLER = new Set(['помогает','помогло','начал','начала','начали','вижу','чувствую','кажется','стараюсь','пытаюсь','хочу','хочет','буду','будет','можно','нужно','нравится','нравятся','стало','является','являются','можем','смогу','делаю','делает','говорю','говорит','думаю','думает','знаю','знает',
   // ценностно-описательные и медиа-глаголы: сам глагол не несёт смысла отдельным узлом —
   // важно то существительное, которое после него следует (не "Ценю искренность", а просто "Искренность")
-  'ценю','считаю','верю','люблю','любим','смотрю','читаю','важно','интересуюсь','интересуется','например',
+  'ценю','считаю','верю','люблю','любим','смотрю','смотреть','читаю','читать','важно','интересуюсь','интересуется','например',
   // общие слова-обёртки для конкретизации (после них обычно идёт цитата с точным названием)
   'направление','специальность','профессия',
   // общие малозначимые прилагательные/наречия
-  'компьютерные','компьютерных','различные','разные','всякие','некоторые']);
+  'компьютерные','компьютерных','различные','разные','всякие','некоторые',
+  // конструкции "способность/умение + глагол + объект" — реальный смысл в объекте, а не в обёртке
+  'способность','способности','умение','умею','возможность',
+  // лёгкие глаголы перед объектом ("нести/брать ответственность") — важен объект, а не сам глагол
+  'брать','нести','взять',
+  // частые описательные прилагательные-обёртки ("личные границы", "чужие границы") —
+  // без них смысл не теряется, только конкретика существительного
+  'личным','личные','личных','личный','личная','чужим','чужие','чужих']);
 
 // Слова, которые формально совпадают с темой категории, но сами по себе — не тезис (просто глагол-самоотсылка).
 // Такие слова не должны становиться единственным словом узла — им всегда нужен сосед по смыслу.
@@ -5023,12 +5086,15 @@ const VERB_ROOT_MAP = {
 // как и ALIAS_MAP, это не полноценная морфология, а список конкретных соответствий,
 // который можно и нужно пополнять по мере появления новых частых кейсов.
 const LEMMA_MAP = {
-  'юриста':'Юрист', 'юристом':'Юрист', 'юристу':'Юрист',
+  'юриста':'Юриспруденция', 'юристом':'Юриспруденция', 'юристу':'Юриспруденция', 'юрист':'Юриспруденция',
   'трейдингом':'Трейдинг', 'трейдингу':'Трейдинг',
-  'программированием':'Программирование', 'программированию':'Программирование',
+  // программирование и веб-разработка — очень смежные вещи для описания себя, сводим в одно
+  // общее понятие, чтобы граф не дробился на почти одинаковые соседние узлы
+  'программированием':'IT', 'программированию':'IT', 'программирование':'IT',
+  'веб-разработкой':'IT', 'веб-разработку':'IT', 'веб-разработки':'IT', 'веб-разработка':'IT',
   'шахматами':'Шахматы',
   'триллеры':'Триллеры', 'триллеров':'Триллеры',
-  'веб-разработкой':'Веб-разработка', 'веб-разработку':'Веб-разработка', 'веб-разработки':'Веб-разработка',
+  'границам':'Границы', 'границ':'Границы',
 };
 
 function matchAlias(lowerToken){
@@ -5046,6 +5112,21 @@ function cleanToken(w){
 
 // Разбивает строку по разделителю, но не трогает то, что внутри кавычек «...»/"..."
 // (иначе, например, запятая внутри цитаты могла бы разорвать её на части).
+// ОБЩАЯ нормализация для СРАВНЕНИЯ узлов между собой (не для отображения!) — работает
+// для любых слов, не только из словарей выше. Убирает самые частые падежные/числовые
+// окончания русских слов, чтобы "триллер" и "триллеры", "граница" и "границы" и т.п.
+// считались ОДНИМ понятием, даже если их не было в LEMMA_MAP. Это не полноценная
+// морфология (для неё нужен сервер), поэтому компромисс сделан в безопасную сторону:
+// в худшем случае просто не объединит похожие слова (как было раньше), но никогда
+// не должна случайно склеить два разных по смыслу слова.
+function dedupKey(label){
+  let s = label.toLowerCase().trim();
+  if(s.length > 5){
+    s = s.replace(/(иями|ями|ами|иях|ях|ев|ов|и|ы|я|а)$/, '');
+  }
+  return s;
+}
+
 function splitProtectingQuotes(str, sepRegex){
   const quotes = [];
   const masked = str.replace(/[«"]([^«»"]+)[»"]/g, (m) => {
@@ -5201,7 +5282,7 @@ function extractGraphLocally(text){
   const clauses = splitIntoClauses(text);
   const usable = clauses.length ? clauses : [text];
 
-  const nodeByLabel = new Map();
+  const nodeByKey = new Map(); // общий дедуп по нормализованному ключу, не по точной строке
   const nodes = [];
   const edges = [];
   const chainRootsByCluster = {};
@@ -5220,18 +5301,19 @@ function extractGraphLocally(text){
       const weight = Math.min(3, 1 + Math.floor(piece.split(/\s+/).filter(Boolean).length / 8));
 
       const chainIds = chain.map(label => {
-        const key = label.toLowerCase();
-        if(nodeByLabel.has(key)) return nodeByLabel.get(key).id;
+        const key = dedupKey(label);
+        if(nodeByKey.has(key)) return nodeByKey.get(key).id;
         const id = 'n' + nodes.length;
         const node = { id, label, cluster, weight };
         nodes.push(node);
-        nodeByLabel.set(key, node);
+        nodeByKey.set(key, node);
         return id;
       });
 
       // цепочка внутри фразы: понятие1 → понятие2 → понятие3
       for(let k = 1; k < chainIds.length; k++){
-        // не дублируем ребро, если оба узла уже встречались раньше (общий узел вроде "Игры")
+        // не дублируем ребро и не соединяем узел сам с собой (могло получиться после дедупа)
+        if(chainIds[k-1] === chainIds[k]) continue;
         const already = edges.some(e => e.source === chainIds[k-1] && e.target === chainIds[k]);
         if(!already) edges.push({ source: chainIds[k-1], target: chainIds[k] });
       }
@@ -5335,6 +5417,23 @@ function clusterDistribution(graph){
   return totals;
 }
 
+// Частые "общие" слова о характере — встречаются у очень многих людей и почти не несут
+// различающего смысла (ответственность есть почти у всех в анкете). Такие совпадения
+// не должны перекрывать редкие, конкретные интересы (тот же "Counter-Strike 2").
+const COMMON_TRAIT_WORDS = new Set(['ответственность','честность','искренность','уважение','доброта','порядочность',
+  'поддержка','дружба','любовь','свобода','смысл','саморазвитие','развитие','общение','семья','надёжность',
+  'открытость','понимание','доверие','терпение','юмор']);
+
+function matchSpecificity(label){
+  const lower = label.toLowerCase().trim();
+  if(COMMON_TRAIT_WORDS.has(lower)) return 1; // общее слово — низкий приоритет в объяснении
+  const wordCount = label.split(/\s+/).filter(Boolean).length;
+  let score = 2 + wordCount; // многословные фразы обычно конкретнее одного слова
+  if(label.length > 12) score += 1;
+  if(/[a-zA-Z]/.test(label)) score += 2; // конкретные названия (игры, бренды) — самое ценное совпадение
+  return score;
+}
+
 function normalizeLabelTokens(label){
   return label.toLowerCase().split(/\s+/).map(cleanToken).filter(t => t.length >= 4 && !STOPWORDS.has(t));
 }
@@ -5379,6 +5478,10 @@ function computeCompatibility(graphA, graphB){
   });
 
   const percent = Math.round(Math.max(0, Math.min(100, overlapSum * 70 + Math.min(30, bonus * 6))));
+  // Сортируем совпадения так, чтобы редкие конкретные интересы шли раньше общих слов о характере —
+  // иначе в объяснении "чем вы похожи" самое частое (типа "ответственность") забивало бы собой
+  // то, что реально отличает и сближает именно этих двух людей.
+  matches.sort((a, b) => matchSpecificity(b.a) - matchSpecificity(a.a));
   return { percent, sharedClusters, matches };
 }
 
@@ -5395,7 +5498,16 @@ function renderResult(){
   headerBlock.appendChild(headerTopRow);
   headerBlock.appendChild(el('h1','graph-page-title', 'Вот из чего ты состоишь.'));
 
-  const legend = el('div','legend');
+  if(state.saveStatus === 'saving'){
+    headerBlock.appendChild(el('div','footer-note','Сохраняем…'));
+  } else if(state.saveStatus === 'error'){
+    headerBlock.appendChild(el('div','err','Не сохранилось: ' + state.saveError));
+  }
+  w.appendChild(headerBlock);
+
+  const bodyRow = el('div','graph-body-row');
+
+  const legend = el('div','legend legend-side');
   (state.graph.clusters || []).forEach(c=>{
     const item = el('div','legend-item');
     const dot = el('span','dot');
@@ -5404,23 +5516,15 @@ function renderResult(){
     item.appendChild(el('span','', c));
     legend.appendChild(item);
   });
-  headerBlock.appendChild(legend);
-
-  if(state.saveStatus === 'saving'){
-    headerBlock.appendChild(el('div','footer-note','Сохраняем…'));
-  } else if(state.saveStatus === 'saved'){
-    headerBlock.appendChild(el('div','footer-note','Сохранено ✓ — теперь твоя схема видна во вкладке «Люди». Правая кнопка мыши на кружке — удалить.'));
-  } else if(state.saveStatus === 'error'){
-    headerBlock.appendChild(el('div','err','Не сохранилось: ' + state.saveError));
-  }
-  w.appendChild(headerBlock);
+  bodyRow.appendChild(legend);
 
   const card = el('div','card graph-card-full card-translucent');
   const svgWrap = document.createElement('div');
   svgWrap.style.width = '100%';
   svgWrap.style.height = '100%';
   card.appendChild(svgWrap);
-  w.appendChild(card);
+  bodyRow.appendChild(card);
+  w.appendChild(bodyRow);
 
   root.appendChild(w);
   drawGraph(svgWrap, state.graph);
