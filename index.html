@@ -218,8 +218,8 @@
   }
 
   body[data-theme="light"]{
-    --bg: #f3f4fa; --bg-soft: #ffffff; --panel: #ffffff; --line: #e1e3ee;
-    --ink: #1b2030; --ink-dim: #6b7280; --edge: #a7acc9;
+    --bg: #f3f4fa; --bg-soft: #ffffff; --panel: #ffffff; --line: #c7cbe0;
+    --ink: #1b2030; --ink-dim: #6b7280; --edge: #7d83a8;
     --gold: #3457d5; --bg-glow: #f3f4fa;
   }
   body[data-theme="light"] .card-translucent{
@@ -402,7 +402,7 @@
   }
   .pin-badge{ font-size: 11px; }
   .thread-menu-btn{ flex-shrink:0; font-size: 18px; line-height:1; padding: 4px 8px; }
-  .notes-row .avatar-circle{ background: var(--gold); color: var(--bg); }
+  .notes-avatar-icon{ background: var(--gold); color: var(--bg); }
   .person-row:hover{ border-color: var(--gold); }
   .person-row .name{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; }
   .person-row .meta{ font-size:12px; color: var(--ink-dim); margin-top:3px; }
@@ -413,7 +413,7 @@
     font-size: 16px;
     color: var(--gold);
   }
-  .meta{ font-size:12px; color: var(--ink-dim); margin-top:4px; }
+  .meta{ font-size:12px; color: var(--ink-dim); margin-top:4px; word-break: break-word; }
 
   .chat-box{
     display:flex; flex-direction:column; gap:10px;
@@ -444,6 +444,7 @@
     background: transparent; border: none; padding: 0;
   }
   .chat-bubble.mine.bare-media{ color: var(--ink); }
+  .chat-bubble.mine.bare-media .voice-play{ background: var(--bg-soft); border: 1px solid var(--line); color: var(--ink); }
   .chat-bubble.bare-media .voice-play{ background: var(--bg-soft); border: 1px solid var(--line); }
   .chat-image{ max-width: 220px; border-radius: 8px; display:block; overflow: hidden; }
   .demo-match{
@@ -742,6 +743,10 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 24px !important;
     gap: 4px;
+  }
+  .icon-only-btn.active{ border-color: var(--gold); color: var(--gold); }
+  .existing-bio-text{
+    white-space: pre-wrap; color: var(--ink-dim); font-size: 14.5px; line-height: 1.6;
   }
   .chat-header-clickable{
     cursor: pointer; border-radius: 12px; padding: 6px 10px; margin: -6px -10px;
@@ -1925,11 +1930,8 @@ async function refreshNotificationCounts(){
 // Живые обновления через Supabase Realtime (аналог onSnapshot из Firestore).
 // Подход попроще: при любом изменении просто перезапрашиваем весь список сообщений чата.
 function listenToMessages(chatId, callback){
-  // Раньше здесь при каждом открытии чата и каждые 3 секунды заново подгружалась ВСЯ
-  // история переписки целиком — включая полные base64-данные всех фото/голосовых/видео
-  // за всё время. Именно это и делало открытие чата медленным (секунды пустого экрана).
-  // Теперь: подгружаем только последние 80 сообщений, и полагаемся на realtime-подписку
-  // вместо постоянного опроса — она и так сообщает о любых изменениях.
+  // Ограничиваем последними 80 сообщениями — раньше при каждом открытии чата
+  // перезагружалась вся история целиком, из-за чего открытие ощущалось медленным.
   async function refetch(){
     const { data, error } = await sb.from('messages').select('*').eq('chat_id', chatId)
       .order('ts', { ascending: false }).limit(80);
@@ -1940,7 +1942,20 @@ function listenToMessages(chatId, callback){
   const channel = sb.channel('messages-' + chatId)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` }, refetch)
     .subscribe();
-  return () => { sb.removeChannel(channel); };
+  // Резервный опрос: realtime-подписка иногда молча теряет событие (особенно если вкладка
+  // была в фоне) — без опроса переписка тогда зависает и не обновляется до перезагрузки
+  // страницы. Раз в 5 секунд не так расточительно, зато чат всегда доходит до актуального.
+  const pollId = setInterval(refetch, 5000);
+  // Когда вкладка снова становится видимой (человек вернулся из другой вкладки/свернутого
+  // окна), realtime-соединение к этому моменту могло отвалиться совсем — сразу подтягиваем
+  // актуальные сообщения, не дожидаясь ближайшего тика опроса.
+  const onVisible = () => { if(document.visibilityState === 'visible') refetch(); };
+  document.addEventListener('visibilitychange', onVisible);
+  return () => {
+    sb.removeChannel(channel);
+    clearInterval(pollId);
+    document.removeEventListener('visibilitychange', onVisible);
+  };
 }
 
 async function deleteMessageForMe(msgId){
@@ -2988,7 +3003,21 @@ function startNotificationPolling(){
       listChatThreads().then(threads => { state.threads = threads; if(state.screen === 'messages' && !state.chatWith) render(); }).catch(()=>{});
     }
   }, 8000);
+  // Браузеры замедляют/приостанавливают setInterval в фоновой вкладке — список диалогов
+  // мог протухнуть, пока вкладка была свёрнута. Как только человек возвращается — сразу
+  // подтягиваем актуальный список, не дожидаясь ближайшего тика опроса.
+  if(!globalVisibilityHandlerAttached){
+    globalVisibilityHandlerAttached = true;
+    document.addEventListener('visibilitychange', () => {
+      if(document.visibilityState !== 'visible' || !state.user) return;
+      refreshNotificationCounts().then(refreshGlobalNav);
+      if(state.screen === 'messages' && !state.chatWith){
+        listChatThreads().then(threads => { state.threads = threads; if(state.screen === 'messages' && !state.chatWith) render(); }).catch(()=>{});
+      }
+    });
+  }
 }
+let globalVisibilityHandlerAttached = false;
 function stopNotificationPolling(){
   if(notifInterval){ clearInterval(notifInterval); notifInterval = null; }
 }
@@ -3380,10 +3409,28 @@ function dataUrlToObjectUrl(dataUrl){
   }
 }
 
-function downloadDataUrl(dataUrl, filename){
-  const a = document.createElement('a');
-  a.href = dataUrl; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
+async function downloadDataUrl(url, filename){
+  try{
+    if(url.startsWith('data:')){
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      return;
+    }
+    // Медиафайлы теперь хранятся в Supabase Storage — это ссылка на другой домен.
+    // Браузеры игнорируют атрибут download для чужого домена и просто открывают файл
+    // вместо скачивания. Поэтому сперва качаем сами байты и скачиваем уже локальный blob.
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);
+  }catch(e){
+    console.error('download failed', e);
+    showToast('Не удалось скачать файл');
+  }
 }
 
 function renderChatMessages(){
@@ -3797,12 +3844,21 @@ function buildChatPanel(container){
   const titleWrap = el('div','chat-header-clickable');
   titleWrap.style.display='flex'; titleWrap.style.alignItems='center'; titleWrap.style.gap='12px';
   titleWrap.onclick = () => openContactInfoPanel();
-  const chatAvatar = avatarCircleEl(state.chatWith.name, 44);
-  if(!state.chatWith.isGroup) fillAvatarAsync(chatAvatar, state.chatWith.uid);
+  const isNotesChat = !state.chatWith.isGroup && state.chatWith.uid === state.user.uid;
+  const chatAvatar = isNotesChat
+    ? el('div','avatar-circle notes-avatar-icon')
+    : avatarCircleEl(state.chatWith.name, 44);
+  if(isNotesChat){
+    chatAvatar.style.width='44px'; chatAvatar.style.height='44px';
+    chatAvatar.style.display='flex'; chatAvatar.style.alignItems='center'; chatAvatar.style.justifyContent='center';
+    chatAvatar.innerHTML = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.05V17h6v-.25c0-.8.4-1.55 1-2.05A7 7 0 0 0 12 2Z"/></svg>';
+  } else if(!state.chatWith.isGroup){
+    fillAvatarAsync(chatAvatar, state.chatWith.uid);
+  }
   titleWrap.appendChild(chatAvatar);
   const titleCol = el('div','');
   titleCol.appendChild(el('h1','chat-header-name', state.chatWith.name));
-  if(!state.chatWith.isGroup){
+  if(!state.chatWith.isGroup && !isNotesChat){
     const statusEl = el('div','meta', state.chatStatusText || '');
     statusEl.id = 'chat-status-text';
     titleCol.appendChild(statusEl);
@@ -4259,12 +4315,14 @@ function renderMessagesTab(){
       const row = el('div','person-row' + (t.unread ? ' unread-row' : '') + (isOpen ? ' thread-open' : ''));
       const left = el('div','');
       left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
+      left.style.flex='1'; left.style.minWidth='0';
       const displayName = t.isGroup ? (t.groupName || 'Группа') : t.otherName;
       const threadAvatar = avatarCircleEl(displayName, 40);
       if(!t.isGroup) fillAvatarAsync(threadAvatar, t.otherUid);
       left.appendChild(threadAvatar);
       if(t.unread) left.appendChild(el('span','unread-dot'));
       const nameCol = el('div','');
+      nameCol.style.flex = '1'; nameCol.style.minWidth = '0';
       const nameRow = el('div','');
       nameRow.style.display='flex'; nameRow.style.alignItems='center'; nameRow.style.gap='5px';
       nameRow.appendChild(el('span', t.unread ? 'name unread-name' : 'name', displayName));
@@ -4532,7 +4590,7 @@ function renderAccountScreen(){
   w.appendChild(el('h1','', 'Аккаунт'));
 
   // --- Тема оформления ---
-  const themeCard = el('div','card');
+  const themeCard = el('div','card card-translucent');
   themeCard.style.marginBottom = '16px';
   themeCard.appendChild(el('div','top-tag','Тема оформления'));
   const themeGrid = el('div','theme-grid');
@@ -4582,7 +4640,7 @@ function renderAccountScreen(){
   w.appendChild(themeCard);
 
   // --- Фото аккаунта ---
-  const avatarCard = el('div','card');
+  const avatarCard = el('div','card card-translucent');
   avatarCard.style.marginBottom = '16px';
   avatarCard.appendChild(el('div','top-tag','Фото и имя'));
   const avatarRow = el('div','');
@@ -4654,7 +4712,7 @@ function renderAccountScreen(){
   w.appendChild(avatarCard);
 
   // --- Логин ---
-  const loginCard = el('div','card');
+  const loginCard = el('div','card card-translucent');
   loginCard.style.marginBottom = '16px';
   loginCard.appendChild(el('div','top-tag','Логин'));
   loginCard.appendChild(el('p','lead','Только латинские буквы — это то, чем ты входишь на сайт.'));
@@ -4696,7 +4754,7 @@ function renderAccountScreen(){
   w.appendChild(loginCard);
 
   // --- Профиль ---
-  const card = el('div','card');
+  const card = el('div','card card-translucent');
   card.appendChild(el('div','top-tag','Профиль'));
 
   const rowTop = el('div','');
@@ -4865,7 +4923,7 @@ function renderAccountScreen(){
 
   w.appendChild(card);
 
-  const logoutCard = el('div','card');
+  const logoutCard = el('div','card card-translucent');
   logoutCard.style.marginTop = '16px';
   const logoutBtn = el('button','btn ghost','Выйти из аккаунта');
   logoutBtn.onclick = () => {
@@ -5121,39 +5179,130 @@ function renderAuth(){
 function renderStory(){
   const w = el('div','wrap');
   w.appendChild(renderNav('mine'));
-  w.appendChild(el('h1','', 'Теперь — о себе.'));
+
+  const hasExisting = !!(state.graph && state.graph.nodes && state.graph.nodes.length);
+
+  w.appendChild(el('h1','', hasExisting ? 'Добавь что-то новое' : 'Теперь — о себе.'));
 
   const chips = el('div','prompts');
   ['работа и то, что в ней держит','увлечения и как проводишь свободное время','что читаешь / смотришь','ценности и то, что раздражает','отношения и люди рядом']
     .forEach(t=>chips.appendChild(el('span','prompt-chip', t)));
   w.appendChild(chips);
 
-  const card = el('div','card');
-  if(state.error) card.appendChild(el('div','err', state.error));
-  const ta = document.createElement('textarea');
-  ta.placeholder = 'Например: чем занимаюсь по работе или учёбе, что делаю в свободное время, что читаю или смотрю, что для меня важно в людях, а что раздражает...';
-  ta.value = state.text;
-  card.appendChild(ta);
-  const counter = el('div','counter','0 символов');
-  card.appendChild(counter);
-  ta.addEventListener('input', ()=>{ counter.textContent = ta.value.length + ' символов'; });
+  if(state.error) w.appendChild(el('div','err', state.error));
 
-  const btn = el('button','btn','Построить граф →');
-  btn.onclick = () => {
-    const val = ta.value.trim();
-    if(!val){
-      state.error = 'Напиши хоть что-нибудь — даже пару слов.';
+  if(hasExisting){
+    // --- Существующий текст: можно посмотреть и, если нужно, полностью переписать ---
+    const existingCard = el('div','card card-translucent');
+    existingCard.style.marginBottom = '16px';
+    const existingHeaderRow = el('div','');
+    existingHeaderRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;';
+    existingHeaderRow.appendChild(el('div','top-tag','Текущий текст о себе'));
+    const editToggleBtn = el('button','btn ghost icon-only-btn','✎');
+    editToggleBtn.title = 'Редактировать';
+    existingHeaderRow.appendChild(editToggleBtn);
+    existingCard.appendChild(existingHeaderRow);
+
+    const existingDisplay = el('div','existing-bio-text', state.text || '');
+    existingCard.appendChild(existingDisplay);
+
+    const editTa = document.createElement('textarea');
+    editTa.value = state.text || '';
+    editTa.style.display = 'none';
+    existingCard.appendChild(editTa);
+
+    const saveRewriteBtn = el('button','btn ghost','Сохранить и перестроить граф заново');
+    saveRewriteBtn.style.cssText = 'display:none;margin-top:12px;';
+    saveRewriteBtn.onclick = () => {
+      const val = editTa.value.trim();
+      if(!val){ showToast('Текст не может быть пустым'); return; }
+      state.error = '';
+      state.text = val;
+      state.screen = 'loading';
       render();
-      return;
-    }
-    state.error = '';
-    state.text = val;
-    state.screen = 'loading';
-    render();
-    buildGraph(val);
-  };
-  card.appendChild(btn);
-  w.appendChild(card);
+      buildGraph(val); // без existingGraph — полная переразборка, как и раньше
+    };
+    existingCard.appendChild(saveRewriteBtn);
+
+    editToggleBtn.onclick = () => {
+      const editing = editTa.style.display !== 'none';
+      editTa.style.display = editing ? 'none' : 'block';
+      existingDisplay.style.display = editing ? 'block' : 'none';
+      saveRewriteBtn.style.display = editing ? 'none' : 'inline-flex';
+      editToggleBtn.classList.toggle('active', !editing);
+    };
+    w.appendChild(existingCard);
+
+    // --- Новое: отдельное поле, не трогает то, что уже разложено на графе ---
+    const newCard = el('div','card card-translucent');
+    newCard.appendChild(el('div','top-tag','Добавить что-то новое'));
+    const newTa = document.createElement('textarea');
+    newTa.placeholder = 'Расскажи что-то новое — это добавится к уже существующей схеме, а не заменит её';
+    newCard.appendChild(newTa);
+    const newCounter = el('div','counter','0 символов');
+    newCard.appendChild(newCounter);
+    newTa.addEventListener('input', ()=>{ newCounter.textContent = newTa.value.length + ' символов'; });
+
+    const addBtn = el('button','btn','Добавить в схему →');
+    addBtn.onclick = async () => {
+      const val = newTa.value.trim();
+      if(!val){ state.error = 'Напиши хоть что-нибудь — даже пару слов.'; render(); return; }
+      state.error = '';
+      addBtn.disabled = true; addBtn.textContent = 'Добавляем…';
+      try{
+        const merged = extractGraphLocally(val, state.graph);
+        state.graph = merged;
+        state.text = (state.text ? state.text.trim() + '\n' : '') + val;
+        state.saveStatus = 'saving';
+        state.screen = 'result';
+        render();
+        try{
+          await saveUserGraph(state.user.uid, state.text, state.graph);
+          state.saveStatus = 'saved';
+        }catch(e){
+          console.error('save after merge failed', e);
+          state.saveStatus = 'error';
+          state.saveError = e.message;
+        }
+        render();
+      }catch(e){
+        console.error('incremental merge failed', e);
+        showToast('Не получилось разобрать текст — попробуй переформулировать');
+        addBtn.disabled = false; addBtn.textContent = 'Добавить в схему →';
+      }
+    };
+    newCard.appendChild(addBtn);
+    w.appendChild(newCard);
+
+  } else {
+    // Первый раз — обычная разборка с нуля
+    const card = el('div','card');
+    const ta = document.createElement('textarea');
+    ta.placeholder = 'Например: чем занимаюсь по работе или учёбе, что делаю в свободное время, что читаю или смотрю, что для меня важно в людях, а что раздражает...';
+    ta.value = state.text || '';
+    card.appendChild(ta);
+    const counter = el('div','counter', (ta.value.length) + ' символов');
+    card.appendChild(counter);
+    ta.addEventListener('input', ()=>{ counter.textContent = ta.value.length + ' символов'; });
+
+    const btn = el('button','btn','Построить граф →');
+    btn.onclick = () => {
+      const val = ta.value.trim();
+      if(!val){
+        state.error = 'Напиши хоть что-нибудь — даже пару слов.';
+        render();
+        return;
+      }
+      state.error = '';
+      state.text = val;
+      state.screen = 'loading';
+      render();
+      buildGraph(val);
+    };
+    card.appendChild(btn);
+    w.appendChild(card);
+  }
+
   root.appendChild(w);
 }
 
@@ -5185,6 +5334,9 @@ const GENERIC_FILLER = new Set(['помогает','помогло','начал'
   'личным','личные','личных','личный','личная','чужим','чужие','чужих',
   // наречия частоты — сами по себе не тема, только уточнение "как часто"
   'часто','иногда','редко','обычно','постоянно','всегда',
+  // если смысл фразы неочевиден сам по себе ("можно молчать" без остального контекста) —
+  // лучше не создавать из него отдельный узел, чем гадать и писать что-то невнятное
+  'молчать','молчу','молчит',
   // "свободное" без слова "время" рядом не может стоять само по себе — зависимое слово
   'свободное','свободного','свободном','свободную','свободный','свободные',
   // "рядом" само по себе ничего не говорит (это и так название темы "Люди рядом")
@@ -5242,7 +5394,6 @@ const VERB_ROOT_MAP = {
   'пою':'Пение', 'петь':'Пение', 'поёт':'Пение',
   'плаваю':'Плавание', 'плавать':'Плавание', 'плавает':'Плавание',
   'вяжу':'Вязание', 'вязать':'Вязание',
-  'молчать':'Молчание', 'молчу':'Молчание', 'молчит':'Молчание',
 };
 
 // Небольшой growable-словарь «словоформа -> именительный падеж» для частых слов —
@@ -5497,7 +5648,7 @@ function extractConceptChain(rawClause){
   return merged.map(m => (m.isQuoted || m.locked) ? m.tokens.join(' ') : normalizeConceptLabel(m.tokens.join(' ')));
 }
 
-function extractGraphLocally(text){
+function extractGraphLocally(text, existingGraph){
   // Категория определяется по ПОЛНОМУ предложению (до разбивки на запятые/«и») — так у неё
   // остаётся весь контекст. Иначе конструкции вида "Рядом — те, с кем можно молчать" ломаются:
   // слово-подсказка темы ("рядом") оказывается в одной части после запятой, а сама мысль
@@ -5509,6 +5660,22 @@ function extractGraphLocally(text){
   const nodes = [];
   const edges = [];
   const chainRootsByCluster = {};
+  const existingHubByCluster = {};
+
+  // Режим "добавить новое": продолжаем существующий граф, а не строим с нуля — иначе
+  // ручные правки (удалённые узлы) и уже устоявшаяся раскладка тем терялись бы каждый раз.
+  if(existingGraph){
+    (existingGraph.nodes||[]).forEach(n => {
+      const copy = { ...n };
+      nodes.push(copy);
+      nodeByKey.set(dedupKey(copy.label), copy);
+      if(copy.isHub) existingHubByCluster[copy.cluster] = copy;
+    });
+    (existingGraph.edges||[]).forEach(e => edges.push({ ...e }));
+    Object.values(existingHubByCluster).forEach(hub => {
+      chainRootsByCluster[hub.cluster] = edges.filter(e => e.source === hub.id).map(e => e.target);
+    });
+  }
 
   const EVALUATIVE_LABELS = new Set(Object.values(EVALUATIVE_VERB_MAP));
 
@@ -5647,29 +5814,35 @@ function extractGraphLocally(text){
   });
 
   const clusters = Object.keys(chainRootsByCluster);
-  clusters.forEach((cluster, ci) => {
+  clusters.forEach((cluster) => {
     const roots = chainRootsByCluster[cluster];
     if(roots.length >= 1){
       // Хаб — главная точка темы, к которой цепляются начала всех её цепочек.
-      // Раньше хаб создавался только если в теме было 2+ независимых мысли — из-за этого
-      // темы с одной единственной мыслью (например «Ценности» с одной фразой) оставались
-      // без хаба и просто плавали отдельным островком, никак не привязанным к остальному графу.
       // Хаб нужен всегда, даже для одной цепочки — иначе половина тем выглядит оторванной от целого.
-      const hubId = 'hub' + ci;
-      nodes.push({ id: hubId, label: cluster, cluster, weight: 3, isHub: true });
-      roots.forEach(rootId => edges.push({ source: hubId, target: rootId }));
+      // Если хаб для этой темы уже существовал (режим "добавить новое") — переиспользуем его
+      // вместо создания дубликата с новым id.
+      let hub = existingHubByCluster[cluster];
+      if(!hub){
+        const hubId = 'hub' + nodes.filter(n => n.isHub).length;
+        hub = { id: hubId, label: cluster, cluster, weight: 3, isHub: true };
+        nodes.push(hub);
+      }
+      roots.forEach(rootId => {
+        const already = edges.some(e => e.source === hub.id && e.target === rootId);
+        if(!already) edges.push({ source: hub.id, target: rootId });
+      });
     }
   });
 
   return { clusters, nodes, edges };
 }
 
-async function buildGraph(text){
+async function buildGraph(text, existingGraph){
   await new Promise(r => setTimeout(r, 400)); // brief pause so the loading state doesn't flash
 
   let parsed = null;
   try{
-    parsed = extractGraphLocally(text);
+    parsed = extractGraphLocally(text, existingGraph);
     if(!parsed.nodes.length) throw new Error('empty');
   }catch(e){
     console.error('local extraction failed', e);
@@ -5684,7 +5857,7 @@ async function buildGraph(text){
   render();
 
   try{
-    await saveUserGraph(state.user.uid, text, parsed);
+    await saveUserGraph(state.user.uid, state.text, parsed);
     state.saveStatus = 'saved';
   }catch(e){
     console.error('save failed', e);
