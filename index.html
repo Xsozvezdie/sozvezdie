@@ -841,9 +841,19 @@
   .image-preview-overlay{
     position: fixed; inset: 0; z-index: 980;
     background: rgba(4,4,8,0.9);
-    display:flex; align-items:center; justify-content:center;
+    display:flex; flex-direction: column; align-items:center; justify-content:center; gap: 18px;
     padding: 24px; cursor: zoom-out;
   }
+  .image-preview-actionbar{
+    display:flex; gap: 10px; cursor: default;
+  }
+  .image-preview-action-btn{
+    display:flex; align-items:center; gap:6px;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+    color: #fff; border-radius: 999px; padding: 10px 18px; font-size: 14px;
+    cursor: pointer; font-family:'Inter',sans-serif;
+  }
+  .image-preview-action-btn:hover{ background: rgba(255,255,255,0.16); }
   .image-preview-img{
     max-width: 100%; max-height: 100%; border-radius: 8px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.5);
@@ -1815,7 +1825,7 @@ function mapMessageRow(r){
     toUid: r.to_uid, toName: r.to_name, groupId: r.group_id,
     text: r.text, imageData: r.image_url, voiceData: r.voice_url, videoData: r.video_url,
     fileData: r.file_url, fileName: r.file_name, transcript: r.transcript, waveform: r.waveform,
-    replyTo: r.reply_to, pinned: r.pinned, deletedFor: r.deleted_for || [], callSummary: r.call_summary, ts: r.ts,
+    replyTo: r.reply_to, pinned: r.pinned, deletedFor: r.deleted_for || [], callSummary: r.call_summary, ts: r.ts, edited: r.edited || false,
   };
 }
 
@@ -1915,17 +1925,22 @@ async function refreshNotificationCounts(){
 // Живые обновления через Supabase Realtime (аналог onSnapshot из Firestore).
 // Подход попроще: при любом изменении просто перезапрашиваем весь список сообщений чата.
 function listenToMessages(chatId, callback){
+  // Раньше здесь при каждом открытии чата и каждые 3 секунды заново подгружалась ВСЯ
+  // история переписки целиком — включая полные base64-данные всех фото/голосовых/видео
+  // за всё время. Именно это и делало открытие чата медленным (секунды пустого экрана).
+  // Теперь: подгружаем только последние 80 сообщений, и полагаемся на realtime-подписку
+  // вместо постоянного опроса — она и так сообщает о любых изменениях.
   async function refetch(){
-    const { data, error } = await sb.from('messages').select('*').eq('chat_id', chatId).order('ts', { ascending: true });
+    const { data, error } = await sb.from('messages').select('*').eq('chat_id', chatId)
+      .order('ts', { ascending: false }).limit(80);
     if(error){ console.error('chat listen failed', error); return; }
-    callback((data||[]).map(mapMessageRow));
+    callback((data||[]).map(mapMessageRow).reverse());
   }
   refetch();
   const channel = sb.channel('messages-' + chatId)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` }, refetch)
     .subscribe();
-  const pollId = setInterval(refetch, 3000);
-  return () => { sb.removeChannel(channel); clearInterval(pollId); };
+  return () => { sb.removeChannel(channel); };
 }
 
 async function deleteMessageForMe(msgId){
@@ -1933,6 +1948,17 @@ async function deleteMessageForMe(msgId){
   const deletedFor = new Set(data?.deleted_for || []);
   deletedFor.add(state.user.uid);
   await sb.from('messages').update({ deleted_for: [...deletedFor] }).eq('id', msgId);
+}
+
+async function editMessageText(msgId, newText){
+  const { error } = await sb.from('messages').update({ text: newText, edited: true }).eq('id', msgId);
+  if(error) throw new Error(error.message);
+}
+
+async function editMessageImage(msgId, newImageDataUrl){
+  const url = await uploadMediaToStorage(newImageDataUrl, 'images');
+  const { error } = await sb.from('messages').update({ image_url: url, edited: true }).eq('id', msgId);
+  if(error) throw new Error(error.message);
 }
 
 async function deleteMessageForEveryone(msgId){
@@ -2127,14 +2153,61 @@ function showImageSendPreview(dataUrl, onSend, onCancel){
   setTimeout(() => capInput.focus(), 0);
 }
 
-function openImagePreview(src){
+function openImagePreview(src, msgContext){
   const overlay = document.createElement('div');
   overlay.className = 'image-preview-overlay';
   const img = document.createElement('img');
   img.src = src;
   img.className = 'image-preview-img';
   overlay.appendChild(img);
-  overlay.onclick = () => overlay.remove();
+
+  if(msgContext && msgContext.mine){
+    const bar = document.createElement('div');
+    bar.className = 'image-preview-actionbar';
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'image-preview-action-btn';
+    delBtn.title = 'Удалить';
+    delBtn.innerHTML = '🗑';
+    delBtn.onclick = (e) => {
+      e.stopPropagation();
+      showConfirmModal('Удалить это фото у всех?', async () => {
+        try{ await deleteMessageForEveryone(msgContext.id); overlay.remove(); }
+        catch(err){ console.error('delete photo message failed', err); showToast('Не удалось удалить'); }
+      });
+    };
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'image-preview-action-btn';
+    editBtn.title = 'Ред.';
+    editBtn.innerHTML = '✎ <span>Ред.</span>';
+    editBtn.onclick = (e) => {
+      e.stopPropagation();
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file'; fileInput.accept = 'image/*';
+      fileInput.onchange = async () => {
+        const file = fileInput.files[0];
+        if(!file) return;
+        editBtn.disabled = true; editBtn.innerHTML = '…';
+        try{
+          const dataUrl = await compressImageToDataUrl(file);
+          await editMessageImage(msgContext.id, dataUrl);
+          overlay.remove();
+        }catch(err){
+          console.error('edit photo message failed', err);
+          showToast('Не удалось заменить фото');
+          editBtn.disabled = false; editBtn.innerHTML = '✎ <span>Ред.</span>';
+        }
+      };
+      fileInput.click();
+    };
+
+    bar.appendChild(delBtn);
+    bar.appendChild(editBtn);
+    overlay.appendChild(bar);
+  }
+
+  overlay.onclick = (e) => { if(e.target === overlay || e.target === img) overlay.remove(); };
   document.body.appendChild(overlay);
 }
 
@@ -2930,6 +3003,7 @@ function openChat(uid, name){
   state.chatMessages = []; state.replyingTo = null; state.selectMode = false; state.selectedMessageIds = new Set();
   state.otherLastRead = 0;
   state.chatStatusText = '';
+  state.chatMessagesLoading = true;
   render();
   const chatId = pairId(state.user.uid, uid);
   markChatRead(chatId).then(() => refreshNotificationCounts().then(() => {
@@ -2937,6 +3011,7 @@ function openChat(uid, name){
   }));
   chatUnsubscribe = listenToChat(uid, (msgs) => {
     state.chatMessages = msgs;
+    state.chatMessagesLoading = false;
     if(state.screen === 'messages' && state.chatWith && state.chatWith.uid === uid){
       renderChatMessages();
       markChatRead(chatId);
@@ -2972,6 +3047,7 @@ function openGroupChat(groupId, groupName){
   state.chatMessages = []; state.replyingTo = null; state.selectMode = false; state.selectedMessageIds = new Set();
   state.otherLastRead = 0;
   state.chatStatusText = '';
+  state.chatMessagesLoading = true;
   render();
   const chatId = 'g_' + groupId;
   markChatRead(chatId).then(() => refreshNotificationCounts().then(() => {
@@ -2979,6 +3055,7 @@ function openGroupChat(groupId, groupName){
   }));
   chatUnsubscribe = listenToMessages(chatId, (msgs) => {
     state.chatMessages = msgs;
+    state.chatMessagesLoading = false;
     if(state.screen === 'messages' && state.chatWith && state.chatWith.groupId === groupId){
       renderChatMessages();
       markChatRead(chatId);
@@ -3103,6 +3180,51 @@ function closeContextMenu(){
   document.removeEventListener('click', closeContextMenu);
 }
 
+function openEditMessageModal(m){
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box';
+
+  const title = document.createElement('div');
+  title.textContent = 'Редактировать сообщение';
+  title.style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:15px;';
+  box.appendChild(title);
+
+  const input = document.createElement('textarea');
+  input.value = m.text || '';
+  input.style.cssText = 'width:100%;min-height:80px;background:var(--bg-soft);border:1px solid var(--line);color:var(--ink);border-radius:12px;padding:12px 14px;font-size:15px;font-family:\'Inter\',sans-serif;resize:vertical;margin-bottom:0;';
+  box.appendChild(input);
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn ghost'; cancelBtn.textContent = 'Отмена';
+  cancelBtn.onclick = () => ov.remove();
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'btn'; saveBtn.textContent = 'Сохранить';
+  saveBtn.onclick = async () => {
+    const newText = input.value.trim();
+    if(!newText){ showToast('Сообщение не может быть пустым'); return; }
+    saveBtn.disabled = true;
+    try{
+      await editMessageText(m.id, newText);
+      ov.remove();
+    }catch(e){
+      console.error('edit message failed', e);
+      showToast('Не удалось сохранить изменения');
+      saveBtn.disabled = false;
+    }
+  };
+  row.appendChild(cancelBtn); row.appendChild(saveBtn);
+  box.appendChild(row);
+
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+  setTimeout(() => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }, 0);
+}
+
 function showMessageContextMenu(x, y, m, chatId){
   closeContextMenu();
   const menu = el('div','context-menu');
@@ -3119,6 +3241,9 @@ function showMessageContextMenu(x, y, m, chatId){
     state.replyingTo = { id: m.id, preview: messagePreviewText(m).slice(0,80), fromName: mine ? 'Себе' : (m.fromName || state.chatWith.name) };
     renderReplyBanner();
   });
+  if(mine && m.text){
+    item('Редактировать', () => { openEditMessageModal(m); });
+  }
   item('Копировать', () => {
     navigator.clipboard?.writeText(messagePreviewText(m)).then(() => showToast('Скопировано'));
   });
@@ -3270,6 +3395,13 @@ function renderChatMessages(){
   const chatId = state.chatWith.isGroup ? ('g_' + state.chatWith.groupId) : pairId(state.user.uid, state.chatWith.uid);
   const visible = state.chatMessages.filter(m => !(m.deletedFor||[]).includes(state.user.uid));
 
+  // Раньше при открытии чата экран просто оставался пустым на пару секунд, пока грузятся
+  // сообщения — выглядело как будто чат сломан. Теперь явно показываем, что идёт загрузка.
+  if(state.chatMessagesLoading && visible.length === 0){
+    box.appendChild(el('div','footer-note','Загружаем переписку…'));
+    return;
+  }
+
   const pinned = visible.find(m => m.pinned);
   if(pinned){
     const pinBar = el('div','pinned-banner');
@@ -3314,7 +3446,7 @@ function renderChatMessages(){
       return;
     }
     const mine = m.fromUid === state.user.uid;
-    const isBareMedia = (m.voiceData || m.videoData) && !m.text && !m.imageData && !m.replyTo;
+    const isBareMedia = (m.voiceData || m.videoData || m.imageData) && !m.text && !m.replyTo;
     const row = el('div','msg-row' + (mine ? ' mine' : ''));
     const bubble = el('div','chat-bubble' + (mine ? ' mine' : '') + (isBareMedia ? ' bare-media' : ''));
     attachLongPressAndRightClick(bubble, (x,y) => showMessageContextMenu(x, y, m, chatId));
@@ -3343,7 +3475,7 @@ function renderChatMessages(){
       img.src = m.imageData;
       img.className = 'chat-image';
       img.style.cursor = 'zoom-in';
-      img.onclick = (e) => { e.stopPropagation(); openImagePreview(m.imageData); };
+      img.onclick = (e) => { e.stopPropagation(); openImagePreview(m.imageData, { id: m.id, mine }); };
       bubble.appendChild(img);
       const dl = el('div','download-chip','⬇ Сохранить');
       dl.onclick = (e) => { e.stopPropagation(); downloadDataUrl(m.imageData, 'photo-' + m.ts + '.jpg'); };
@@ -3400,7 +3532,7 @@ function renderChatMessages(){
       if(m.imageData) textEl.style.marginTop = '6px';
       bubble.appendChild(textEl);
     }
-    const timeEl = el('div','msg-time', formatClockTime(m.ts));
+    const timeEl = el('div','msg-time', (m.edited ? 'ред. · ' : '') + formatClockTime(m.ts));
     bubble.appendChild(timeEl);
 
     box.appendChild(row);
@@ -5052,7 +5184,19 @@ const GENERIC_FILLER = new Set(['помогает','помогло','начал'
   // без них смысл не теряется, только конкретика существительного
   'личным','личные','личных','личный','личная','чужим','чужие','чужих',
   // наречия частоты — сами по себе не тема, только уточнение "как часто"
-  'часто','иногда','редко','обычно','постоянно','всегда']);
+  'часто','иногда','редко','обычно','постоянно','всегда',
+  // "свободное" без слова "время" рядом не может стоять само по себе — зависимое слово
+  'свободное','свободного','свободном','свободную','свободный','свободные',
+  // "рядом" само по себе ничего не говорит (это и так название темы "Люди рядом")
+  'рядом',
+  // "в основном" — общая оговорка меры, мешает распознать жанр/подтип рядом ("в основном нон-фикшн")
+  'основном',
+  // глаголы "бросил заниматься/читать" — сама констатация того, что человек забросил что-то,
+  // не несёт своей отдельной темы (тема уже названа рядом словом, которое он бросил)
+  'бросаю','бросаешь','бросает','бросил','бросила','забрасываю','забросил','забросила',
+  // возрастные/временные обозначения предмета ("старое кино", "старая музыка") — сам предмет
+  // важен, а не то, что он старый/новый
+  'старое','старого','старом','старую','старый','старые','новое','новую']);
 
 // Слова, которые формально совпадают с темой категории, но сами по себе — не тезис (просто глагол-самоотсылка).
 // Такие слова не должны становиться единственным словом узла — им всегда нужен сосед по смыслу.
@@ -5086,6 +5230,19 @@ const VERB_ROOT_MAP = {
   'играю':'Игры', 'играть':'Игры', 'поиграть':'Игры', 'играет':'Игры', 'играл':'Игры', 'играла':'Игры',
   'занимаюсь':'Занятие', 'заниматься':'Занятие', 'занимается':'Занятие',
   'увлекаюсь':'Увлечение', 'увлекается':'Увлечение', 'увлекаться':'Увлечение',
+  // Растущий список глаголов-хобби -> существительное. Общий принцип (не для конкретного
+  // текста): "мне нравится бегать", "я иногда могу побегать", подробное описание пробежки —
+  // всё это должно схлопываться в одно и то же существительное, а не оставаться глаголом.
+  'рисую':'Рисование', 'рисовать':'Рисование', 'рисует':'Рисование', 'рисовал':'Рисование', 'рисовала':'Рисование',
+  'бегаю':'Бег', 'бегать':'Бег', 'бегает':'Бег', 'побегать':'Бег', 'бегал':'Бег', 'пробежаться':'Бег',
+  'готовлю':'Готовка', 'готовить':'Готовка', 'готовит':'Готовка', 'готовил':'Готовка', 'готовила':'Готовка',
+  'путешествую':'Путешествия', 'путешествовать':'Путешествия', 'путешествует':'Путешествия',
+  'фотографирую':'Фотография', 'фотографировать':'Фотография',
+  'танцую':'Танцы', 'танцевать':'Танцы', 'танцует':'Танцы',
+  'пою':'Пение', 'петь':'Пение', 'поёт':'Пение',
+  'плаваю':'Плавание', 'плавать':'Плавание', 'плавает':'Плавание',
+  'вяжу':'Вязание', 'вязать':'Вязание',
+  'молчать':'Молчание', 'молчу':'Молчание', 'молчит':'Молчание',
 };
 
 // Небольшой growable-словарь «словоформа -> именительный падеж» для частых слов —
@@ -5101,12 +5258,47 @@ const LEMMA_MAP = {
   'шахматами':'Шахматы',
   'триллеры':'Триллеры', 'триллеров':'Триллеры',
   'границам':'Границы', 'границ':'Границы',
+  // синонимичные формы одного и того же понятия — не должны плодить дубликаты узла
+  'искренними':'Искренность', 'искренним':'Искренность', 'искренний':'Искренность', 'искренняя':'Искренность',
+  'кино':'Фильмы', 'кинчик':'Фильмы',
+};
+
+// Слово-жанр/поджанр -> его более широкая родительская тема. Раньше "документалки" и
+// "старое кино" просто были каждый сам по себе узлом хаба — теперь у них общий явный
+// родитель ("Фильмы"/"Книги"), даже если само слово-родитель не было написано в тексте.
+// Растущий словарь: сюда стоит дописывать новые поджанры по мере встречи.
+const GENRE_PARENT_MAP = {
+  'документалки':'Фильмы', 'документальный':'Фильмы', 'документальное':'Фильмы',
+  'комедии':'Фильмы', 'комедия':'Фильмы', 'мелодрам':'Фильмы', 'триллеры':'Фильмы', 'триллер':'Фильмы',
+  'сериалы':'Фильмы', 'сериал':'Фильмы',
+  'нон-фикшн':'Книги', 'фантастика':'Книги', 'фэнтези':'Книги', 'детектив':'Книги', 'детективы':'Книги',
+  'антиутопии':'Книги', 'антиутопия':'Книги',
 };
 
 // Оценочные глаголы-реакции ("раздражает", "восхищает") — в отличие от VERB_ROOT_MAP,
 // это не самостоятельная тема, а связка между человеком и тем, что вызывает реакцию.
 // Остаются отдельным (запертым) узлом, чтобы к ним можно было прицепить сразу
 // НЕСКОЛЬКО объектов через "и" (см. extractGraphLocally), а не потерять связь между ними.
+// Синонимичные ВЫРАЖЕНИЯ (не одно слово, а фраза целиком) -> уже известное понятие.
+// "Без масок" по сути то же самое, что "искренность" — не должно плодить рядом
+// второй, дублирующий смысл узел. Растущий словарь, как и остальные выше.
+const PHRASE_SYNONYM_MAP = {
+  'без масок': 'Искренность',
+  'без притворства': 'Искренность',
+};
+
+function applyPhraseSynonyms(clause){
+  let result = clause;
+  const lower = clause.toLowerCase();
+  for(const phrase of Object.keys(PHRASE_SYNONYM_MAP)){
+    const idx = lower.indexOf(phrase);
+    if(idx !== -1){
+      result = result.slice(0, idx) + PHRASE_SYNONYM_MAP[phrase] + result.slice(idx + phrase.length);
+    }
+  }
+  return result;
+}
+
 const EVALUATIVE_VERB_MAP = {
   'раздражает':'Раздражает', 'раздражают':'Раздражает', 'бесит':'Раздражает', 'бесят':'Раздражает', 'злит':'Раздражает',
   'восхищает':'Восхищает', 'восхищают':'Восхищает', 'вдохновляет':'Вдохновляет', 'вдохновляют':'Вдохновляет',
@@ -5250,7 +5442,8 @@ function normalizeConceptLabel(phrase){
 // сохраняя порядок, в котором они встретились в предложении.
 // Фразы в кавычках («...» или "...") считаются отдельным обязательным понятием —
 // в кавычки обычно берут что-то конкретное и важное (название, направление и т.п.).
-function extractConceptChain(clause){
+function extractConceptChain(rawClause){
+  const clause = applyPhraseSynonyms(rawClause);
   const quoteRe = /[«"]([^«»"]+)[»"]/g;
   const quotedPhrases = [];
   let m;
@@ -5293,12 +5486,24 @@ function extractConceptChain(clause){
     }
   });
 
+  // Фраза без единого узнанного "якоря" (ни цитаты, ни словарного понятия), но подряд
+  // идёт много расплывчатых слов ("держит возможность влиять на результат") — вместо
+  // длинной цепочки случайных обрывков берём ОДНО самое информативное слово как тезис.
+  if(merged.length > 2 && merged.every(m => !m.isQuoted && !m.locked)){
+    const best = merged.reduce((a,b) => (b.tokens.join(' ').length > a.tokens.join(' ').length ? b : a));
+    return [normalizeConceptLabel(best.tokens.join(' '))];
+  }
+
   return merged.map(m => (m.isQuoted || m.locked) ? m.tokens.join(' ') : normalizeConceptLabel(m.tokens.join(' ')));
 }
 
 function extractGraphLocally(text){
-  const clauses = splitIntoClauses(text);
-  const usable = clauses.length ? clauses : [text];
+  // Категория определяется по ПОЛНОМУ предложению (до разбивки на запятые/«и») — так у неё
+  // остаётся весь контекст. Иначе конструкции вида "Рядом — те, с кем можно молчать" ломаются:
+  // слово-подсказка темы ("рядом") оказывается в одной части после запятой, а сама мысль
+  // ("молчать") — в другой, и без узнанного слова-подсказки эта часть теряет тему целиком.
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/).map(s=>s.trim()).filter(Boolean);
+  const usableSentences = sentences.length ? sentences : [text];
 
   const nodeByKey = new Map(); // общий дедуп по нормализованному ключу, не по точной строке
   const nodes = [];
@@ -5307,20 +5512,28 @@ function extractGraphLocally(text){
 
   const EVALUATIVE_LABELS = new Set(Object.values(EVALUATIVE_VERB_MAP));
 
-  usable.forEach(commaClause => {
-    // Категория определяется по всей фразе целиком (до разбивки по «и») — так у неё
-    // остаётся весь контекст для распознавания темы. А вот в цепочку понятий разные
-    // части через «и» уже не сцепляются друг с другом — это сочинительная связь
-    // (сиблинги, как "программирование и веб-разработка"), а не иерархия одного в другом.
-    const cluster = categorize(commaClause);
-    const andPieces = splitProtectingQuotes(commaClause, /\s+и\s+/);
+  usableSentences.forEach(sentence => {
+    // Категория — одна на всё предложение. А вот "звёздное" прицепление объектов через «и»
+    // к оценочному глаголу (см. ниже) должно работать только ВНУТРИ одного куска между
+    // запятыми — иначе не связанные между собой мысли, разделённые запятой, могли бы
+    // случайно оказаться привязаны друг к другу.
+    const cluster = categorize(sentence);
+    const commaPieces = splitProtectingQuotes(sentence, /,/);
 
+    commaPieces.forEach(commaPiece => {
     let firstRootId = null;
     let firstRootIsEvaluative = false;
+
+    const andPieces = splitProtectingQuotes(commaPiece, /\s+и\s+/);
 
     andPieces.forEach((piece, pieceIdx) => {
       const chain = extractConceptChain(piece);
       if(!chain.length) return;
+      // Одинокое слово без узнанной темы (категория не определилась вообще никак) —
+      // это шум, а не тезис: его один раз оставленное описание ("бросаю", "молчать" без
+      // всякого контекста) ничего не добавляет и только замусоривает граф.
+      if(chain.length === 1 && cluster === 'О себе') return;
+
       const weight = Math.min(3, 1 + Math.floor(piece.split(/\s+/).filter(Boolean).length / 8));
 
       const chainIds = chain.map(label => {
@@ -5341,6 +5554,28 @@ function extractGraphLocally(text){
         if(!already) edges.push({ source: chainIds[k-1], target: chainIds[k] });
       }
 
+      // Слово-жанр/поджанр ("документалки", "нон-фикшн") получает общего родителя
+      // ("Фильмы"/"Книги"), даже если само слово-родитель не встречалось в тексте —
+      // так однотипные мысли из разных предложений собираются в одну ветку, а не
+      // висят отдельными несвязанными точками на хабе.
+      let effectiveRootId = chainIds[0];
+      const genreParent = GENRE_PARENT_MAP[chain[0].toLowerCase()];
+      if(genreParent){
+        const parentKey = dedupKey(genreParent);
+        let parentNode = nodeByKey.get(parentKey);
+        if(!parentNode){
+          const parentId = 'n' + nodes.length;
+          parentNode = { id: parentId, label: genreParent, cluster, weight: 2 };
+          nodes.push(parentNode);
+          nodeByKey.set(parentKey, parentNode);
+        }
+        if(parentNode.id !== chainIds[0]){
+          const already = edges.some(e => e.source === parentNode.id && e.target === chainIds[0]);
+          if(!already) edges.push({ source: parentNode.id, target: chainIds[0] });
+        }
+        effectiveRootId = parentNode.id;
+      }
+
       // "Раздражает шум и поверхностность" — второй объект после «и» должен остаться
       // прицепленным к тому же оценочному глаголу, что и первый, а не улететь отдельным
       // самостоятельным узлом хаба, будто это никак не связанная мысль.
@@ -5351,14 +5586,63 @@ function extractGraphLocally(text){
       }
 
       if(pieceIdx === 0){
-        firstRootId = chainIds[0];
+        firstRootId = effectiveRootId;
         firstRootIsEvaluative = EVALUATIVE_LABELS.has(chain[0]);
       }
 
       if(!chainRootsByCluster[cluster]) chainRootsByCluster[cluster] = [];
-      if(!chainRootsByCluster[cluster].includes(chainIds[0])){
-        chainRootsByCluster[cluster].push(chainIds[0]);
+      if(!chainRootsByCluster[cluster].includes(effectiveRootId)){
+        chainRootsByCluster[cluster].push(effectiveRootId);
       }
+    });
+    });
+  });
+
+  // Growable-словарь смысловых связей МЕЖДУ темами — не всё должно жить в изолированной
+  // ветке своего хаба. Расширил на все пять категорий: работа/увлечения/люди/ценности/медиа
+  // часто пересекаются по смыслу (дизайн — и работа, и творчество; книги часто отражают
+  // ценности человека; спорт связан с дисциплиной и т.д.). Такие связи рисуются отдельным
+  // тонким ребром между уже существующими узлами (если оба узла есть в графе) — это не
+  // замена основной иерархии внутри темы, а дополнительный мост между темами.
+  const RELATED_CONCEPTS = {
+    // Работа/учёба ↔ Увлечения — многие профессиональные вещи одновременно и хобби
+    'дизайн': ['рисование', 'творчество', 'it', 'фотография'],
+    'программирование': ['it', 'шахматы'],
+    'веб-разработка': ['it'],
+    'юриспруденция': ['ответственность'],
+    'учёба': ['саморазвитие'],
+    // Увлечения ↔ Медиа и мысли — увлечения часто выражаются через то, что человек смотрит/читает
+    'путешествия': ['фотография', 'культура'],
+    'фотография': ['путешествия', 'творчество', 'дизайн'],
+    'музыка': ['творчество', 'концерты'],
+    'рисование': ['творчество', 'дизайн'],
+    'шахматы': ['программирование', 'логика'],
+    'готовка': ['творчество'],
+    // Медиа и мысли ↔ Ценности — то, что человек читает/смотрит, часто отражает его взгляды
+    'книги': ['саморазвитие', 'мировоззрение'],
+    'фильмы': ['культура'],
+    'нон-фикшн': ['саморазвитие'],
+    'история': ['мировоззрение', 'культура'],
+    'философия': ['мировоззрение', 'ценности'],
+    // Люди рядом ↔ Ценности — отношения с людьми почти всегда завязаны на ценностях
+    'семья': ['ответственность', 'поддержка'],
+    'друзья': ['доверие', 'поддержка'],
+    'отношения': ['доверие', 'уважение'],
+    // Ценности ↔ Работа/учёба — принципы часто проявляются именно в работе
+    'ответственность': ['работа', 'юриспруденция'],
+    'честность': ['доверие'],
+    'свобода': ['саморазвитие'],
+  };
+  Object.entries(RELATED_CONCEPTS).forEach(([a, relatedList]) => {
+    const nodeA = nodeByKey.get(dedupKey(a));
+    if(!nodeA) return;
+    relatedList.forEach(b => {
+      const nodeB = nodeByKey.get(dedupKey(b));
+      if(!nodeB || nodeB.id === nodeA.id) return;
+      const already = edges.some(e =>
+        (e.source === nodeA.id && e.target === nodeB.id) ||
+        (e.source === nodeB.id && e.target === nodeA.id));
+      if(!already) edges.push({ source: nodeA.id, target: nodeB.id, cross: true });
     });
   });
 
