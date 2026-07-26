@@ -927,7 +927,10 @@
   }
   .send-preview-box{
     position: relative; max-width: 480px; width: 100%;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    background: color-mix(in srgb, var(--panel) 62%, transparent);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+    border-radius: 16px;
     padding: 16px; display:flex; flex-direction:column; gap: 14px;
   }
   .send-preview-close{
@@ -1006,12 +1009,13 @@
   .calendar-page-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 26px; margin: 0; }
   .calendar-nav-row{ display:flex; align-items:center; gap:10px; margin-bottom: 16px; flex-wrap: wrap; }
   .calendar-month-label{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size: 16px; min-width: 160px; }
-  .calendar-card{ padding: 16px; }
-  .calendar-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .calendar-card{ padding: 16px; background: color-mix(in srgb, var(--panel) 30%, transparent) !important; }
+  .calendar-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
   .calendar-dow{ text-align:center; font-size: 12px; color: var(--ink-dim); padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
   .calendar-cell{
-    min-height: 84px; border-radius: 10px; padding: 6px;
-    background: color-mix(in srgb, var(--bg-soft) 32%, transparent);
+    min-height: 84px; border-radius: 8px; padding: 6px;
+    background: color-mix(in srgb, var(--bg-soft) 16%, transparent);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     border: 1px solid transparent; cursor: pointer; transition: border-color .12s ease;
   }
   .calendar-cell:hover{ border-color: var(--line); }
@@ -1636,6 +1640,9 @@ const CHAT_ICONS = {
   stop: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>',
   call: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1.1-.2 1.2.4 2.5.6 3.8.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.6.6 3.8.1.4 0 .8-.2 1.1L6.6 10.8z"/></svg>',
   wallpaper: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/><path d="M18.5 7l-.8 12.1a2 2 0 0 1-2 1.9H8.3a2 2 0 0 1-2-1.9L5.5 7"/><line x1="10" y1="11" x2="10" y2="16"/><line x1="14" y1="11" x2="14" y2="16"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>',
 };
 
 const CALL_ICONS = {
@@ -1917,6 +1924,7 @@ async function createCalendarEvent(evt){
     kind: evt.kind || 'event',
     schedule_pattern: evt.schedulePattern || null,
     reminder_minutes: evt.reminderMinutes || null,
+    excluded_ts: [],
     color: evt.color || '#7c9eff',
   };
   const { data, error } = await sb.from('calendar_events').insert(row).select().single();
@@ -1972,8 +1980,9 @@ function expandRecurrence(event, rangeStart, rangeEnd){
   const occurrences = [];
   const until = event.recurrence_until || rangeEnd;
   const limit = Math.min(rangeEnd, until);
+  const excluded = new Set(event.excluded_ts || []);
   if(event.recurrence === 'none' || !event.recurrence){
-    if(event.start_ts < limit && event.end_ts > rangeStart) occurrences.push({ start: event.start_ts, end: event.end_ts });
+    if(event.start_ts < limit && event.end_ts > rangeStart && !excluded.has(event.start_ts)) occurrences.push({ start: event.start_ts, end: event.end_ts });
     return occurrences;
   }
   let cursor = new Date(event.start_ts);
@@ -1985,7 +1994,7 @@ function expandRecurrence(event, rangeStart, rangeEnd){
     let include = true;
     if(event.recurrence === 'weekdays') include = dow >= 1 && dow <= 5;
     else if(event.recurrence === 'weekends') include = dow === 0 || dow === 6;
-    if(include && occStart >= rangeStart && occStart < rangeEnd){
+    if(include && occStart >= rangeStart && occStart < rangeEnd && !excluded.has(occStart)){
       occurrences.push({ start: occStart, end: occStart + dur });
     }
     if(event.recurrence === 'daily' || event.recurrence === 'weekdays' || event.recurrence === 'weekends'){
@@ -2017,6 +2026,7 @@ function expandWorkSchedule(event, rangeStart, rangeEnd){
   const dayEndMs = new Date(event.end_ts).getHours()*3600000 + new Date(event.end_ts).getMinutes()*60000;
   const until = event.recurrence_until || rangeEnd;
   const limit = Math.min(rangeEnd, until);
+  const excluded = new Set(event.excluded_ts || []);
   const occurrences = [];
   let cursor = new Date(startDay);
   let guard = 0;
@@ -2027,7 +2037,7 @@ function expandWorkSchedule(event, rangeStart, rangeEnd){
     if(posInCycle < onDays){
       const occStart = cursor.getTime() + dayStartMs;
       const occEnd = cursor.getTime() + dayEndMs;
-      if(occStart >= rangeStart && occStart < rangeEnd) occurrences.push({ start: occStart, end: occEnd });
+      if(occStart >= rangeStart && occStart < rangeEnd && !excluded.has(occStart)) occurrences.push({ start: occStart, end: occEnd });
     }
     cursor.setDate(cursor.getDate() + 1);
   }
@@ -2036,6 +2046,39 @@ function expandWorkSchedule(event, rangeStart, rangeEnd){
 
 let calendarNotifications = []; // {id, text, ts, read} — уведомления по календарю (сессия)
 let calendarChannel = null;
+
+// Резервный опрос календаря — не полагается только на realtime (который может быть не
+// настроен на стороне Supabase) — сравнивает свежие данные с уже известными и сам находит
+// новые приглашения / ответы на них, даже если realtime-событие по какой-то причине не пришло.
+async function pollCalendarForChanges(){
+  if(!supabaseReady || !state.user) return;
+  try{
+    const fresh = await listMyCalendarEvents();
+    const prev = state.calendarEvents;
+    if(prev){
+      const prevById = new Map(prev.map(e => [e.id, e]));
+      fresh.forEach(ev => {
+        const old = prevById.get(ev.id);
+        if(!old){
+          if(ev.owner_uid !== state.user.uid){
+            const mine = (ev.participants||[]).find(p => p.uid === state.user.uid);
+            if(mine) pushCalendarNotification(`${ev.owner_name || 'Кто-то'} пригласил(а) вас: «${ev.title}»`);
+          }
+        } else if(ev.owner_uid === state.user.uid){
+          (ev.participants||[]).forEach(np => {
+            const op = (old.participants||[]).find(p => p.uid === np.uid);
+            if(op && op.status === 'pending' && np.status && np.status !== 'pending'){
+              pushCalendarNotification(`${np.name} ${np.status === 'confirmed' ? 'принял(а)' : 'отклонил(а)'} приглашение: «${ev.title}»`);
+            }
+          });
+        }
+      });
+    }
+    state.calendarEvents = fresh;
+    state.calendarEventsLoaded = true;
+    if(state.screen === 'calendar') render();
+  }catch(e){ console.error('calendar poll failed', e); }
+}
 
 function invalidateCalendarCache(){
   state.calendarEvents = null;
@@ -2295,11 +2338,51 @@ function openDayDetail(year, month, day, items){
           row.appendChild(acceptBtn); row.appendChild(declineBtn);
         }
         if(mine){
-          const delBtn = el('button','btn ghost icon-only-btn','🗑');
+          const isRecurring = item.event.recurrence !== 'none' || item.event.kind === 'work_schedule';
+          const editBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.edit);
+          editBtn.title = 'Редактировать';
+          editBtn.onclick = (e) => { e.stopPropagation(); ov.remove(); openEventModal({ existingEvent: item.event }); };
+          row.appendChild(editBtn);
+
+          const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
+          delBtn.title = 'Удалить';
           delBtn.onclick = async (e) => {
             e.stopPropagation();
-            await deleteCalendarEvent(item.event.id);
-            invalidateCalendarCache(); ov.remove(); render();
+            if(!isRecurring){
+              showConfirmModal('Удалить это событие?', async () => {
+                await deleteCalendarEvent(item.event.id);
+                invalidateCalendarCache(); ov.remove(); render();
+              });
+              return;
+            }
+            // Повторяющееся событие — уточняем, что именно удалить.
+            const chooser = document.createElement('div');
+            chooser.className = 'send-preview-overlay';
+            const cbox = document.createElement('div');
+            cbox.className = 'send-preview-box';
+            cbox.appendChild(el('div','','Что удалить?')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:15px;';
+            const onlyDayBtn = el('button','btn ghost','Только этот день');
+            onlyDayBtn.onclick = async () => {
+              chooser.remove();
+              const excluded = [...(item.event.excluded_ts||[]), item.start];
+              await updateCalendarEvent(item.event.id, { excluded_ts: excluded });
+              invalidateCalendarCache(); ov.remove(); render();
+            };
+            const allBtn = el('button','btn','Удалить всё событие');
+            allBtn.onclick = async () => {
+              chooser.remove();
+              await deleteCalendarEvent(item.event.id);
+              invalidateCalendarCache(); ov.remove(); render();
+            };
+            const cancelChooserBtn = el('button','btn ghost','Отмена');
+            cancelChooserBtn.onclick = () => chooser.remove();
+            const chooserRow = document.createElement('div');
+            chooserRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;';
+            chooserRow.appendChild(cancelChooserBtn); chooserRow.appendChild(onlyDayBtn); chooserRow.appendChild(allBtn);
+            cbox.appendChild(chooserRow);
+            chooser.appendChild(cbox);
+            chooser.onclick = (ev2) => { if(ev2.target === chooser) chooser.remove(); };
+            document.body.appendChild(chooser);
           };
           row.appendChild(delBtn);
         }
@@ -2338,30 +2421,34 @@ function formatTimeInputValue(d){
 // opts: { presetDate, presetParticipant:{uid,name}, groupId, groupMembers:[{uid,name}] }
 function openEventModal(opts){
   opts = opts || {};
+  const editing = !!opts.existingEvent;
+  const ev0 = opts.existingEvent;
   const ov = document.createElement('div');
   ov.className = 'send-preview-overlay';
   const box = document.createElement('div');
   box.className = 'send-preview-box event-modal-box';
 
-  box.appendChild(el('div','','Новое событие')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
+  box.appendChild(el('div','', editing ? 'Редактировать событие' : 'Новое событие')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
 
   const titleInput = document.createElement('input');
   titleInput.type = 'text'; titleInput.placeholder = 'Название события';
-  titleInput.value = opts.groupId ? '' : (opts.presetParticipant ? `Встреча с ${opts.presetParticipant.name}` : '');
+  titleInput.value = editing ? ev0.title : (opts.groupId ? '' : (opts.presetParticipant ? `Встреча с ${opts.presetParticipant.name}` : ''));
   box.appendChild(titleInput);
 
-  const baseDate = opts.presetDate || new Date();
+  const baseDate = editing ? new Date(ev0.start_ts) : (opts.presetDate || new Date());
   const dateRow = el('div','event-modal-row');
   const startDateInput = document.createElement('input'); startDateInput.type='date'; startDateInput.value = formatDateInputValue(baseDate);
-  const startTimeInput = document.createElement('input'); startTimeInput.type='time'; startTimeInput.value = '12:00';
-  const endTimeInput = document.createElement('input'); endTimeInput.type='time'; endTimeInput.value = '13:00';
+  const startTimeInput = document.createElement('input'); startTimeInput.type='time'; startTimeInput.value = editing ? formatTimeInputValue(new Date(ev0.start_ts)) : '12:00';
+  const endTimeInput = document.createElement('input'); endTimeInput.type='time'; endTimeInput.value = editing ? formatTimeInputValue(new Date(ev0.end_ts)) : '13:00';
   dateRow.appendChild(startDateInput); dateRow.appendChild(startTimeInput); dateRow.appendChild(endTimeInput);
   box.appendChild(dateRow);
 
   const allDayLabel = document.createElement('label'); allDayLabel.className = 'event-modal-checkbox-label';
   const allDayCheckbox = document.createElement('input'); allDayCheckbox.type = 'checkbox';
+  allDayCheckbox.checked = editing ? !!ev0.all_day : false;
   allDayLabel.appendChild(allDayCheckbox); allDayLabel.appendChild(document.createTextNode(' Весь день'));
   box.appendChild(allDayLabel);
+  if(allDayCheckbox.checked){ startTimeInput.style.display = 'none'; endTimeInput.style.display = 'none'; }
   allDayCheckbox.onchange = () => {
     startTimeInput.style.display = allDayCheckbox.checked ? 'none' : '';
     endTimeInput.style.display = allDayCheckbox.checked ? 'none' : '';
@@ -2371,7 +2458,7 @@ function openEventModal(opts){
   recurrenceWrap.appendChild(el('div','top-tag','Повторение'));
   const recurrenceSelect = document.createElement('select');
   [['none','Никогда'],['daily','Каждый день'],['weekdays','По будням'],['weekends','По выходным'],['weekly','Раз в неделю'],['monthly','Раз в месяц'],['yearly','Раз в год']]
-    .forEach(([val,label]) => recurrenceSelect.appendChild(new Option(label, val)));
+    .forEach(([val,label]) => recurrenceSelect.appendChild(new Option(label, val, false, editing && ev0.recurrence === val)));
   recurrenceWrap.appendChild(recurrenceSelect);
   box.appendChild(recurrenceWrap);
 
@@ -2379,22 +2466,23 @@ function openEventModal(opts){
   reminderWrap.appendChild(el('div','top-tag','Напомнить'));
   const reminderSelect = document.createElement('select');
   [['','Не напоминать'],['10','За 10 минут'],['30','За 30 минут'],['60','За 1 час'],['180','За 3 часа'],['1440','За 1 день']]
-    .forEach(([val,label]) => reminderSelect.appendChild(new Option(label, val)));
+    .forEach(([val,label]) => reminderSelect.appendChild(new Option(label, val, false, editing && String(ev0.reminder_minutes||'') === val)));
   reminderWrap.appendChild(reminderSelect);
   box.appendChild(reminderWrap);
 
   // --- Особый режим: постоянный график занятости (работа 5/2, 2/2 и т.п.) ---
   const scheduleLabel = document.createElement('label'); scheduleLabel.className = 'event-modal-checkbox-label';
   const scheduleCheckbox = document.createElement('input'); scheduleCheckbox.type = 'checkbox';
+  scheduleCheckbox.checked = editing && ev0.kind === 'work_schedule';
   scheduleLabel.appendChild(scheduleCheckbox); scheduleLabel.appendChild(document.createTextNode(' Это мой постоянный график занятости (работа/учёба)'));
   box.appendChild(scheduleLabel);
 
   const scheduleOptionsWrap = el('div','event-modal-schedule-options');
-  scheduleOptionsWrap.style.display = 'none';
+  scheduleOptionsWrap.style.display = scheduleCheckbox.checked ? '' : 'none';
   const patternRow = el('div','event-modal-row');
   const patternSelect = document.createElement('select');
   [['5/2','5 через 2 (пн–пт)'],['2/2','2 через 2'],['6/1','6 через 1'],['1/1','через день']]
-    .forEach(([val,label]) => patternSelect.appendChild(new Option(label, val)));
+    .forEach(([val,label]) => patternSelect.appendChild(new Option(label, val, false, editing && ev0.schedule_pattern === val)));
   patternRow.appendChild(patternSelect);
   scheduleOptionsWrap.appendChild(el('div','footer-note','Друзья и контакты будут видеть, что ты занят(а) в это время каждый цикл, начиная с выбранной даты.'));
   scheduleOptionsWrap.appendChild(patternRow);
@@ -2406,12 +2494,17 @@ function openEventModal(opts){
     reminderWrap.style.display = scheduleCheckbox.checked ? 'none' : '';
     participantsSection.style.display = scheduleCheckbox.checked ? 'none' : '';
   };
+  if(scheduleCheckbox.checked){
+    recurrenceWrap.style.display = 'none';
+    reminderWrap.style.display = 'none';
+  }
 
   // --- Участники ---
   const participantsSection = document.createElement('div');
   participantsSection.appendChild(el('div','top-tag','Участники'));
   const participantsListEl = el('div','event-modal-participants');
   let participants = [];
+  if(editing) participants = (ev0.participants||[]).filter(p => p.uid !== state.user.uid).map(p => ({ uid: p.uid, name: p.name }));
   if(opts.presetParticipant) participants.push(opts.presetParticipant);
   if(opts.groupMembers) participants = opts.groupMembers.filter(m => m.uid !== state.user.uid);
 
@@ -2446,6 +2539,7 @@ function openEventModal(opts){
   addParticipantRow.appendChild(friendSelect);
   participantsSection.appendChild(addParticipantRow);
   box.appendChild(participantsSection);
+  if(scheduleCheckbox.checked) participantsSection.style.display = 'none';
 
   const errEl = el('div','err','');
   errEl.style.display = 'none';
@@ -2455,7 +2549,7 @@ function openEventModal(opts){
   btnRow.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;margin-top:6px;';
   const cancelBtn = document.createElement('button'); cancelBtn.className='btn ghost'; cancelBtn.textContent='Отмена';
   cancelBtn.onclick = () => ov.remove();
-  const saveBtn = document.createElement('button'); saveBtn.className='btn'; saveBtn.textContent='Создать';
+  const saveBtn = document.createElement('button'); saveBtn.className='btn'; saveBtn.textContent = editing ? 'Сохранить' : 'Создать';
   saveBtn.onclick = async () => {
     const title = titleInput.value.trim();
     if(!title){ errEl.textContent = 'Введи название события'; errEl.style.display=''; return; }
@@ -2471,9 +2565,25 @@ function openEventModal(opts){
       endTs = new Date(y, mo-1, da, eh, em).getTime();
       if(endTs <= startTs) endTs = startTs + 60*60*1000;
     }
-    saveBtn.disabled = true; saveBtn.textContent = 'Создаём…';
+    saveBtn.disabled = true; saveBtn.textContent = editing ? 'Сохраняем…' : 'Создаём…';
     try{
-      if(scheduleCheckbox.checked){
+      if(editing){
+        const patch = {
+          title, start_ts: startTs, end_ts: endTs, all_day: allDayCheckbox.checked,
+          reminder_minutes: reminderSelect.value ? parseInt(reminderSelect.value, 10) : null,
+        };
+        if(scheduleCheckbox.checked){
+          patch.recurrence = 'none'; patch.kind = 'work_schedule'; patch.schedule_pattern = patternSelect.value;
+        } else {
+          patch.recurrence = recurrenceSelect.value; patch.kind = 'event';
+          patch.participants = (ev0.participants||[]).map(p => p.uid === state.user.uid ? p : (
+            participants.some(np => np.uid === p.uid) ? p : null
+          )).filter(Boolean).concat(
+            participants.filter(np => !(ev0.participants||[]).some(p => p.uid === np.uid)).map(p => ({ uid: p.uid, name: p.name, status: 'pending' }))
+          );
+        }
+        await updateCalendarEvent(ev0.id, patch);
+      } else if(scheduleCheckbox.checked){
         const allFriends = await listFriends();
         await createCalendarEvent({
           title, startTs, endTs, allDay: false,
@@ -2491,10 +2601,10 @@ function openEventModal(opts){
       invalidateCalendarCache();
       ov.remove();
       if(state.screen === 'calendar') render();
-      else showToast('Событие создано ✓');
+      else showToast(editing ? 'Сохранено ✓' : 'Событие создано ✓');
     }catch(e){
-      console.error('create event failed', e);
-      errEl.textContent = 'Не удалось создать: ' + e.message;
+      console.error('save event failed', e);
+      errEl.textContent = 'Не удалось сохранить: ' + e.message;
       errEl.style.display = '';
       saveBtn.disabled = false; saveBtn.textContent = 'Создать';
     }
@@ -3789,6 +3899,7 @@ function startNotificationPolling(){
     refreshNotificationCounts().then(refreshGlobalNav);
     updateLastActive();
     checkCalendarReminders();
+    pollCalendarForChanges();
     if(state.screen === 'messages' && !state.chatWith){
       listChatThreads().then(threads => { state.threads = threads; if(state.screen === 'messages' && !state.chatWith) render(); }).catch(()=>{});
     }
@@ -4836,7 +4947,7 @@ function buildChatPanel(container){
     };
     headerRow.appendChild(callBtn);
 
-    const calBtn = el('button','icon-btn','📅');
+    const calBtn = el('button','icon-btn', CHAT_ICONS.calendar);
     calBtn.title = 'Создать событие';
     calBtn.style.color = 'var(--ink)';
     calBtn.onclick = (e) => {
@@ -4846,7 +4957,7 @@ function buildChatPanel(container){
     headerRow.appendChild(calBtn);
   }
   if(state.chatWith.isGroup){
-    const calBtn = el('button','icon-btn','📅');
+    const calBtn = el('button','icon-btn', CHAT_ICONS.calendar);
     calBtn.title = 'Создать событие для группы';
     calBtn.style.color = 'var(--ink)';
     calBtn.onclick = async (e) => {
