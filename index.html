@@ -325,7 +325,32 @@
   .nav-wrapper{
     position: sticky; top: 16px; z-index: 50; margin-bottom: 40px;
   }
-  .brand-row{ margin-bottom: 10px; }
+  .brand-row{ margin-bottom: 10px; display:flex; align-items:center; justify-content:space-between; gap: 12px; }
+  .notif-bell-btn{
+    position: relative;
+    background: color-mix(in srgb, var(--panel) 55%, transparent);
+    border: 1px solid var(--line); border-radius: 50%;
+    width: 40px; height: 40px; font-size: 17px; cursor: pointer;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .notif-bell-badge{
+    position: absolute; top: -4px; right: -4px;
+    background: var(--gold); color: var(--bg);
+    font-size: 10px; font-weight: 700; min-width: 16px; height: 16px;
+    border-radius: 999px; display:flex; align-items:center; justify-content:center;
+    padding: 0 3px;
+  }
+  .notif-panel{
+    position: fixed; top: 64px; right: 16px; width: 300px; max-height: 380px; overflow-y:auto;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--line); border-radius: 16px; padding: 14px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.4); z-index: 950;
+  }
+  .notif-panel-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 14px; margin-bottom: 8px; }
+  .notif-panel-row{ padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .notif-panel-row.unread .notif-panel-text{ color: var(--gold); }
+  .notif-panel-text{ font-size: 13px; color: var(--ink); }
   .nav{
     display:flex; align-items:center; flex-wrap: wrap;
     background: var(--panel);
@@ -986,7 +1011,7 @@
   .calendar-dow{ text-align:center; font-size: 12px; color: var(--ink-dim); padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
   .calendar-cell{
     min-height: 84px; border-radius: 10px; padding: 6px;
-    background: color-mix(in srgb, var(--bg-soft) 55%, transparent);
+    background: color-mix(in srgb, var(--bg-soft) 32%, transparent);
     border: 1px solid transparent; cursor: pointer; transition: border-color .12s ease;
   }
   .calendar-cell:hover{ border-color: var(--line); }
@@ -997,7 +1022,7 @@
   .calendar-cell-items{ display:flex; flex-direction:column; gap: 2px; }
   .calendar-event-chip{
     font-size: 10.5px; padding: 2px 5px; border-radius: 5px; white-space: nowrap; overflow:hidden; text-overflow:ellipsis;
-    background: color-mix(in srgb, var(--chip-color, var(--gold)) 22%, transparent);
+    background: color-mix(in srgb, var(--chip-color, var(--gold)) 14%, transparent);
     color: var(--ink); border-left: 2px solid var(--chip-color, var(--gold));
   }
   .calendar-event-more{ font-size: 10px; color: var(--ink-dim); padding-left: 4px; }
@@ -1891,6 +1916,7 @@ async function createCalendarEvent(evt){
     participants,
     kind: evt.kind || 'event',
     schedule_pattern: evt.schedulePattern || null,
+    reminder_minutes: evt.reminderMinutes || null,
     color: evt.color || '#7c9eff',
   };
   const { data, error } = await sb.from('calendar_events').insert(row).select().single();
@@ -2008,6 +2034,110 @@ function expandWorkSchedule(event, rangeStart, rangeEnd){
   return occurrences;
 }
 
+let calendarNotifications = []; // {id, text, ts, read} — уведомления по календарю (сессия)
+let calendarChannel = null;
+
+function invalidateCalendarCache(){
+  state.calendarEvents = null;
+  state.calendarEventsLoaded = false;
+}
+
+function pushCalendarNotification(text){
+  calendarNotifications = [{ id: 'cn' + Date.now() + Math.random(), text, ts: Date.now(), read: false }, ...calendarNotifications].slice(0, 50);
+  refreshGlobalNav();
+}
+
+function unreadCalendarNotifCount(){
+  return calendarNotifications.filter(n => !n.read).length;
+}
+
+// Realtime-подписка на календарь — работает всё время, пока человек залогинен, а не только
+// пока открыт экран "Календарь". Раньше приглашение реально сохранялось в базе, но у
+// приглашённого просто не было способа узнать о нём без ручного захода в календарь и
+// перезагрузки страницы — теперь оно приходит уведомлением сразу, где бы человек ни был.
+function startCalendarRealtime(){
+  if(!supabaseReady || calendarChannel || !state.user) return;
+  calendarChannel = sb.channel('calendar-events-' + state.user.uid)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'calendar_events' }, (payload) => {
+      const row = payload.new;
+      if(!row) return;
+      if(row.owner_uid !== state.user.uid){
+        const mine = (row.participants||[]).find(p => p.uid === state.user.uid);
+        if(mine) pushCalendarNotification(`${row.owner_name || 'Кто-то'} пригласил(а) вас: «${row.title}»`);
+      }
+      invalidateCalendarCache();
+      if(state.screen === 'calendar') render();
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calendar_events' }, (payload) => {
+      const oldRow = payload.old, newRow = payload.new;
+      if(newRow && newRow.owner_uid === state.user.uid && oldRow?.participants){
+        (newRow.participants||[]).forEach(np => {
+          const op = (oldRow.participants||[]).find(p => p.uid === np.uid);
+          if(op && op.status === 'pending' && np.status && np.status !== 'pending'){
+            pushCalendarNotification(`${np.name} ${np.status === 'confirmed' ? 'принял(а)' : 'отклонил(а)'} приглашение: «${newRow.title}»`);
+          }
+        });
+      }
+      invalidateCalendarCache();
+      if(state.screen === 'calendar') render();
+    })
+    .subscribe();
+}
+
+function stopCalendarRealtime(){
+  if(calendarChannel){ sb.removeChannel(calendarChannel); calendarChannel = null; }
+}
+
+// Напоминания "за сколько времени" — проверяем в рамках уже существующего опроса
+// уведомлений, не наступил ли момент напомнить о ближайшем событии.
+const remindedEventIds = new Set();
+function checkCalendarReminders(){
+  if(!state.calendarEvents || !state.calendarEvents.length) return;
+  const now = Date.now();
+  const horizon = now + 24*60*60*1000;
+  state.calendarEvents.forEach(ev => {
+    if(!ev.reminder_minutes || ev.kind === 'work_schedule') return;
+    const occs = expandRecurrence(ev, now - 60*1000, horizon);
+    occs.forEach(occ => {
+      const remindAt = occ.start - ev.reminder_minutes*60*1000;
+      const key = ev.id + '@' + occ.start;
+      if(remindAt <= now && occ.start > now && !remindedEventIds.has(key)){
+        remindedEventIds.add(key);
+        pushCalendarNotification(`Скоро: «${ev.title}» в ${formatClockTime(occ.start)}`);
+      }
+    });
+  });
+}
+
+function openNotificationPanel(){
+  const existing = document.getElementById('notif-panel-popup');
+  if(existing){ existing.remove(); return; }
+  const popup = el('div','notif-panel');
+  popup.id = 'notif-panel-popup';
+  popup.appendChild(el('div','notif-panel-title','Уведомления календаря'));
+  if(!calendarNotifications.length){
+    popup.appendChild(el('div','footer-note','Пока пусто'));
+  } else {
+    calendarNotifications.forEach(n => {
+      const row = el('div','notif-panel-row' + (n.read ? '' : ' unread'));
+      row.appendChild(el('div','notif-panel-text', n.text));
+      row.appendChild(el('div','meta', timeAgoShort(n.ts)));
+      popup.appendChild(row);
+    });
+  }
+  calendarNotifications.forEach(n => n.read = true);
+  document.body.appendChild(popup);
+  setTimeout(() => {
+    document.addEventListener('click', function closeNotif(ev){
+      if(!popup.contains(ev.target) && ev.target.id !== 'notif-bell-btn'){
+        popup.remove();
+        document.removeEventListener('click', closeNotif);
+        refreshGlobalNav();
+      }
+    });
+  }, 0);
+}
+
 function renderCalendarScreen(){
   const w = el('div','wrap wide calendar-page');
   w.appendChild(renderNav('calendar'));
@@ -2093,17 +2223,19 @@ function renderCalendarScreen(){
 
   root.appendChild(w);
 
-  if(!state.calendarLoading && !state.calendarEvents){
+  if(!state.calendarLoading && !state.calendarEventsLoaded){
     state.calendarLoading = true;
     Promise.all([listMyCalendarEvents(), loadCalendarBirthdays()]).then(([events, birthdays]) => {
       state.calendarEvents = events;
       state.calendarBirthdays = birthdays;
+      state.calendarEventsLoaded = true;
       state.calendarLoading = false;
       if(state.screen === 'calendar') render();
     }).catch(e => {
       console.error('calendar load failed', e);
       state.calendarLoading = false;
       state.calendarEvents = [];
+      state.calendarEventsLoaded = true;
     });
   }
 }
@@ -2156,10 +2288,10 @@ function openDayDetail(year, month, day, items){
         if(myPart && myPart.status === 'pending'){
           const acceptBtn = el('button','btn','✓');
           acceptBtn.title = 'Принять';
-          acceptBtn.onclick = async (e) => { e.stopPropagation(); await respondToCalendarEvent(item.event, 'confirmed'); state.calendarEvents = null; ov.remove(); render(); };
+          acceptBtn.onclick = async (e) => { e.stopPropagation(); await respondToCalendarEvent(item.event, 'confirmed'); invalidateCalendarCache(); ov.remove(); render(); };
           const declineBtn = el('button','btn ghost','✕');
           declineBtn.title = 'Отклонить';
-          declineBtn.onclick = async (e) => { e.stopPropagation(); await respondToCalendarEvent(item.event, 'declined'); state.calendarEvents = null; ov.remove(); render(); };
+          declineBtn.onclick = async (e) => { e.stopPropagation(); await respondToCalendarEvent(item.event, 'declined'); invalidateCalendarCache(); ov.remove(); render(); };
           row.appendChild(acceptBtn); row.appendChild(declineBtn);
         }
         if(mine){
@@ -2167,7 +2299,7 @@ function openDayDetail(year, month, day, items){
           delBtn.onclick = async (e) => {
             e.stopPropagation();
             await deleteCalendarEvent(item.event.id);
-            state.calendarEvents = null; ov.remove(); render();
+            invalidateCalendarCache(); ov.remove(); render();
           };
           row.appendChild(delBtn);
         }
@@ -2235,11 +2367,21 @@ function openEventModal(opts){
     endTimeInput.style.display = allDayCheckbox.checked ? 'none' : '';
   };
 
-  box.appendChild(el('div','top-tag','Повторение'));
+  const recurrenceWrap = el('div','');
+  recurrenceWrap.appendChild(el('div','top-tag','Повторение'));
   const recurrenceSelect = document.createElement('select');
   [['none','Никогда'],['daily','Каждый день'],['weekdays','По будням'],['weekends','По выходным'],['weekly','Раз в неделю'],['monthly','Раз в месяц'],['yearly','Раз в год']]
     .forEach(([val,label]) => recurrenceSelect.appendChild(new Option(label, val)));
-  box.appendChild(recurrenceSelect);
+  recurrenceWrap.appendChild(recurrenceSelect);
+  box.appendChild(recurrenceWrap);
+
+  const reminderWrap = el('div','');
+  reminderWrap.appendChild(el('div','top-tag','Напомнить'));
+  const reminderSelect = document.createElement('select');
+  [['','Не напоминать'],['10','За 10 минут'],['30','За 30 минут'],['60','За 1 час'],['180','За 3 часа'],['1440','За 1 день']]
+    .forEach(([val,label]) => reminderSelect.appendChild(new Option(label, val)));
+  reminderWrap.appendChild(reminderSelect);
+  box.appendChild(reminderWrap);
 
   // --- Особый режим: постоянный график занятости (работа 5/2, 2/2 и т.п.) ---
   const scheduleLabel = document.createElement('label'); scheduleLabel.className = 'event-modal-checkbox-label';
@@ -2260,7 +2402,8 @@ function openEventModal(opts){
 
   scheduleCheckbox.onchange = () => {
     scheduleOptionsWrap.style.display = scheduleCheckbox.checked ? '' : 'none';
-    recurrenceSelect.parentElement.style.display = scheduleCheckbox.checked ? 'none' : '';
+    recurrenceWrap.style.display = scheduleCheckbox.checked ? 'none' : '';
+    reminderWrap.style.display = scheduleCheckbox.checked ? 'none' : '';
     participantsSection.style.display = scheduleCheckbox.checked ? 'none' : '';
   };
 
@@ -2341,10 +2484,11 @@ function openEventModal(opts){
         await createCalendarEvent({
           title, startTs, endTs, allDay: allDayCheckbox.checked,
           recurrence: recurrenceSelect.value, groupId: opts.groupId || null,
+          reminderMinutes: reminderSelect.value ? parseInt(reminderSelect.value, 10) : null,
           participants, color: opts.groupId ? '#c792ea' : '#7c9eff',
         });
       }
-      state.calendarEvents = null;
+      invalidateCalendarCache();
       ov.remove();
       if(state.screen === 'calendar') render();
       else showToast('Событие создано ✓');
@@ -3059,6 +3203,19 @@ function renderNav(active){
   brand.onclick = () => { state.screen='landing'; render(); };
   brandRow.appendChild(brand);
 
+  if(state.user){
+    const bellBtn = el('button','notif-bell-btn','🔔');
+    bellBtn.id = 'notif-bell-btn';
+    bellBtn.title = 'Уведомления календаря';
+    const unreadCount = unreadCalendarNotifCount();
+    if(unreadCount){
+      const badge = el('span','notif-bell-badge', String(unreadCount));
+      bellBtn.appendChild(badge);
+    }
+    bellBtn.onclick = (e) => { e.stopPropagation(); openNotificationPanel(); };
+    brandRow.appendChild(bellBtn);
+  }
+
   const nav = el('div','nav');
   const links = el('div','nav-links');
 
@@ -3076,7 +3233,9 @@ function renderNav(active){
     const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''), 'Пользователи');
     peopleLink.onclick = () => { openPeople(); };
 
-    const calendarLink = el('button','nav-link' + (active==='calendar' ? ' active' : ''), 'Календарь');
+    const hasCalendarNotif = unreadCalendarNotifCount() > 0;
+    const calendarLink = el('button','nav-link' + (active==='calendar' ? ' active' : '') + (hasCalendarNotif ? ' alert' : ''),
+      'Календарь' + (hasCalendarNotif ? ' •'+unreadCalendarNotifCount() : ''));
     calendarLink.onclick = () => { state.screen = 'calendar'; render(); };
 
     const myLink = el('button','nav-link' + (active==='mine' ? ' active' : ''), state.graph ? 'Моя схема' : 'Написать о себе');
@@ -3629,6 +3788,7 @@ function startNotificationPolling(){
   notifInterval = setInterval(() => {
     refreshNotificationCounts().then(refreshGlobalNav);
     updateLastActive();
+    checkCalendarReminders();
     if(state.screen === 'messages' && !state.chatWith){
       listChatThreads().then(threads => { state.threads = threads; if(state.screen === 'messages' && !state.chatWith) render(); }).catch(()=>{});
     }
@@ -3727,6 +3887,7 @@ function refreshGlobalNav(){
     landing: 'landing', story: 'mine', result: 'mine', people: 'people',
     personView: 'people', friends: 'friends', messages: 'messages',
     createGroup: 'messages', support: 'support', account: 'account', chat: 'messages',
+    calendar: 'calendar',
   };
   const oldNav = document.querySelector('.nav-wrapper');
   if(oldNav) oldNav.replaceWith(renderNav(navActiveMap[state.screen] || ''));
@@ -5760,6 +5921,7 @@ function renderAccountScreen(){
     if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
     if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
     stopNotificationPolling();
+    stopCalendarRealtime();
     stopListeningForIncomingCalls();
     if(currentCall) endCall(true);
     logoutUser();
@@ -6123,6 +6285,7 @@ function renderAuth(){
       render();
       refreshNotificationCounts().then(render);
       startNotificationPolling();
+      startCalendarRealtime();
       listenForIncomingCalls();
     }catch(e){
       state.error = e.message;
@@ -7127,6 +7290,7 @@ if(supabaseReady){
         if(state.screen === 'landing'){ openMessagesTab(); }
         refreshNotificationCounts().then(render);
         startNotificationPolling();
+        startCalendarRealtime();
         listenForIncomingCalls();
       }catch(e){ console.error('session restore failed', e); }
     }
