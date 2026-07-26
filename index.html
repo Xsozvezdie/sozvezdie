@@ -581,26 +581,42 @@
 
   .emoji-picker{
     position: fixed;
-    width: 280px;
-    max-height: 320px;
-    overflow-y: auto;
+    width: 320px;
+    max-height: 380px;
+    display: flex;
+    flex-direction: column;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 16px;
-    padding: 14px;
+    padding: 10px;
     box-shadow: 0 16px 40px rgba(0,0,0,0.4);
     z-index: 900;
   }
+  .emoji-picker-search{
+    width: 100%; margin-bottom: 8px !important; padding: 9px 12px !important;
+    font-size: 13.5px !important; border-radius: 10px !important;
+  }
+  .emoji-picker-tabs{
+    display: flex; gap: 2px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 4px;
+    border-bottom: 1px solid var(--line); flex-shrink: 0;
+  }
+  .emoji-picker-tab{
+    background: none; border: none; cursor: pointer; font-size: 18px;
+    padding: 5px 7px; border-radius: 8px; flex-shrink: 0; opacity: 0.55;
+  }
+  .emoji-picker-tab.active{ opacity: 1; background: var(--bg-soft); }
+  .emoji-picker-content{ overflow-y: auto; flex: 1; min-height: 0; }
+  .emoji-picker-empty{ color: var(--ink-dim); font-size: 13px; text-align: center; padding: 20px 0; }
   .emoji-picker-label{
     font-family:'Space Grotesk',sans-serif;
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--ink-dim); margin: 10px 2px 6px;
+    color: var(--ink-dim); margin: 4px 2px 6px;
   }
   .emoji-picker-label:first-child{ margin-top: 0; }
   .emoji-picker-grid{
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 4px;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
   }
   .emoji-picker-cell{
     background: none; border: none; cursor: pointer;
@@ -959,6 +975,46 @@
     letter-spacing: normal;
   }
   .graph-page-actions{ flex-shrink: 0; display:flex; gap:12px; margin-top: 14px; flex-wrap: wrap; }
+
+  /* ---------------- Календарь ---------------- */
+  .calendar-header-row{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 6px; }
+  .calendar-page-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 26px; margin: 0; }
+  .calendar-nav-row{ display:flex; align-items:center; gap:10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .calendar-month-label{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size: 16px; min-width: 160px; }
+  .calendar-card{ padding: 16px; }
+  .calendar-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .calendar-dow{ text-align:center; font-size: 12px; color: var(--ink-dim); padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .calendar-cell{
+    min-height: 84px; border-radius: 10px; padding: 6px;
+    background: color-mix(in srgb, var(--bg-soft) 55%, transparent);
+    border: 1px solid transparent; cursor: pointer; transition: border-color .12s ease;
+  }
+  .calendar-cell:hover{ border-color: var(--line); }
+  .calendar-cell-empty{ background: transparent; cursor: default; }
+  .calendar-cell-today{ border-color: var(--gold); }
+  .calendar-cell-day{ font-size: 13px; color: var(--ink-dim); margin-bottom: 4px; }
+  .calendar-cell-today .calendar-cell-day{ color: var(--gold); font-weight: 700; }
+  .calendar-cell-items{ display:flex; flex-direction:column; gap: 2px; }
+  .calendar-event-chip{
+    font-size: 10.5px; padding: 2px 5px; border-radius: 5px; white-space: nowrap; overflow:hidden; text-overflow:ellipsis;
+    background: color-mix(in srgb, var(--chip-color, var(--gold)) 22%, transparent);
+    color: var(--ink); border-left: 2px solid var(--chip-color, var(--gold));
+  }
+  .calendar-event-more{ font-size: 10px; color: var(--ink-dim); padding-left: 4px; }
+
+  .event-modal-box{ max-width: 420px; }
+  .event-modal-row{ display:flex; gap: 8px; }
+  .event-modal-row select, .event-modal-row input{ margin-bottom: 0 !important; }
+  .event-modal-checkbox-label{ display:flex; align-items:center; gap: 8px; font-size: 13px; color: var(--ink-dim); cursor:pointer; margin: -4px 0 4px; }
+  .event-modal-checkbox-label input{ width:auto; margin-bottom:0 !important; }
+  .event-modal-schedule-options{ background: var(--bg-soft); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+  .event-modal-participants{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom: 8px; }
+  .event-modal-participant-chip{
+    font-size: 12.5px; padding: 5px 10px; border-radius: 999px; background: var(--bg-soft); border: 1px solid var(--line);
+  }
+  .calendar-day-detail-row{ display:flex; align-items:center; gap:10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .calendar-day-detail-dot{ width:10px; height:10px; border-radius:50%; background: var(--chip-color, var(--gold)); flex-shrink:0; }
+  .calendar-day-detail-title{ font-size: 14px; }
   .graph-body-row{
     flex: 1;
     min-height: 0;
@@ -1811,6 +1867,502 @@ async function listIncomingRequests(){
   return data.map(mapFriendRequestRow);
 }
 
+// ---------------- Календарь ----------------
+
+async function createCalendarEvent(evt){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  // График занятости — это просто информация "я занят(а) в это время", а не приглашение,
+  // которое нужно подтверждать или отклонять. Поэтому у постоянного графика все участники
+  // сразу отмечаются как "confirmed", а не зависают вечным "pending"-приглашением у друзей.
+  const isSchedule = evt.kind === 'work_schedule';
+  const participants = (evt.participants || []).map(p => ({
+    uid: p.uid, name: p.name, status: (isSchedule || p.uid === state.user.uid) ? 'confirmed' : 'pending'
+  }));
+  const row = {
+    owner_uid: state.user.uid,
+    owner_name: state.user.name,
+    title: evt.title,
+    start_ts: evt.startTs,
+    end_ts: evt.endTs,
+    all_day: !!evt.allDay,
+    recurrence: evt.recurrence || 'none',
+    recurrence_until: evt.recurrenceUntil || null,
+    group_id: evt.groupId || null,
+    participants,
+    kind: evt.kind || 'event',
+    schedule_pattern: evt.schedulePattern || null,
+    color: evt.color || '#7c9eff',
+  };
+  const { data, error } = await sb.from('calendar_events').insert(row).select().single();
+  if(error) throw new Error(error.message);
+  return data;
+}
+
+async function updateCalendarEvent(id, patch){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('calendar_events').update(patch).eq('id', id);
+  if(error) throw new Error(error.message);
+}
+
+async function deleteCalendarEvent(id){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('calendar_events').delete().eq('id', id);
+  if(error) throw new Error(error.message);
+}
+
+// Ответ на приглашение (подтвердить/отклонить) — правит статус именно текущего пользователя
+// внутри общего списка участников, не трогая остальных.
+async function respondToCalendarEvent(event, status){
+  const participants = (event.participants || []).map(p =>
+    p.uid === state.user.uid ? { ...p, status } : p
+  );
+  await updateCalendarEvent(event.id, { participants });
+}
+
+async function listMyCalendarEvents(){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const me = state.user.uid;
+  const [ownedRes, participantRes, groupsRes] = await Promise.all([
+    sb.from('calendar_events').select('*').eq('owner_uid', me),
+    sb.from('calendar_events').select('*').contains('participants', [{ uid: me }]),
+    sb.from('groups').select('id').contains('members', [me]),
+  ]);
+  if(ownedRes.error) throw new Error(ownedRes.error.message);
+  const myGroupIds = (groupsRes.data || []).map(g => g.id);
+  let groupEvents = [];
+  if(myGroupIds.length){
+    const { data, error } = await sb.from('calendar_events').select('*').in('group_id', myGroupIds);
+    if(error) throw new Error(error.message);
+    groupEvents = data || [];
+  }
+  const byId = new Map();
+  [...(ownedRes.data||[]), ...(participantRes.data||[]), ...groupEvents].forEach(e => byId.set(e.id, e));
+  return [...byId.values()];
+}
+
+// Раскладывает повторяющееся событие на конкретные даты внутри диапазона [rangeStart, rangeEnd).
+function expandRecurrence(event, rangeStart, rangeEnd){
+  const dur = event.end_ts - event.start_ts;
+  const occurrences = [];
+  const until = event.recurrence_until || rangeEnd;
+  const limit = Math.min(rangeEnd, until);
+  if(event.recurrence === 'none' || !event.recurrence){
+    if(event.start_ts < limit && event.end_ts > rangeStart) occurrences.push({ start: event.start_ts, end: event.end_ts });
+    return occurrences;
+  }
+  let cursor = new Date(event.start_ts);
+  let guard = 0;
+  while(cursor.getTime() < limit && guard < 2000){
+    guard++;
+    const occStart = cursor.getTime();
+    const dow = cursor.getDay(); // 0=вс..6=сб
+    let include = true;
+    if(event.recurrence === 'weekdays') include = dow >= 1 && dow <= 5;
+    else if(event.recurrence === 'weekends') include = dow === 0 || dow === 6;
+    if(include && occStart >= rangeStart && occStart < rangeEnd){
+      occurrences.push({ start: occStart, end: occStart + dur });
+    }
+    if(event.recurrence === 'daily' || event.recurrence === 'weekdays' || event.recurrence === 'weekends'){
+      cursor.setDate(cursor.getDate() + 1);
+    } else if(event.recurrence === 'weekly'){
+      cursor.setDate(cursor.getDate() + 7);
+    } else if(event.recurrence === 'monthly'){
+      cursor.setMonth(cursor.getMonth() + 1);
+    } else if(event.recurrence === 'yearly'){
+      cursor.setFullYear(cursor.getFullYear() + 1);
+    } else {
+      break;
+    }
+  }
+  return occurrences;
+}
+
+// График занятости (5/2, 2/2 и т.п.) — для kind:'work_schedule'. schedule_pattern хранится
+// как "5/2" или "2/2": работаNрабочих дней подряд, затем N выходных, циклически от start_ts.
+function expandWorkSchedule(event, rangeStart, rangeEnd){
+  if(!event.schedule_pattern) return [];
+  const [onDaysStr, offDaysStr] = event.schedule_pattern.split('/');
+  const onDays = parseInt(onDaysStr, 10) || 5;
+  const offDays = parseInt(offDaysStr, 10) || 2;
+  const cycle = onDays + offDays;
+  const dayMs = 24*60*60*1000;
+  const startDay = new Date(event.start_ts); startDay.setHours(0,0,0,0);
+  const dayStartMs = new Date(event.start_ts).getHours()*3600000 + new Date(event.start_ts).getMinutes()*60000;
+  const dayEndMs = new Date(event.end_ts).getHours()*3600000 + new Date(event.end_ts).getMinutes()*60000;
+  const until = event.recurrence_until || rangeEnd;
+  const limit = Math.min(rangeEnd, until);
+  const occurrences = [];
+  let cursor = new Date(startDay);
+  let guard = 0;
+  while(cursor.getTime() < limit && guard < 1200){
+    guard++;
+    const daysSinceStart = Math.round((cursor.getTime() - startDay.getTime()) / dayMs);
+    const posInCycle = ((daysSinceStart % cycle) + cycle) % cycle;
+    if(posInCycle < onDays){
+      const occStart = cursor.getTime() + dayStartMs;
+      const occEnd = cursor.getTime() + dayEndMs;
+      if(occStart >= rangeStart && occStart < rangeEnd) occurrences.push({ start: occStart, end: occEnd });
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return occurrences;
+}
+
+function renderCalendarScreen(){
+  const w = el('div','wrap wide calendar-page');
+  w.appendChild(renderNav('calendar'));
+
+  const headerRow = el('div','calendar-header-row');
+  headerRow.appendChild(el('h1','calendar-page-title','Календарь'));
+  const addBtn = el('button','btn','+ Создать событие');
+  addBtn.onclick = () => openEventModal({});
+  headerRow.appendChild(addBtn);
+  w.appendChild(headerRow);
+
+  if(!state.calendarView) state.calendarView = { year: new Date().getFullYear(), month: new Date().getMonth() };
+  const { year, month } = state.calendarView;
+
+  const navRow = el('div','calendar-nav-row');
+  const prevBtn = el('button','btn ghost icon-only-btn','←');
+  prevBtn.onclick = () => {
+    state.calendarView.month--; if(state.calendarView.month < 0){ state.calendarView.month = 11; state.calendarView.year--; }
+    render();
+  };
+  const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  const label = el('div','calendar-month-label', `${monthNames[month]} ${year}`);
+  const nextBtn = el('button','btn ghost icon-only-btn','→');
+  nextBtn.onclick = () => {
+    state.calendarView.month++; if(state.calendarView.month > 11){ state.calendarView.month = 0; state.calendarView.year++; }
+    render();
+  };
+  const todayBtn = el('button','btn ghost','Сегодня');
+  todayBtn.onclick = () => { state.calendarView = { year: new Date().getFullYear(), month: new Date().getMonth() }; render(); };
+  navRow.appendChild(prevBtn); navRow.appendChild(label); navRow.appendChild(nextBtn); navRow.appendChild(todayBtn);
+  w.appendChild(navRow);
+
+  const card = el('div','card card-translucent calendar-card');
+  const grid = el('div','calendar-grid');
+  ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(d => grid.appendChild(el('div','calendar-dow', d)));
+
+  const firstOfMonth = new Date(year, month, 1);
+  let startWeekday = firstOfMonth.getDay();
+  startWeekday = (startWeekday + 6) % 7;
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const todayStr = new Date().toDateString();
+
+  const monthStartTs = new Date(year, month, 1).getTime();
+  const monthEndTs = new Date(year, month+1, 1).getTime();
+
+  const dayBuckets = {};
+  for(let d=1; d<=daysInMonth; d++) dayBuckets[d] = [];
+
+  (state.calendarEvents || []).forEach(ev => {
+    const occs = ev.kind === 'work_schedule'
+      ? expandWorkSchedule(ev, monthStartTs, monthEndTs)
+      : expandRecurrence(ev, monthStartTs, monthEndTs);
+    occs.forEach(occ => {
+      const d = new Date(occ.start).getDate();
+      if(dayBuckets[d]) dayBuckets[d].push({ title: ev.title, color: ev.color || '#7c9eff', event: ev, start: occ.start, end: occ.end });
+    });
+  });
+
+  (state.calendarBirthdays || []).forEach(b => {
+    if(b.month !== month) return;
+    const bucket = dayBuckets[b.day];
+    if(bucket) bucket.push({ title: '🎂 ' + b.name, color: '#e0559c', isBirthday: true });
+  });
+
+  for(let i=0; i<startWeekday; i++) grid.appendChild(el('div','calendar-cell calendar-cell-empty'));
+  for(let d=1; d<=daysInMonth; d++){
+    const cellDate = new Date(year, month, d);
+    const cell = el('div','calendar-cell' + (cellDate.toDateString()===todayStr ? ' calendar-cell-today' : ''));
+    cell.appendChild(el('div','calendar-cell-day', String(d)));
+    const itemsWrap = el('div','calendar-cell-items');
+    dayBuckets[d].slice(0,3).forEach(item => {
+      const chip = el('div','calendar-event-chip', item.title);
+      chip.style.setProperty('--chip-color', item.color);
+      itemsWrap.appendChild(chip);
+    });
+    if(dayBuckets[d].length > 3) itemsWrap.appendChild(el('div','calendar-event-more', `+${dayBuckets[d].length-3}`));
+    cell.appendChild(itemsWrap);
+    cell.onclick = () => openDayDetail(year, month, d, dayBuckets[d]);
+    grid.appendChild(cell);
+  }
+  card.appendChild(grid);
+  w.appendChild(card);
+
+  root.appendChild(w);
+
+  if(!state.calendarLoading && !state.calendarEvents){
+    state.calendarLoading = true;
+    Promise.all([listMyCalendarEvents(), loadCalendarBirthdays()]).then(([events, birthdays]) => {
+      state.calendarEvents = events;
+      state.calendarBirthdays = birthdays;
+      state.calendarLoading = false;
+      if(state.screen === 'calendar') render();
+    }).catch(e => {
+      console.error('calendar load failed', e);
+      state.calendarLoading = false;
+      state.calendarEvents = [];
+    });
+  }
+}
+
+async function loadCalendarBirthdays(){
+  if(!supabaseReady) return [];
+  const friends = await listFriends();
+  if(!friends.length) return [];
+  const uids = friends.map(f => f.uid);
+  const { data, error } = await sb.from('profiles').select('id, name, profile').in('id', uids);
+  if(error){ console.error('load birthdays failed', error); return []; }
+  const result = [];
+  (data||[]).forEach(row => {
+    const bday = row.profile?.birthday;
+    if(!bday) return;
+    const full = bday.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const noYear = bday.match(/^--(\d{2})-(\d{2})$/);
+    let mm, dd;
+    if(full){ mm = parseInt(full[2],10)-1; dd = parseInt(full[3],10); }
+    else if(noYear){ mm = parseInt(noYear[1],10)-1; dd = parseInt(noYear[2],10); }
+    else return;
+    result.push({ name: row.name, month: mm, day: dd });
+  });
+  return result;
+}
+
+function openDayDetail(year, month, day, items){
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box';
+  const monthNames = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  box.appendChild(el('div','', `${day} ${monthNames[month]} ${year}`)).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:16px;';
+
+  if(!items.length){
+    box.appendChild(el('div','footer-note','Пока ничего не запланировано'));
+  } else {
+    items.forEach(item => {
+      const row = el('div','calendar-day-detail-row');
+      row.style.setProperty('--chip-color', item.color);
+      const timeStr = item.start ? formatClockTime(item.start) + (item.end ? '–'+formatClockTime(item.end) : '') : '';
+      row.appendChild(el('div','calendar-day-detail-dot'));
+      const info = el('div','');
+      info.appendChild(el('div','calendar-day-detail-title', item.title));
+      if(timeStr) info.appendChild(el('div','meta', timeStr));
+      row.appendChild(info);
+      if(item.event && !item.isBirthday){
+        const mine = item.event.owner_uid === state.user.uid;
+        const myPart = (item.event.participants||[]).find(p => p.uid === state.user.uid);
+        if(myPart && myPart.status === 'pending'){
+          const acceptBtn = el('button','btn','✓');
+          acceptBtn.title = 'Принять';
+          acceptBtn.onclick = async (e) => { e.stopPropagation(); await respondToCalendarEvent(item.event, 'confirmed'); state.calendarEvents = null; ov.remove(); render(); };
+          const declineBtn = el('button','btn ghost','✕');
+          declineBtn.title = 'Отклонить';
+          declineBtn.onclick = async (e) => { e.stopPropagation(); await respondToCalendarEvent(item.event, 'declined'); state.calendarEvents = null; ov.remove(); render(); };
+          row.appendChild(acceptBtn); row.appendChild(declineBtn);
+        }
+        if(mine){
+          const delBtn = el('button','btn ghost icon-only-btn','🗑');
+          delBtn.onclick = async (e) => {
+            e.stopPropagation();
+            await deleteCalendarEvent(item.event.id);
+            state.calendarEvents = null; ov.remove(); render();
+          };
+          row.appendChild(delBtn);
+        }
+      }
+      box.appendChild(row);
+    });
+  }
+
+  const addHereBtn = el('button','btn ghost','+ Добавить событие на этот день');
+  addHereBtn.style.marginTop = '8px';
+  addHereBtn.onclick = () => { ov.remove(); openEventModal({ presetDate: new Date(year, month, day) }); };
+  box.appendChild(addHereBtn);
+
+  const closeRow = document.createElement('div');
+  closeRow.style.cssText = 'display:flex;justify-content:flex-end;margin-top:6px;';
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'btn ghost'; closeBtn.textContent = 'Закрыть';
+  closeBtn.onclick = () => ov.remove();
+  closeRow.appendChild(closeBtn);
+  box.appendChild(closeRow);
+
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
+function formatDateInputValue(d){
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+function formatTimeInputValue(d){
+  const pad = n => String(n).padStart(2,'0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// opts: { presetDate, presetParticipant:{uid,name}, groupId, groupMembers:[{uid,name}] }
+function openEventModal(opts){
+  opts = opts || {};
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box event-modal-box';
+
+  box.appendChild(el('div','','Новое событие')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
+
+  const titleInput = document.createElement('input');
+  titleInput.type = 'text'; titleInput.placeholder = 'Название события';
+  titleInput.value = opts.groupId ? '' : (opts.presetParticipant ? `Встреча с ${opts.presetParticipant.name}` : '');
+  box.appendChild(titleInput);
+
+  const baseDate = opts.presetDate || new Date();
+  const dateRow = el('div','event-modal-row');
+  const startDateInput = document.createElement('input'); startDateInput.type='date'; startDateInput.value = formatDateInputValue(baseDate);
+  const startTimeInput = document.createElement('input'); startTimeInput.type='time'; startTimeInput.value = '12:00';
+  const endTimeInput = document.createElement('input'); endTimeInput.type='time'; endTimeInput.value = '13:00';
+  dateRow.appendChild(startDateInput); dateRow.appendChild(startTimeInput); dateRow.appendChild(endTimeInput);
+  box.appendChild(dateRow);
+
+  const allDayLabel = document.createElement('label'); allDayLabel.className = 'event-modal-checkbox-label';
+  const allDayCheckbox = document.createElement('input'); allDayCheckbox.type = 'checkbox';
+  allDayLabel.appendChild(allDayCheckbox); allDayLabel.appendChild(document.createTextNode(' Весь день'));
+  box.appendChild(allDayLabel);
+  allDayCheckbox.onchange = () => {
+    startTimeInput.style.display = allDayCheckbox.checked ? 'none' : '';
+    endTimeInput.style.display = allDayCheckbox.checked ? 'none' : '';
+  };
+
+  box.appendChild(el('div','top-tag','Повторение'));
+  const recurrenceSelect = document.createElement('select');
+  [['none','Никогда'],['daily','Каждый день'],['weekdays','По будням'],['weekends','По выходным'],['weekly','Раз в неделю'],['monthly','Раз в месяц'],['yearly','Раз в год']]
+    .forEach(([val,label]) => recurrenceSelect.appendChild(new Option(label, val)));
+  box.appendChild(recurrenceSelect);
+
+  // --- Особый режим: постоянный график занятости (работа 5/2, 2/2 и т.п.) ---
+  const scheduleLabel = document.createElement('label'); scheduleLabel.className = 'event-modal-checkbox-label';
+  const scheduleCheckbox = document.createElement('input'); scheduleCheckbox.type = 'checkbox';
+  scheduleLabel.appendChild(scheduleCheckbox); scheduleLabel.appendChild(document.createTextNode(' Это мой постоянный график занятости (работа/учёба)'));
+  box.appendChild(scheduleLabel);
+
+  const scheduleOptionsWrap = el('div','event-modal-schedule-options');
+  scheduleOptionsWrap.style.display = 'none';
+  const patternRow = el('div','event-modal-row');
+  const patternSelect = document.createElement('select');
+  [['5/2','5 через 2 (пн–пт)'],['2/2','2 через 2'],['6/1','6 через 1'],['1/1','через день']]
+    .forEach(([val,label]) => patternSelect.appendChild(new Option(label, val)));
+  patternRow.appendChild(patternSelect);
+  scheduleOptionsWrap.appendChild(el('div','footer-note','Друзья и контакты будут видеть, что ты занят(а) в это время каждый цикл, начиная с выбранной даты.'));
+  scheduleOptionsWrap.appendChild(patternRow);
+  box.appendChild(scheduleOptionsWrap);
+
+  scheduleCheckbox.onchange = () => {
+    scheduleOptionsWrap.style.display = scheduleCheckbox.checked ? '' : 'none';
+    recurrenceSelect.parentElement.style.display = scheduleCheckbox.checked ? 'none' : '';
+    participantsSection.style.display = scheduleCheckbox.checked ? 'none' : '';
+  };
+
+  // --- Участники ---
+  const participantsSection = document.createElement('div');
+  participantsSection.appendChild(el('div','top-tag','Участники'));
+  const participantsListEl = el('div','event-modal-participants');
+  let participants = [];
+  if(opts.presetParticipant) participants.push(opts.presetParticipant);
+  if(opts.groupMembers) participants = opts.groupMembers.filter(m => m.uid !== state.user.uid);
+
+  function renderParticipants(){
+    participantsListEl.innerHTML = '';
+    participants.forEach(p => {
+      const chip = el('div','event-modal-participant-chip', p.name + ' ');
+      const rm = document.createElement('span'); rm.textContent = '✕'; rm.style.cursor='pointer';
+      rm.onclick = () => { participants = participants.filter(x => x.uid !== p.uid); renderParticipants(); };
+      chip.appendChild(rm);
+      participantsListEl.appendChild(chip);
+    });
+  }
+  renderParticipants();
+  participantsSection.appendChild(participantsListEl);
+
+  const addParticipantRow = el('div','event-modal-row');
+  const friendSelect = document.createElement('select');
+  friendSelect.appendChild(new Option('+ Добавить контакт…',''));
+  listFriends().then(friends => {
+    friends.forEach(f => { if(!participants.some(p=>p.uid===f.uid)) friendSelect.appendChild(new Option(f.name, f.uid)); });
+    friendSelect.dataset.loaded = '1';
+    friendSelect._friends = friends;
+  }).catch(()=>{});
+  friendSelect.onchange = () => {
+    const uid = friendSelect.value;
+    if(!uid) return;
+    const f = (friendSelect._friends||[]).find(x => x.uid === uid);
+    if(f && !participants.some(p=>p.uid===f.uid)){ participants.push(f); renderParticipants(); }
+    friendSelect.value = '';
+  };
+  addParticipantRow.appendChild(friendSelect);
+  participantsSection.appendChild(addParticipantRow);
+  box.appendChild(participantsSection);
+
+  const errEl = el('div','err','');
+  errEl.style.display = 'none';
+  box.appendChild(errEl);
+
+  const btnRow = el('div','');
+  btnRow.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;margin-top:6px;';
+  const cancelBtn = document.createElement('button'); cancelBtn.className='btn ghost'; cancelBtn.textContent='Отмена';
+  cancelBtn.onclick = () => ov.remove();
+  const saveBtn = document.createElement('button'); saveBtn.className='btn'; saveBtn.textContent='Создать';
+  saveBtn.onclick = async () => {
+    const title = titleInput.value.trim();
+    if(!title){ errEl.textContent = 'Введи название события'; errEl.style.display=''; return; }
+    const [y,mo,da] = startDateInput.value.split('-').map(Number);
+    let startTs, endTs;
+    if(allDayCheckbox.checked){
+      startTs = new Date(y, mo-1, da, 0, 0).getTime();
+      endTs = new Date(y, mo-1, da, 23, 59).getTime();
+    } else {
+      const [sh,sm] = startTimeInput.value.split(':').map(Number);
+      const [eh,em] = endTimeInput.value.split(':').map(Number);
+      startTs = new Date(y, mo-1, da, sh, sm).getTime();
+      endTs = new Date(y, mo-1, da, eh, em).getTime();
+      if(endTs <= startTs) endTs = startTs + 60*60*1000;
+    }
+    saveBtn.disabled = true; saveBtn.textContent = 'Создаём…';
+    try{
+      if(scheduleCheckbox.checked){
+        const allFriends = await listFriends();
+        await createCalendarEvent({
+          title, startTs, endTs, allDay: false,
+          recurrence: 'none', kind: 'work_schedule', schedulePattern: patternSelect.value,
+          participants: allFriends, color: '#7fe0a0',
+        });
+      } else {
+        await createCalendarEvent({
+          title, startTs, endTs, allDay: allDayCheckbox.checked,
+          recurrence: recurrenceSelect.value, groupId: opts.groupId || null,
+          participants, color: opts.groupId ? '#c792ea' : '#7c9eff',
+        });
+      }
+      state.calendarEvents = null;
+      ov.remove();
+      if(state.screen === 'calendar') render();
+      else showToast('Событие создано ✓');
+    }catch(e){
+      console.error('create event failed', e);
+      errEl.textContent = 'Не удалось создать: ' + e.message;
+      errEl.style.display = '';
+      saveBtn.disabled = false; saveBtn.textContent = 'Создать';
+    }
+  };
+  btnRow.appendChild(cancelBtn); btnRow.appendChild(saveBtn);
+  box.appendChild(btnRow);
+
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
 async function listFriends(){
   if(!supabaseReady) throw backendNotConfiguredError();
   const uid = state.user.uid;
@@ -2442,6 +2994,7 @@ function render(){
   else if(state.screen === 'createGroup') renderCreateGroup();
   else if(state.screen === 'support') renderSupport();
   else if(state.screen === 'account') renderAccountScreen();
+  else if(state.screen === 'calendar') renderCalendarScreen();
 }
 
 function el(tag, cls, html){
@@ -2523,6 +3076,9 @@ function renderNav(active){
     const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''), 'Пользователи');
     peopleLink.onclick = () => { openPeople(); };
 
+    const calendarLink = el('button','nav-link' + (active==='calendar' ? ' active' : ''), 'Календарь');
+    calendarLink.onclick = () => { state.screen = 'calendar'; render(); };
+
     const myLink = el('button','nav-link' + (active==='mine' ? ' active' : ''), state.graph ? 'Моя схема' : 'Написать о себе');
     myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
 
@@ -2538,6 +3094,7 @@ function renderNav(active){
     links.appendChild(messagesLink);
     links.appendChild(friendsLink);
     links.appendChild(peopleLink);
+    links.appendChild(calendarLink);
     links.appendChild(myLink);
     links.appendChild(accountLink);
     links.appendChild(installLink);
@@ -3668,13 +4225,100 @@ function renderChatMessages(){
   box.scrollTop = box.scrollHeight;
 }
 
-// Самые ходовые эмодзи, сгруппированные по смыслу — для панели выбора в чате.
+// Большой набор эмодзи по категориям (как в Телеграме) + ключевые слова для поиска.
 const EMOJI_GROUPS = [
-  { label: 'Частые', items: ['😀','😂','🥰','😍','😊','😉','😘','🥹','😭','😢','😅','😎','🤔','🙄','😴','🤗','🥳','😜','🙃','😇'] },
-  { label: 'Жесты и люди', items: ['👍','👎','🙏','👏','🙌','🤝','💪','✌️','🤞','👀','🫶','🤷','👋','🫡'] },
-  { label: 'Сердца', items: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💕','💔','💖','✨'] },
-  { label: 'Разное', items: ['🔥','🎉','🎂','🎈','⭐️','🌈','☀️','🌙','🍀','🎁','🎶','💯','🚀','🌸','☕️','🍕'] },
+  { key: 'recent', label: 'Недавние', icon: '🕐', items: [] },
+  { key: 'smileys', label: 'Смайлы и люди', icon: '😀', items: [
+    '😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙',
+    '😋','😛','😜','🤪','😝','🤑','🤗','🤭','🫢','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫠','😏','😒',
+    '🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','🤠',
+    '🥳','🥸','😎','🤓','🧐','😕','🫤','😟','🙁','😮','😯','😲','😳','🥺','🥹','😦','😧','😨','😰','😥',
+    '😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡',
+    '👹','👺','👻','👽','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾','🙈','🙉','🙊','💋','💌','💘',
+    '💝','💖','💗','💓','💞','💕','💟','❣️','💔','❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💯','💢',
+    '💥','💫','💦','💨','🕳️','💬','🗨️','🗯️','💭','🫧','👋','🤚','🖐️','✋','🖖','🫱','🫲','🫳','🫴','👌',
+    '🤌','🤏','✌️','🤞','🫰','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜',
+    '👏','🙌','🫶','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦵','🦿','🦶','👂','🦻','👃','🧠','🫀',
+    '🦷','🦴','👀','👁️','👅','👄','🫦','👶','🧒','👦','👧','🧑','👱','👨','🧔','👩','🧓','👴','👵','🙍',
+  ] },
+  { key: 'animals', label: 'Животные и природа', icon: '🐶', items: [
+    '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐽','🐸','🐵','🙈','🙉','🙊',
+    '🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌',
+    '🐞','🐜','🪰','🪲','🪳','🦟','🦗','🕷️','🕸️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀',
+    '🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🦧','🦣','🐘','🦛','🦏','🐪','🐫','🦒',
+    '🦘','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐕‍🦺','🐈','🐈‍⬛','🪶','🐓','🦃',
+    '🦤','🦚','🦜','🦢','🦩','🕊️','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿️','🦔','🌵','🎄','🌲',
+    '🌳','🌴','🪵','🌱','🌿','☘️','🍀','🎍','🪴','🎋','🍃','🍂','🍁','🍄','🐚','🪨','🌾','💐','🌷','🌹',
+    '🥀','🌺','🌸','🌼','🌻','🌞','🌝','🌛','🌜','🌚','🌕','🌖','🌗','🌘','🌑','🌒','🌓','🌔','🌙','🌎',
+  ] },
+  { key: 'food', label: 'Еда и напитки', icon: '🍔', items: [
+    '🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑',
+    '🥦','🥬','🥒','🌶️','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳',
+    '🧈','🥞','🧇','🥓','🥩','🍗','🍖','🦴','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗',
+    '🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥠','🥮','🍢','🍡',
+    '🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','🫖',
+    '☕️','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾','🧊',
+  ] },
+  { key: 'activities', label: 'Активности', icon: '⚽️', items: [
+    '⚽️','🏀','🏈','⚾️','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳️',
+    '🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','⛷️','🏂','🪂','🏋️','🤼','🤸','🤺',
+    '🤾','🏌️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖️','🏵️','🎗️','🎫',
+    '🎟️','🎪','🤹','🎭','🩰','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🪘','🎷','🎺','🪗','🎸','🪕','🎻','🎲',
+    '♟️','🎯','🎳','🎮','🎰','🧩',
+  ] },
+  { key: 'travel', label: 'Путешествия и места', icon: '✈️', items: [
+    '🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🦯','🦽','🦼','🛴','🚲','🛵',
+    '🏍️','🛺','🚨','🚔','🚍','🚘','🚖','🚡','🚠','🚟','🚃','🚋','🚞','🚝','🚄','🚅','🚈','🚂','🚆','🚇',
+    '🚊','🚉','✈️','🛫','🛬','🛩️','💺','🛰️','🚀','🛸','🚁','🛶','⛵️','🚤','🛥️','🛳️','⛴️','🚢','⚓️','🪝',
+    '⛽️','🚧','🚦','🚥','🗺️','🗿','🗽','🗼','🏰','🏯','🏟️','🎡','🎢','🎠','⛲️','⛱️','🏖️','🏝️','🏜️','🌋',
+    '⛰️','🏔️','🗻','🏕️','⛺️','🏠','🏡','🏘️','🏚️','🏗️','🏭','🏢','🏬','🏣','🏤','🏥','🏦','🏨','🏪','🏫',
+    '🏩','💒','🏛️','⛪️','🕌','🕍','🛕','🕋','⛩️','🛤️','🌅','🌄','🌠','🎇','🎆','🌇','🌆','🏙️','🌃','🌌',
+  ] },
+  { key: 'objects', label: 'Предметы', icon: '💡', items: [
+    '⌚️','📱','💻','⌨️','🖥️','🖨️','🖱️','🖲️','🕹️','🗜️','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📞',
+    '☎️','📟','📠','📺','📻','🎙️','🎚️','🎛️','🧭','⏱️','⏲️','⏰','🕰️','⌛️','⏳','📡','🔋','🪫','🔌','💡',
+    '🔦','🕯️','🪔','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💰','💳','🧾','💎','⚖️','🪜','🧰','🪛','🔧',
+    '🔨','⚒️','🛠️','⛏️','🪚','🔩','⚙️','🪤','🧱','⛓️','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬',
+    '⚰️','🪦','⚱️','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','🕳️','🩹','🩺','💊','💉','🩸','🧬','🦠','🧫',
+    '🧪','🌡️','🧹','🪠','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🧼','🪥','🪒','🧽','🪣','🧴','🛎️','🔑','🗝️',
+    '🚪','🪑','🛋️','🛏️','🛌','🧸','🪆','🖼️','🪞','🪟','🛍️','🛒','🎁','🎈','🎏','🎀','🪄','🪅','🎊','🎉',
+  ] },
+  { key: 'symbols', label: 'Символы', icon: '❤️', items: [
+    '❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💯','💢','💥','💫','💦','💨','🕳️','💣','💬','👁️‍🗨️','🗨️',
+    '🗯️','💭','🔴','🟠','🟡','🟢','🔵','🟣','🟤','⚫️','⚪️','🟥','🟧','🟨','🟩','🟦','🟪','🟫','⬛️','⬜️',
+    '✅','☑️','✔️','❌','❎','➕','➖','➗','✖️','♾️','‼️','⁉️','❓','❔','❗️','❕','〰️','💱','💲','⚕️',
+    '♻️','⚜️','🔱','📛','🔰','⭕️','✳️','❇️','💠','🌀','🔔','🔕','🎵','🎶','💤','♠️','♥️','♦️','♣️','🃏',
+    '🀄️','🎴','🔤','🔡','🔠','🆖','🆗','🆙','🆒','🆕','🆓','0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣',
+    '9️⃣','🔟','🔢','#️⃣','*️⃣','⏸️','⏯️','⏹️','⏺️','⏭️','⏮️','⏩','⏪','🔀','🔁','🔂','◀️','▶️','🔼','🔽',
+  ] },
+  { key: 'flags', label: 'Флаги', icon: '🏳️', items: [
+    '🏁','🚩','🎌','🏴','🏳️','🏳️‍🌈','🏳️‍⚧️','🏴‍☠️','🇷🇺','🇺🇸','🇬🇧','🇩🇪','🇫🇷','🇮🇹','🇪🇸','🇨🇳','🇯🇵','🇰🇷','🇮🇳','🇧🇷',
+    '🇨🇦','🇦🇺','🇲🇽','🇹🇷','🇺🇦','🇵🇱','🇳🇱','🇸🇪','🇳🇴','🇫🇮','🇩🇰','🇬🇷','🇵🇹','🇨🇭','🇦🇹','🇧🇪','🇮🇪','🇮🇱','🇦🇪','🇸🇦',
+    '🇪🇬','🇿🇦','🇰🇿','🇧🇾','🇬🇪','🇦🇲','🇦🇿',
+  ] },
 ];
+
+// Ключевые слова для поиска — покрывают самые ходовые эмодзи (не все подряд, но большинство).
+const EMOJI_KEYWORDS = {
+  '😀':'улыбка радость счастье','😂':'смех плач ору смешно','🤣':'смех ору катаюсь','😍':'любовь обожаю глаза сердца',
+  '😘':'поцелуй целую','😊':'улыбка смущение','🥰':'любовь нежность влюблен','😢':'плачу грущу слезы','😭':'плачу рыдаю',
+  '😡':'злюсь гнев','😱':'испуг шок ужас','😴':'сон сплю устал','🤔':'думаю сомневаюсь','😎':'круто стиль очки',
+  '🙄':'закатываю глаза скепсис','😅':'неловко смущение пот','🥳':'праздник вечеринка','😇':'ангел невинность',
+  '🤗':'обнимаю объятия','👍':'да хорошо класс лайк','👎':'нет плохо дизлайк','👏':'аплодисменты молодец',
+  '🙏':'спасибо пожалуйста молитва','💪':'сила мощь качалка','❤️':'любовь сердце','💔':'разбитое сердце грусть',
+  '🔥':'огонь круто пожар','⭐️':'звезда классно','🎉':'праздник ура поздравляю','🎂':'торт день рождения',
+  '🎁':'подарок','✨':'блеск магия сияние','💯':'сто процентов точно','🚀':'ракета старт быстро',
+  '☕️':'кофе','🍕':'пицца еда','🍺':'пиво','🍷':'вино','🐶':'собака пёс','🐱':'кошка кот',
+  '🌹':'роза цветок любовь','🌸':'цветок весна','☀️':'солнце день','🌙':'луна ночь','⚽️':'футбол мяч спорт',
+  '🎮':'игра геймер','📱':'телефон','💻':'компьютер ноутбук','✈️':'самолёт полёт путешествие',
+  '🚗':'машина авто','🏠':'дом','💰':'деньги богатство','💎':'бриллиант алмаз ценность',
+  '🎵':'музыка нота','🎶':'музыка ноты','📸':'фото камера','🎨':'творчество рисование искусство',
+  '📚':'книги учёба','✍️':'пишу писать','🧠':'мозг ум думать','👀':'глаза смотрю внимание',
+  '🤝':'рукопожатие сделка договор','🎯':'цель точно попал','🏆':'победа кубок трофей чемпион',
+};
+
+
+let recentEmojis = [];
 
 function buildEmojiButton(targetInput){
   const btn = el('button','btn ghost icon-only-btn', CHAT_ICONS.emoji);
@@ -3687,26 +4331,92 @@ function buildEmojiButton(targetInput){
 
     const popup = el('div','emoji-picker');
     popup.id = 'emoji-picker-popup';
-    EMOJI_GROUPS.forEach(group => {
-      popup.appendChild(el('div','emoji-picker-label', group.label));
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text'; searchInput.placeholder = '🔍 Поиск эмодзи…';
+    searchInput.className = 'emoji-picker-search';
+    popup.appendChild(searchInput);
+
+    const tabsRow = el('div','emoji-picker-tabs');
+    const content = el('div','emoji-picker-content');
+
+    function insertEmoji(emoji){
+      targetInput.value += emoji;
+      targetInput.focus();
+      recentEmojis = [emoji, ...recentEmojis.filter(x => x !== emoji)].slice(0, 24);
+    }
+
+    function renderGrid(items){
+      content.innerHTML = '';
+      if(!items.length){
+        content.appendChild(el('div','emoji-picker-empty','Ничего не нашлось'));
+        return;
+      }
       const grid = el('div','emoji-picker-grid');
-      group.items.forEach(emoji => {
+      items.forEach(emoji => {
         const cell = el('button','emoji-picker-cell', emoji);
         cell.type = 'button';
-        cell.onclick = (ev) => {
-          ev.stopPropagation();
-          targetInput.value += emoji;
-          targetInput.focus();
-        };
+        cell.onclick = (ev) => { ev.stopPropagation(); insertEmoji(emoji); };
         grid.appendChild(cell);
       });
-      popup.appendChild(grid);
+      content.appendChild(grid);
+    }
+
+    function renderCategory(key){
+      [...tabsRow.children].forEach(b => b.classList.toggle('active', b.dataset.key === key));
+      if(key === 'recent'){
+        content.innerHTML = '';
+        content.appendChild(el('div','emoji-picker-label','Недавние'));
+        renderGrid(recentEmojis);
+        return;
+      }
+      const group = EMOJI_GROUPS.find(g => g.key === key);
+      content.innerHTML = '';
+      content.appendChild(el('div','emoji-picker-label', group.label));
+      renderGrid(group.items);
+    }
+
+    EMOJI_GROUPS.forEach(group => {
+      if(group.key === 'recent' && !recentEmojis.length) return; // нечего показывать, пока ничего не выбирали
+      const tab = el('button','emoji-picker-tab', group.icon);
+      tab.type = 'button';
+      tab.dataset.key = group.key;
+      tab.title = group.label;
+      tab.onclick = () => renderCategory(group.key);
+      tabsRow.appendChild(tab);
     });
+    popup.appendChild(tabsRow);
+    popup.appendChild(content);
+
+    renderCategory(recentEmojis.length ? 'recent' : 'smileys');
+
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase();
+      if(!q){
+        tabsRow.style.display = '';
+        renderCategory(recentEmojis.length ? 'recent' : 'smileys');
+        return;
+      }
+      tabsRow.style.display = 'none';
+      const found = [];
+      const seen = new Set();
+      EMOJI_GROUPS.forEach(group => {
+        group.items.forEach(emoji => {
+          if(seen.has(emoji)) return;
+          const kw = EMOJI_KEYWORDS[emoji] || '';
+          if(kw.includes(q) || emoji === q){ found.push(emoji); seen.add(emoji); }
+        });
+      });
+      content.innerHTML = '';
+      content.appendChild(el('div','emoji-picker-label', `Результаты: ${found.length}`));
+      renderGrid(found);
+    });
+
     document.body.appendChild(popup);
     const rect = btn.getBoundingClientRect();
-    const popupW = 280;
+    const popupW = 320;
     popup.style.left = Math.min(rect.left, window.innerWidth - popupW - 12) + 'px';
-    popup.style.top = Math.max(12, rect.top - 340) + 'px';
+    popup.style.top = Math.max(12, rect.top - 380) + 'px';
     setTimeout(() => {
       document.addEventListener('click', function closeEmoji(ev){
         if(!popup.contains(ev.target) && ev.target !== btn){
@@ -3964,6 +4674,34 @@ function buildChatPanel(container){
       setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
     };
     headerRow.appendChild(callBtn);
+
+    const calBtn = el('button','icon-btn','📅');
+    calBtn.title = 'Создать событие';
+    calBtn.style.color = 'var(--ink)';
+    calBtn.onclick = (e) => {
+      e.stopPropagation();
+      openEventModal({ presetParticipant: { uid: state.chatWith.uid, name: state.chatWith.name } });
+    };
+    headerRow.appendChild(calBtn);
+  }
+  if(state.chatWith.isGroup){
+    const calBtn = el('button','icon-btn','📅');
+    calBtn.title = 'Создать событие для группы';
+    calBtn.style.color = 'var(--ink)';
+    calBtn.onclick = async (e) => {
+      e.stopPropagation();
+      calBtn.disabled = true;
+      try{
+        const { data } = await sb.from('groups').select('members, member_names').eq('id', state.chatWith.groupId).single();
+        const members = (data?.members || []).map(uid => ({ uid, name: data.member_names?.[uid] || 'Без имени' }));
+        openEventModal({ groupId: state.chatWith.groupId, groupMembers: members });
+      }catch(err){
+        console.error('load group members for event failed', err);
+        showToast('Не удалось загрузить участников группы');
+      }
+      calBtn.disabled = false;
+    };
+    headerRow.appendChild(calBtn);
   }
   container.appendChild(headerRow);
 
