@@ -138,6 +138,42 @@
   }
   input[type=text]:focus, input[type=password]:focus{ outline:none; border-color: var(--gold); }
 
+  input[type=date], input[type=time]{
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 11px 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    margin-bottom: 0;
+    color-scheme: dark;
+  }
+  input[type=date]:focus, input[type=time]:focus{ outline:none; border-color: var(--gold); }
+  body[data-theme="light"] input[type=date], body[data-theme="light"] input[type=time],
+  body[data-theme="nebula"] input[type=date], body[data-theme="nebula"] input[type=time]{
+    color-scheme: light;
+  }
+  input[type=date]::-webkit-calendar-picker-indicator, input[type=time]::-webkit-calendar-picker-indicator{
+    filter: var(--date-icon-filter, none);
+    cursor: pointer;
+    opacity: 0.75;
+  }
+  body[data-theme="light"] input[type=date]::-webkit-calendar-picker-indicator,
+  body[data-theme="nebula"] input[type=date]::-webkit-calendar-picker-indicator,
+  body[data-theme="light"] input[type=time]::-webkit-calendar-picker-indicator,
+  body[data-theme="nebula"] input[type=time]::-webkit-calendar-picker-indicator{
+    filter: invert(0);
+  }
+  body:not([data-theme]) input[type=date]::-webkit-calendar-picker-indicator,
+  body[data-theme="ocean"] input[type=date]::-webkit-calendar-picker-indicator,
+  body[data-theme="forest"] input[type=date]::-webkit-calendar-picker-indicator,
+  body:not([data-theme]) input[type=time]::-webkit-calendar-picker-indicator,
+  body[data-theme="ocean"] input[type=time]::-webkit-calendar-picker-indicator,
+  body[data-theme="forest"] input[type=time]::-webkit-calendar-picker-indicator{
+    filter: invert(1);
+  }
+
   select{
     width:100%;
     background: var(--bg-soft);
@@ -353,8 +389,9 @@
   .notif-panel-text{ font-size: 13px; color: var(--ink); }
   .nav{
     display:flex; align-items:center; flex-wrap: wrap;
-    background: var(--panel);
-    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--panel) 45%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
     border-radius: 14px;
     padding: 10px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.35);
@@ -381,8 +418,7 @@
   .nav-brand-dot{ position: absolute; border-radius: 50%; transform: translate(-50%, -50%); }
   .nav-brand-dot-1{ left: 13.2%; top: 19.1%; width: 11px; height: 11px; background: #8a0d1f; }
   .nav-brand-dot-2{ left: 3.78%; top: 81.9%; width: 10px; height: 10px; background: #8fbf8f; }
-  .nav-links{ display:flex; gap: 6px; align-items:center; flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; }
-  .nav-links::-webkit-scrollbar{ display:none; }
+  .nav-links{ display:flex; gap: 6px; align-items:center; flex-wrap: wrap; width: 100%; }
   .nav-link{
     font-family:'Space Grotesk',sans-serif;
     font-size: 12px;
@@ -1009,13 +1045,13 @@
   .calendar-page-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 26px; margin: 0; }
   .calendar-nav-row{ display:flex; align-items:center; gap:10px; margin-bottom: 16px; flex-wrap: wrap; }
   .calendar-month-label{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size: 16px; min-width: 160px; }
-  .calendar-card{ padding: 16px; background: color-mix(in srgb, var(--panel) 30%, transparent) !important; }
-  .calendar-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .calendar-card{ padding: 16px; background: color-mix(in srgb, var(--panel) 14%, transparent) !important; border-color: color-mix(in srgb, var(--line) 40%, transparent) !important; }
+  .calendar-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
   .calendar-dow{ text-align:center; font-size: 12px; color: var(--ink-dim); padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
   .calendar-cell{
-    min-height: 84px; border-radius: 8px; padding: 6px;
-    background: color-mix(in srgb, var(--bg-soft) 16%, transparent);
-    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    min-height: 84px; border-radius: 6px; padding: 6px;
+    background: color-mix(in srgb, var(--bg-soft) 8%, transparent);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     border: 1px solid transparent; cursor: pointer; transition: border-color .12s ease;
   }
   .calendar-cell:hover{ border-color: var(--line); }
@@ -1044,6 +1080,7 @@
   .calendar-day-detail-row{ display:flex; align-items:center; gap:10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .calendar-day-detail-dot{ width:10px; height:10px; border-radius:50%; background: var(--chip-color, var(--gold)); flex-shrink:0; }
   .calendar-day-detail-title{ font-size: 14px; }
+  .calendar-day-detail-actions{ display:flex; gap:6px; flex-shrink:0; margin-left:auto; }
   .graph-body-row{
     flex: 1;
     min-height: 0;
@@ -2080,6 +2117,26 @@ async function pollCalendarForChanges(){
   }catch(e){ console.error('calendar poll failed', e); }
 }
 
+async function canInviteToCalendar(targetUid){
+  try{
+    const { data } = await sb.from('profiles').select('profile').eq('id', targetUid).single();
+    const p = data?.profile || {};
+    const rule = p.inviteRule || 'contacts';
+    if(rule === 'everyone') return true;
+    if(rule === 'nobody') return false;
+    if(rule === 'contacts'){
+      const friends = await listFriends();
+      return friends.some(f => f.uid === targetUid);
+    }
+    if(rule === 'allowlist') return (p.inviteAllowlist||[]).some(x => x.uid === state.user.uid);
+    if(rule === 'blocklist') return !(p.inviteBlocklist||[]).some(x => x.uid === state.user.uid);
+    return true;
+  }catch(e){
+    console.error('invite permission check failed', e);
+    return true;
+  }
+}
+
 function invalidateCalendarCache(){
   state.calendarEvents = null;
   state.calendarEventsLoaded = false;
@@ -2179,6 +2236,16 @@ function openNotificationPanel(){
       }
     });
   }, 0);
+}
+
+function renderGoalsScreen(){
+  const w = el('div','wrap wide');
+  w.appendChild(renderNav('goals'));
+  w.appendChild(el('h1','','Цели'));
+  const card = el('div','card card-translucent');
+  card.appendChild(el('div','footer-note','Раздел только что появился — расскажи, что здесь должно быть (личные цели, привычки, трекер прогресса?), и я наполню его функциями.'));
+  w.appendChild(card);
+  root.appendChild(w);
 }
 
 function renderCalendarScreen(){
@@ -2322,9 +2389,11 @@ function openDayDetail(year, month, day, items){
       const timeStr = item.start ? formatClockTime(item.start) + (item.end ? '–'+formatClockTime(item.end) : '') : '';
       row.appendChild(el('div','calendar-day-detail-dot'));
       const info = el('div','');
+      info.style.flex = '1'; info.style.minWidth = '0';
       info.appendChild(el('div','calendar-day-detail-title', item.title));
       if(timeStr) info.appendChild(el('div','meta', timeStr));
       row.appendChild(info);
+      const actionsWrap = el('div','calendar-day-detail-actions');
       if(item.event && !item.isBirthday){
         const mine = item.event.owner_uid === state.user.uid;
         const myPart = (item.event.participants||[]).find(p => p.uid === state.user.uid);
@@ -2335,14 +2404,14 @@ function openDayDetail(year, month, day, items){
           const declineBtn = el('button','btn ghost','✕');
           declineBtn.title = 'Отклонить';
           declineBtn.onclick = async (e) => { e.stopPropagation(); await respondToCalendarEvent(item.event, 'declined'); invalidateCalendarCache(); ov.remove(); render(); };
-          row.appendChild(acceptBtn); row.appendChild(declineBtn);
+          actionsWrap.appendChild(acceptBtn); actionsWrap.appendChild(declineBtn);
         }
         if(mine){
           const isRecurring = item.event.recurrence !== 'none' || item.event.kind === 'work_schedule';
           const editBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.edit);
           editBtn.title = 'Редактировать';
           editBtn.onclick = (e) => { e.stopPropagation(); ov.remove(); openEventModal({ existingEvent: item.event }); };
-          row.appendChild(editBtn);
+          actionsWrap.appendChild(editBtn);
 
           const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
           delBtn.title = 'Удалить';
@@ -2384,9 +2453,10 @@ function openDayDetail(year, month, day, items){
             chooser.onclick = (ev2) => { if(ev2.target === chooser) chooser.remove(); };
             document.body.appendChild(chooser);
           };
-          row.appendChild(delBtn);
+          actionsWrap.appendChild(delBtn);
         }
       }
+      row.appendChild(actionsWrap);
       box.appendChild(row);
     });
   }
@@ -3249,6 +3319,7 @@ function render(){
   else if(state.screen === 'support') renderSupport();
   else if(state.screen === 'account') renderAccountScreen();
   else if(state.screen === 'calendar') renderCalendarScreen();
+  else if(state.screen === 'goals') renderGoalsScreen();
 }
 
 function el(tag, cls, html){
@@ -3346,7 +3417,7 @@ function renderNav(active){
     const hasCalendarNotif = unreadCalendarNotifCount() > 0;
     const calendarLink = el('button','nav-link' + (active==='calendar' ? ' active' : '') + (hasCalendarNotif ? ' alert' : ''),
       'Календарь' + (hasCalendarNotif ? ' •'+unreadCalendarNotifCount() : ''));
-    calendarLink.onclick = () => { state.screen = 'calendar'; render(); };
+    calendarLink.onclick = () => { invalidateCalendarCache(); state.screen = 'calendar'; render(); };
 
     const myLink = el('button','nav-link' + (active==='mine' ? ' active' : ''), state.graph ? 'Моя схема' : 'Написать о себе');
     myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
@@ -3360,10 +3431,14 @@ function renderNav(active){
     const supportLink = el('button','nav-link' + (active==='support' ? ' active' : ''), 'Поддержка');
     supportLink.onclick = () => { openSupport(); };
 
+    const goalsLink = el('button','nav-link' + (active==='goals' ? ' active' : ''), 'Цели');
+    goalsLink.onclick = () => { state.screen = 'goals'; render(); };
+
     links.appendChild(messagesLink);
     links.appendChild(friendsLink);
     links.appendChild(peopleLink);
     links.appendChild(calendarLink);
+    links.appendChild(goalsLink);
     links.appendChild(myLink);
     links.appendChild(accountLink);
     links.appendChild(installLink);
@@ -3998,7 +4073,7 @@ function refreshGlobalNav(){
     landing: 'landing', story: 'mine', result: 'mine', people: 'people',
     personView: 'people', friends: 'friends', messages: 'messages',
     createGroup: 'messages', support: 'support', account: 'account', chat: 'messages',
-    calendar: 'calendar',
+    calendar: 'calendar', goals: 'goals',
   };
   const oldNav = document.querySelector('.nav-wrapper');
   if(oldNav) oldNav.replaceWith(renderNav(navActiveMap[state.screen] || ''));
@@ -4950,8 +5025,12 @@ function buildChatPanel(container){
     const calBtn = el('button','icon-btn', CHAT_ICONS.calendar);
     calBtn.title = 'Создать событие';
     calBtn.style.color = 'var(--ink)';
-    calBtn.onclick = (e) => {
+    calBtn.onclick = async (e) => {
       e.stopPropagation();
+      calBtn.disabled = true;
+      const allowed = await canInviteToCalendar(state.chatWith.uid);
+      calBtn.disabled = false;
+      if(!allowed){ showToast('Этот человек ограничил, кто может приглашать его в события'); return; }
       openEventModal({ presetParticipant: { uid: state.chatWith.uid, name: state.chatWith.name } });
     };
     headerRow.appendChild(calBtn);
@@ -5991,6 +6070,61 @@ function renderAccountScreen(){
   schemaVisLabel.appendChild(document.createTextNode('Показывать мою схему интересов другим (если выключишь — сам(а) тоже перестанешь видеть чужие схемы; проценты совместимости у всех останутся видны)'));
   card.appendChild(schemaVisLabel);
 
+  // --- Кто может приглашать меня в события календаря ---
+  const inviteWrap = el('div','');
+  inviteWrap.style.marginTop = '14px';
+  inviteWrap.appendChild(el('div','top-tag','Кто может приглашать меня в события календаря'));
+  const inviteRuleSelect = document.createElement('select');
+  [['everyone','Все пользователи'],['contacts','Только мои контакты'],['allowlist','Только выбранные'],['blocklist','Все, кроме выбранных'],['nobody','Никто']]
+    .forEach(([val,label]) => inviteRuleSelect.appendChild(new Option(label, val, false, (state.profile?.inviteRule || 'contacts') === val)));
+  inviteWrap.appendChild(inviteRuleSelect);
+
+  const inviteListWrap = el('div','event-modal-participants');
+  inviteListWrap.style.marginTop = '8px';
+  let inviteAllow = [...(state.profile?.inviteAllowlist || [])];
+  let inviteBlock = [...(state.profile?.inviteBlocklist || [])];
+  function currentInviteList(){ return inviteRuleSelect.value === 'allowlist' ? inviteAllow : inviteBlock; }
+  function setInviteList(list){ if(inviteRuleSelect.value === 'allowlist') inviteAllow = list; else inviteBlock = list; }
+
+  function renderInviteList(){
+    inviteListWrap.innerHTML = '';
+    currentInviteList().forEach(p => {
+      const chip = el('div','event-modal-participant-chip', p.name + ' ');
+      const rm = document.createElement('span'); rm.textContent = '✕'; rm.style.cursor = 'pointer';
+      rm.onclick = () => { setInviteList(currentInviteList().filter(x => x.uid !== p.uid)); renderInviteList(); scheduleProfileAutosave(); };
+      chip.appendChild(rm);
+      inviteListWrap.appendChild(chip);
+    });
+  }
+  const inviteAddRow = el('div','event-modal-row');
+  const inviteFriendSelect = document.createElement('select');
+  inviteFriendSelect.appendChild(new Option('+ Добавить контакт…',''));
+  listFriends().then(friends => {
+    inviteFriendSelect._friends = friends;
+    friends.forEach(f => inviteFriendSelect.appendChild(new Option(f.name, f.uid)));
+  }).catch(()=>{});
+  inviteFriendSelect.onchange = () => {
+    const uid = inviteFriendSelect.value;
+    if(!uid) return;
+    const f = (inviteFriendSelect._friends||[]).find(x => x.uid === uid);
+    if(f && !currentInviteList().some(p=>p.uid===f.uid)){ setInviteList([...currentInviteList(), f]); renderInviteList(); scheduleProfileAutosave(); }
+    inviteFriendSelect.value = '';
+  };
+  inviteAddRow.appendChild(inviteFriendSelect);
+
+  function updateInviteListVisibility(){
+    const show = inviteRuleSelect.value === 'allowlist' || inviteRuleSelect.value === 'blocklist';
+    inviteListWrap.style.display = show ? '' : 'none';
+    inviteAddRow.style.display = show ? '' : 'none';
+    if(show) renderInviteList();
+  }
+  inviteRuleSelect.onchange = () => { updateInviteListVisibility(); scheduleProfileAutosave(); };
+  updateInviteListVisibility();
+
+  inviteWrap.appendChild(inviteListWrap);
+  inviteWrap.appendChild(inviteAddRow);
+  card.appendChild(inviteWrap);
+
   nameInput.addEventListener('blur', () => scheduleProfileAutosave());
   nameInput.addEventListener('keydown', e => { if(e.key === 'Enter') scheduleProfileAutosave(); });
 
@@ -6004,6 +6138,9 @@ function renderAccountScreen(){
       city: cityField ? cityField.value.trim() : '',
       showStatus: statusCheckbox.checked,
       schemaVisible: schemaVisCheckbox.checked,
+      inviteRule: inviteRuleSelect.value,
+      inviteAllowlist: inviteAllow,
+      inviteBlocklist: inviteBlock,
     };
     const newName = nameInput.value.trim() || state.user.name;
     try{
