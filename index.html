@@ -424,8 +424,9 @@
     font-size: 12px;
     color: var(--ink-dim);
     cursor: pointer;
-    background: var(--bg-soft);
-    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg-soft) 35%, transparent);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
     padding: 8px 11px;
     white-space: nowrap;
     flex-shrink: 0;
@@ -1044,15 +1045,22 @@
   .calendar-header-row{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 6px; }
   .calendar-page-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 26px; margin: 0; }
   .calendar-nav-row{ display:flex; align-items:center; gap:10px; margin-bottom: 16px; flex-wrap: wrap; }
-  .calendar-month-label{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size: 16px; min-width: 160px; }
+  .calendar-month-label{
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size: 16px; min-width: 160px;
+    background: color-mix(in srgb, var(--bg-soft) 35%, transparent);
+    border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px;
+    cursor: pointer; color: var(--ink); text-align: center;
+  }
+  .calendar-month-label:hover{ border-color: var(--gold); color: var(--gold); }
   .calendar-card{ padding: 16px; background: color-mix(in srgb, var(--panel) 14%, transparent) !important; border-color: color-mix(in srgb, var(--line) 40%, transparent) !important; }
   .calendar-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
   .calendar-dow{ text-align:center; font-size: 12px; color: var(--ink-dim); padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
   .calendar-cell{
     min-height: 84px; border-radius: 6px; padding: 6px;
-    background: color-mix(in srgb, var(--bg-soft) 8%, transparent);
+    background: color-mix(in srgb, var(--bg-soft) 13%, transparent);
     backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-    border: 1px solid transparent; cursor: pointer; transition: border-color .12s ease;
+    border: 1px solid color-mix(in srgb, var(--line) 30%, transparent);
+    cursor: pointer; transition: border-color .12s ease;
   }
   .calendar-cell:hover{ border-color: var(--line); }
   .calendar-cell-empty{ background: transparent; cursor: default; }
@@ -1990,6 +1998,63 @@ async function respondToCalendarEvent(event, status){
   await updateCalendarEvent(event.id, { participants });
 }
 
+// Проверка "у меня уже что-то стоит на это время" — учитывает и свои события, и те,
+// куда я подтвердил(а) участие (неотвеченные приглашения в конфликт не считаем).
+function hasCalendarConflict(startTs, endTs, excludeEventId){
+  return (state.calendarEvents||[]).some(ev => {
+    if(ev.id === excludeEventId) return false;
+    const myPart = (ev.participants||[]).find(p => p.uid === state.user.uid);
+    const relevant = ev.owner_uid === state.user.uid || (myPart && myPart.status === 'confirmed');
+    if(!relevant) return false;
+    const occs = ev.kind === 'work_schedule'
+      ? expandWorkSchedule(ev, startTs - 24*60*60*1000, endTs + 24*60*60*1000)
+      : expandRecurrence(ev, startTs - 24*60*60*1000, endTs + 24*60*60*1000);
+    return occs.some(occ => occ.start < endTs && occ.end > startTs);
+  });
+}
+
+function openAddParticipantModal(event){
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box';
+  box.appendChild(el('div','','Добавить участника')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:15px;';
+  const select = document.createElement('select');
+  select.appendChild(new Option('Выбери контакт…',''));
+  listFriends().then(friends => {
+    friends.filter(f => !(event.participants||[]).some(p => p.uid === f.uid)).forEach(f => select.appendChild(new Option(f.name, f.uid)));
+  }).catch(()=>{});
+  box.appendChild(select);
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+  const cancelBtn = document.createElement('button'); cancelBtn.className='btn ghost'; cancelBtn.textContent='Отмена';
+  cancelBtn.onclick = () => ov.remove();
+  const addBtn = document.createElement('button'); addBtn.className='btn'; addBtn.textContent='Добавить';
+  addBtn.onclick = async () => {
+    const uid = select.value;
+    if(!uid) return;
+    const opt = select.options[select.selectedIndex];
+    addBtn.disabled = true;
+    try{
+      const allowed = await canInviteToCalendar(uid);
+      if(!allowed){ showToast('Этот человек ограничил, кто может приглашать его в события'); addBtn.disabled = false; return; }
+      const participants = [...(event.participants||[]), { uid, name: opt.text, status: 'pending' }];
+      await updateCalendarEvent(event.id, { participants });
+      invalidateCalendarCache(); ov.remove(); render();
+      showToast('Участник добавлен ✓');
+    }catch(err){
+      console.error('add participant failed', err);
+      showToast('Не удалось добавить: ' + err.message);
+      addBtn.disabled = false;
+    }
+  };
+  row.appendChild(cancelBtn); row.appendChild(addBtn);
+  box.appendChild(row);
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
 async function listMyCalendarEvents(){
   if(!supabaseReady) throw backendNotConfiguredError();
   const me = state.user.uid;
@@ -2142,9 +2207,33 @@ function invalidateCalendarCache(){
   state.calendarEventsLoaded = false;
 }
 
-function pushCalendarNotification(text){
-  calendarNotifications = [{ id: 'cn' + Date.now() + Math.random(), text, ts: Date.now(), read: false }, ...calendarNotifications].slice(0, 50);
+async function pushCalendarNotification(text){
+  const localItem = { id: 'cn' + Date.now() + Math.random(), text, ts: Date.now(), read: false };
+  calendarNotifications = [localItem, ...calendarNotifications].slice(0, 50);
   refreshGlobalNav();
+  if(!supabaseReady || !state.user) return;
+  try{
+    const { data, error } = await sb.from('calendar_notifications').insert({ uid: state.user.uid, text, read: false }).select().single();
+    if(!error && data) localItem.id = data.id;
+  }catch(e){ console.error('save notification failed', e); }
+}
+
+async function loadCalendarNotifications(){
+  if(!supabaseReady || !state.user) return;
+  try{
+    const { data, error } = await sb.from('calendar_notifications').select('*').eq('uid', state.user.uid).order('created_at', { ascending: false }).limit(50);
+    if(error) throw error;
+    calendarNotifications = (data||[]).map(r => ({ id: r.id, text: r.text, ts: new Date(r.created_at).getTime(), read: r.read }));
+    refreshGlobalNav();
+  }catch(e){ console.error('load notifications failed', e); }
+}
+
+async function markCalendarNotificationsRead(){
+  const unreadIds = calendarNotifications.filter(n => !n.read).map(n => n.id);
+  calendarNotifications.forEach(n => n.read = true);
+  if(!supabaseReady || !unreadIds.length) return;
+  try{ await sb.from('calendar_notifications').update({ read: true }).in('id', unreadIds); }
+  catch(e){ console.error('mark notifications read failed', e); }
 }
 
 function unreadCalendarNotifCount(){
@@ -2227,6 +2316,7 @@ function openNotificationPanel(){
   }
   calendarNotifications.forEach(n => n.read = true);
   document.body.appendChild(popup);
+  markCalendarNotificationsRead();
   setTimeout(() => {
     document.addEventListener('click', function closeNotif(ev){
       if(!popup.contains(ev.target) && ev.target.id !== 'notif-bell-btn'){
@@ -2246,6 +2336,49 @@ function renderGoalsScreen(){
   card.appendChild(el('div','footer-note','Раздел только что появился — расскажи, что здесь должно быть (личные цели, привычки, трекер прогресса?), и я наполню его функциями.'));
   w.appendChild(card);
   root.appendChild(w);
+}
+
+function openMonthPicker(currentYear, currentMonth){
+  const monthNames = ['Янв','Фев','Март','Апр','Май','Июнь','Июль','Авг','Сен','Окт','Ноя','Дек'];
+  let pickerYear = currentYear;
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box';
+
+  const yearRow = document.createElement('div');
+  yearRow.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:16px;';
+  const yPrev = el('button','btn ghost icon-only-btn','←');
+  const yLabel = el('div','', String(pickerYear));
+  yLabel.style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;min-width:60px;text-align:center;';
+  const yNext = el('button','btn ghost icon-only-btn','→');
+  yearRow.appendChild(yPrev); yearRow.appendChild(yLabel); yearRow.appendChild(yNext);
+  box.appendChild(yearRow);
+
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;';
+  box.appendChild(grid);
+
+  function renderMonths(){
+    grid.innerHTML = '';
+    monthNames.forEach((name, idx) => {
+      const isCurrent = pickerYear === currentYear && idx === currentMonth;
+      const btn = el('button','btn ghost' + (isCurrent ? ' active' : ''), name);
+      btn.onclick = () => {
+        state.calendarView = { year: pickerYear, month: idx };
+        ov.remove();
+        render();
+      };
+      grid.appendChild(btn);
+    });
+  }
+  yPrev.onclick = () => { pickerYear--; yLabel.textContent = String(pickerYear); renderMonths(); };
+  yNext.onclick = () => { pickerYear++; yLabel.textContent = String(pickerYear); renderMonths(); };
+  renderMonths();
+
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
 }
 
 function renderCalendarScreen(){
@@ -2269,7 +2402,8 @@ function renderCalendarScreen(){
     render();
   };
   const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
-  const label = el('div','calendar-month-label', `${monthNames[month]} ${year}`);
+  const label = el('button','calendar-month-label', `${monthNames[month]} ${year}`);
+  label.onclick = () => openMonthPicker(year, month);
   const nextBtn = el('button','btn ghost icon-only-btn','→');
   nextBtn.onclick = () => {
     state.calendarView.month++; if(state.calendarView.month > 11){ state.calendarView.month = 0; state.calendarView.year++; }
@@ -2297,12 +2431,18 @@ function renderCalendarScreen(){
   for(let d=1; d<=daysInMonth; d++) dayBuckets[d] = [];
 
   (state.calendarEvents || []).forEach(ev => {
+    const myPart = (ev.participants||[]).find(p => p.uid === state.user.uid);
+    // Если я отклонил(а) приглашение — событие для меня больше не существует.
+    if(ev.owner_uid !== state.user.uid && myPart && myPart.status === 'declined') return;
+    const isPendingForMe = ev.owner_uid !== state.user.uid && myPart && myPart.status === 'pending';
     const occs = ev.kind === 'work_schedule'
       ? expandWorkSchedule(ev, monthStartTs, monthEndTs)
       : expandRecurrence(ev, monthStartTs, monthEndTs);
     occs.forEach(occ => {
       const d = new Date(occ.start).getDate();
-      if(dayBuckets[d]) dayBuckets[d].push({ title: ev.title, color: ev.color || '#7c9eff', event: ev, start: occ.start, end: occ.end });
+      // Неотвеченное приглашение — красным, чтобы сразу бросалось в глаза.
+      const color = isPendingForMe ? '#e0555a' : (ev.color || '#7c9eff');
+      if(dayBuckets[d]) dayBuckets[d].push({ title: ev.title, color, event: ev, start: occ.start, end: occ.end, isPendingForMe });
     });
   });
 
@@ -2397,14 +2537,41 @@ function openDayDetail(year, month, day, items){
       if(item.event && !item.isBirthday){
         const mine = item.event.owner_uid === state.user.uid;
         const myPart = (item.event.participants||[]).find(p => p.uid === state.user.uid);
-        if(myPart && myPart.status === 'pending'){
+        if(!mine && myPart && myPart.status === 'pending'){
           const acceptBtn = el('button','btn','✓');
           acceptBtn.title = 'Принять';
-          acceptBtn.onclick = async (e) => { e.stopPropagation(); await respondToCalendarEvent(item.event, 'confirmed'); invalidateCalendarCache(); ov.remove(); render(); };
+          acceptBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const doAccept = async () => {
+              try{
+                await respondToCalendarEvent(item.event, 'confirmed');
+                invalidateCalendarCache(); ov.remove(); render();
+              }catch(err){ console.error('accept event failed', err); showToast('Не удалось принять: ' + err.message); }
+            };
+            if(hasCalendarConflict(item.start, item.end, item.event.id)){
+              showConfirmModal('У вас уже есть событие в это же время. Всё равно принять?', doAccept);
+            } else {
+              doAccept();
+            }
+          };
           const declineBtn = el('button','btn ghost','✕');
           declineBtn.title = 'Отклонить';
-          declineBtn.onclick = async (e) => { e.stopPropagation(); await respondToCalendarEvent(item.event, 'declined'); invalidateCalendarCache(); ov.remove(); render(); };
+          declineBtn.onclick = async (e) => {
+            e.stopPropagation();
+            try{
+              await respondToCalendarEvent(item.event, 'declined');
+              invalidateCalendarCache(); ov.remove(); render();
+            }catch(err){ console.error('decline event failed', err); showToast('Не удалось отклонить: ' + err.message); }
+          };
           actionsWrap.appendChild(acceptBtn); actionsWrap.appendChild(declineBtn);
+        }
+        // Участник (не владелец), уже подтвердивший участие, может только позвать ещё людей —
+        // менять время/название/повторение чужого события он не может.
+        if(!mine && myPart && myPart.status === 'confirmed'){
+          const addPartBtn = el('button','btn ghost icon-only-btn','＋');
+          addPartBtn.title = 'Добавить участника';
+          addPartBtn.onclick = (e) => { e.stopPropagation(); openAddParticipantModal(item.event); };
+          actionsWrap.appendChild(addPartBtn);
         }
         if(mine){
           const isRecurring = item.event.recurrence !== 'none' || item.event.kind === 'work_schedule';
@@ -2419,8 +2586,8 @@ function openDayDetail(year, month, day, items){
             e.stopPropagation();
             if(!isRecurring){
               showConfirmModal('Удалить это событие?', async () => {
-                await deleteCalendarEvent(item.event.id);
-                invalidateCalendarCache(); ov.remove(); render();
+                try{ await deleteCalendarEvent(item.event.id); invalidateCalendarCache(); ov.remove(); render(); }
+                catch(err){ console.error('delete event failed', err); showToast('Не удалось удалить: ' + err.message); }
               });
               return;
             }
@@ -2434,14 +2601,14 @@ function openDayDetail(year, month, day, items){
             onlyDayBtn.onclick = async () => {
               chooser.remove();
               const excluded = [...(item.event.excluded_ts||[]), item.start];
-              await updateCalendarEvent(item.event.id, { excluded_ts: excluded });
-              invalidateCalendarCache(); ov.remove(); render();
+              try{ await updateCalendarEvent(item.event.id, { excluded_ts: excluded }); invalidateCalendarCache(); ov.remove(); render(); }
+              catch(err){ console.error('exclude occurrence failed', err); showToast('Не удалось удалить: ' + err.message); }
             };
             const allBtn = el('button','btn','Удалить всё событие');
             allBtn.onclick = async () => {
               chooser.remove();
-              await deleteCalendarEvent(item.event.id);
-              invalidateCalendarCache(); ov.remove(); render();
+              try{ await deleteCalendarEvent(item.event.id); invalidateCalendarCache(); ov.remove(); render(); }
+              catch(err){ console.error('delete event failed', err); showToast('Не удалось удалить: ' + err.message); }
             };
             const cancelChooserBtn = el('button','btn ghost','Отмена');
             cancelChooserBtn.onclick = () => chooser.remove();
@@ -2635,6 +2802,13 @@ function openEventModal(opts){
       endTs = new Date(y, mo-1, da, eh, em).getTime();
       if(endTs <= startTs) endTs = startTs + 60*60*1000;
     }
+    if(!scheduleCheckbox.checked && hasCalendarConflict(startTs, endTs, editing ? ev0.id : null)){
+      showConfirmModal('У вас уже есть событие в это же время. Всё равно сохранить?', () => doSaveEvent(title, startTs, endTs));
+      return;
+    }
+    doSaveEvent(title, startTs, endTs);
+  };
+  async function doSaveEvent(title, startTs, endTs){
     saveBtn.disabled = true; saveBtn.textContent = editing ? 'Сохраняем…' : 'Создаём…';
     try{
       if(editing){
@@ -2676,9 +2850,9 @@ function openEventModal(opts){
       console.error('save event failed', e);
       errEl.textContent = 'Не удалось сохранить: ' + e.message;
       errEl.style.display = '';
-      saveBtn.disabled = false; saveBtn.textContent = 'Создать';
+      saveBtn.disabled = false; saveBtn.textContent = editing ? 'Сохранить' : 'Создать';
     }
-  };
+  }
   btnRow.appendChild(cancelBtn); btnRow.appendChild(saveBtn);
   box.appendChild(btnRow);
 
@@ -3475,7 +3649,7 @@ async function openPeople(){
 }
 
 function renderPeople(){
-  const w = el('div','wrap');
+  const w = el('div','wrap wide');
   w.appendChild(renderNav('people'));
   w.appendChild(el('h1','', 'Пользователи'));
   w.appendChild(el('p','lead', state.graph
@@ -3825,7 +3999,7 @@ async function openFriends(){
 }
 
 function renderFriends(){
-  const w = el('div','wrap');
+  const w = el('div','wrap wide');
   w.appendChild(renderNav('friends'));
   w.appendChild(el('h1','', 'Контакты'));
 
@@ -5576,7 +5750,7 @@ async function openCreateGroup(){
 }
 
 function renderCreateGroup(){
-  const w = el('div','wrap');
+  const w = el('div','wrap wide');
   w.appendChild(renderNav('messages'));
   const back = el('button','btn ghost','← К сообщениям');
   back.style.marginBottom = '20px';
@@ -5643,7 +5817,7 @@ async function openSupport(){
 }
 
 function renderSupport(){
-  const w = el('div','wrap');
+  const w = el('div','wrap wide');
   w.appendChild(renderNav('support'));
   w.appendChild(el('h1','', 'Поддержка'));
 
@@ -5766,7 +5940,7 @@ function citiesForCountry(country){
 }
 
 function renderAccountScreen(){
-  const w = el('div','wrap');
+  const w = el('div','wrap wide');
   w.appendChild(renderNav('account'));
   w.appendChild(el('h1','', 'Аккаунт'));
 
@@ -6349,7 +6523,7 @@ async function saveTheme(themeId){
 }
 
 function renderLanding(){
-  const w = el('div','wrap');
+  const w = el('div','wrap wide');
   w.appendChild(renderNav('landing'));
   w.appendChild(el('div','eyebrow','Приложение для общения'));
   const h = el('h1'); h.innerHTML = 'Найди себя <span>в ком-то</span>.';
@@ -6461,7 +6635,7 @@ function renderLanding(){
 }
 
 function renderAuth(){
-  const w = el('div','wrap');
+  const w = el('div','wrap wide');
   w.appendChild(renderNav('auth'));
   const isLogin = state.authMode === 'login';
   w.appendChild(el('h1','', isLogin ? 'Вход' : 'Регистрация'));
@@ -6534,6 +6708,7 @@ function renderAuth(){
       refreshNotificationCounts().then(render);
       startNotificationPolling();
       startCalendarRealtime();
+      loadCalendarNotifications();
       listenForIncomingCalls();
     }catch(e){
       state.error = e.message;
@@ -6554,7 +6729,7 @@ function renderAuth(){
 }
 
 function renderStory(){
-  const w = el('div','wrap');
+  const w = el('div','wrap wide');
   w.appendChild(renderNav('mine'));
 
   const hasExisting = !!(state.graph && state.graph.nodes && state.graph.nodes.length);
@@ -7539,6 +7714,7 @@ if(supabaseReady){
         refreshNotificationCounts().then(render);
         startNotificationPolling();
         startCalendarRealtime();
+        loadCalendarNotifications();
         listenForIncomingCalls();
       }catch(e){ console.error('session restore failed', e); }
     }
