@@ -1171,6 +1171,19 @@
     padding: 18px;
     overflow: hidden;
   }
+  #chat-messages{
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--gold) 45%, transparent) transparent;
+  }
+  #chat-messages::-webkit-scrollbar{ width: 5px; }
+  #chat-messages::-webkit-scrollbar-track{ background: transparent; }
+  #chat-messages::-webkit-scrollbar-thumb{
+    background: color-mix(in srgb, var(--gold) 45%, transparent);
+    border-radius: 999px;
+  }
+  #chat-messages::-webkit-scrollbar-thumb:hover{
+    background: color-mix(in srgb, var(--gold) 65%, transparent);
+  }
   .shell-main .chat-panel-card{
     flex: 1;
     min-height: 0;
@@ -2057,23 +2070,15 @@ function openAddParticipantModal(event){
 
 async function listMyCalendarEvents(){
   if(!supabaseReady) throw backendNotConfiguredError();
-  const me = state.user.uid;
-  const [ownedRes, participantRes, groupsRes] = await Promise.all([
-    sb.from('calendar_events').select('*').eq('owner_uid', me),
-    sb.from('calendar_events').select('*').contains('participants', [{ uid: me }]),
-    sb.from('groups').select('id').contains('members', [me]),
-  ]);
-  if(ownedRes.error) throw new Error(ownedRes.error.message);
-  const myGroupIds = (groupsRes.data || []).map(g => g.id);
-  let groupEvents = [];
-  if(myGroupIds.length){
-    const { data, error } = await sb.from('calendar_events').select('*').in('group_id', myGroupIds);
-    if(error) throw new Error(error.message);
-    groupEvents = data || [];
-  }
-  const byId = new Map();
-  [...(ownedRes.data||[]), ...(participantRes.data||[]), ...groupEvents].forEach(e => byId.set(e.id, e));
-  return [...byId.values()];
+  // Раньше здесь были три отдельных запроса (свои события, "где я участник" через
+  // хрупкий .contains() по jsonb, и события групп), и ошибки второго запроса тихо
+  // проглатывались — если он вдруг ломался, приглашения просто никогда не находились,
+  // и ни в консоли, ни в интерфейсе не было ни намёка на причину. Теперь один простой
+  // запрос без фильтров вообще — какие строки видны, решает RLS на сервере (владелец
+  // или участник, включая групповые события — там участники тоже явно прописаны).
+  const { data, error } = await sb.from('calendar_events').select('*');
+  if(error){ console.error('listMyCalendarEvents failed', error); throw new Error(error.message); }
+  return data || [];
 }
 
 // Раскладывает повторяющееся событие на конкретные даты внутри диапазона [rangeStart, rangeEnd).
@@ -2549,7 +2554,7 @@ function openDayDetail(year, month, day, items){
               }catch(err){ console.error('accept event failed', err); showToast('Не удалось принять: ' + err.message); }
             };
             if(hasCalendarConflict(item.start, item.end, item.event.id)){
-              showConfirmModal('У вас уже есть событие в это же время. Всё равно принять?', doAccept);
+              showConfirmModal('У вас уже есть событие в это же время. Всё равно принять?', doAccept, 'Всё равно принять');
             } else {
               doAccept();
             }
@@ -2802,8 +2807,18 @@ function openEventModal(opts){
       endTs = new Date(y, mo-1, da, eh, em).getTime();
       if(endTs <= startTs) endTs = startTs + 60*60*1000;
     }
+    if(startTs < Date.now() - 5*60*1000 && !scheduleCheckbox.checked){
+      showConfirmModal('Это время уже прошло. Всё равно сохранить событие задним числом?', () => {
+        if(!scheduleCheckbox.checked && hasCalendarConflict(startTs, endTs, editing ? ev0.id : null)){
+          showConfirmModal('У вас уже есть событие в это же время. Всё равно сохранить?', () => doSaveEvent(title, startTs, endTs), 'Всё равно сохранить');
+        } else {
+          doSaveEvent(title, startTs, endTs);
+        }
+      }, 'Всё равно сохранить');
+      return;
+    }
     if(!scheduleCheckbox.checked && hasCalendarConflict(startTs, endTs, editing ? ev0.id : null)){
-      showConfirmModal('У вас уже есть событие в это же время. Всё равно сохранить?', () => doSaveEvent(title, startTs, endTs));
+      showConfirmModal('У вас уже есть событие в это же время. Всё равно сохранить?', () => doSaveEvent(title, startTs, endTs), 'Всё равно сохранить');
       return;
     }
     doSaveEvent(title, startTs, endTs);
@@ -5170,6 +5185,9 @@ function buildChatPanel(container){
   titleWrap.appendChild(titleCol);
   headerRow.appendChild(titleWrap);
 
+  const headerActionsWrap = el('div','');
+  headerActionsWrap.style.display = 'flex'; headerActionsWrap.style.alignItems = 'center'; headerActionsWrap.style.gap = '8px'; headerActionsWrap.style.flexShrink = '0';
+
   if(!state.chatWith.isGroup && state.chatWith.uid !== state.user.uid){
     const callBtn = el('button','icon-btn', CHAT_ICONS.call);
     callBtn.title = 'Позвонить';
@@ -5194,7 +5212,7 @@ function buildChatPanel(container){
       menu.style.top = (rect.bottom + 6) + 'px';
       setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
     };
-    headerRow.appendChild(callBtn);
+    headerActionsWrap.appendChild(callBtn);
 
     const calBtn = el('button','icon-btn', CHAT_ICONS.calendar);
     calBtn.title = 'Создать событие';
@@ -5207,7 +5225,7 @@ function buildChatPanel(container){
       if(!allowed){ showToast('Этот человек ограничил, кто может приглашать его в события'); return; }
       openEventModal({ presetParticipant: { uid: state.chatWith.uid, name: state.chatWith.name } });
     };
-    headerRow.appendChild(calBtn);
+    headerActionsWrap.appendChild(calBtn);
   }
   if(state.chatWith.isGroup){
     const calBtn = el('button','icon-btn', CHAT_ICONS.calendar);
@@ -5226,8 +5244,9 @@ function buildChatPanel(container){
       }
       calBtn.disabled = false;
     };
-    headerRow.appendChild(calBtn);
+    headerActionsWrap.appendChild(calBtn);
   }
+  headerRow.appendChild(headerActionsWrap);
   container.appendChild(headerRow);
 
   const card = el('div','card chat-panel-card card-translucent');
@@ -5496,7 +5515,7 @@ function timeAgoShort(ts){
   return Math.round(diffH / 24) + ' дн';
 }
 
-function showConfirmModal(message, onConfirm){
+function showConfirmModal(message, onConfirm, confirmLabel){
   const ov = document.createElement('div');
   ov.className = 'confirm-modal-overlay';
   const box = document.createElement('div');
@@ -5511,7 +5530,7 @@ function showConfirmModal(message, onConfirm){
   cancelBtn.className = 'btn ghost'; cancelBtn.textContent = 'Отмена';
   cancelBtn.onclick = () => ov.remove();
   const okBtn = document.createElement('button');
-  okBtn.className = 'btn'; okBtn.textContent = 'Удалить';
+  okBtn.className = 'btn'; okBtn.textContent = confirmLabel || 'Удалить';
   okBtn.onclick = () => { ov.remove(); onConfirm(); };
   row.appendChild(cancelBtn); row.appendChild(okBtn);
   box.appendChild(row);
@@ -6344,6 +6363,8 @@ function renderAccountScreen(){
     if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
     stopNotificationPolling();
     stopCalendarRealtime();
+    calendarNotifications = [];
+    remindedEventIds.clear();
     stopListeningForIncomingCalls();
     if(currentCall) endCall(true);
     logoutUser();
