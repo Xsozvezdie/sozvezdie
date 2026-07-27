@@ -1075,7 +1075,10 @@
   .calendar-day-detail-title{ font-size: 14px; }
   .calendar-day-detail-actions{ display:flex; gap:6px; flex-shrink:0; margin-left:auto; }
 
+  .goal-stats-card{ margin-bottom: 14px; padding: 14px 18px; }
+  .goal-stats-row{ font-size: 14px; color: var(--ink); }
   .goals-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+
   .goal-card{ padding: 18px; cursor: pointer; transition: border-color .15s ease; }
   .goal-card:hover{ border-color: var(--gold); }
   .goal-card-top{ display:flex; justify-content:space-between; align-items:flex-start; gap: 10px; }
@@ -1109,6 +1112,27 @@
     35%  { transform: translate(-50%,-50%) scale(1); opacity: 1; }
     100% { transform: translate(-50%,-60%) scale(1.05); opacity: 0; }
   }
+
+  .goal-week-row-wrap{ width: 100%; margin: 10px 0; }
+  .goal-week-row{ display:flex; justify-content: center; gap: 6px; }
+  .goal-week-col{ display:flex; flex-direction:column; align-items:center; gap: 4px; }
+  .goal-week-daylabel{ font-size: 10px; color: var(--ink-dim); text-transform: uppercase; }
+  .goal-week-box{
+    width: 30px; height: 30px; border-radius: 8px;
+    border: 1px solid var(--line); background: color-mix(in srgb, var(--bg-soft) 40%, transparent);
+    display:flex; align-items:center; justify-content:center; font-size: 14px; font-weight: 700;
+  }
+  .goal-week-box.done{ background: color-mix(in srgb, #7fe0a0 30%, transparent); border-color: #7fe0a0; color: #3a9a5c; }
+  .goal-week-box.failed{ background: color-mix(in srgb, #e0555a 22%, transparent); border-color: #e0555a; color: #c23b40; }
+  .goal-week-box.today{ border-color: var(--gold); border-width: 2px; }
+
+  .goal-checklist-wrap{ width: 100%; margin: 8px 0; text-align: left; }
+  .goal-checklist-row{
+    display:flex; align-items:center; gap: 10px; padding: 6px 4px; border-radius: 8px;
+  }
+  .goal-checklist-row.interactive{ cursor: pointer; }
+  .goal-checklist-row.interactive:hover{ background: color-mix(in srgb, var(--gold) 8%, transparent); }
+  .goal-checklist-row .goal-week-box{ width: 22px; height: 22px; border-radius: 6px; font-size: 12px; flex-shrink: 0; }
 
   .graph-body-row{
     flex: 1;
@@ -2418,10 +2442,21 @@ async function createGoal(g){
     is_public: !!g.isPublic,
     participants: (g.participants||[]).map(p => ({ uid: p.uid, name: p.name })),
     color: g.color || 'var(--gold)',
+    items: g.items || [],
+    done_by: {},
   };
   const { data, error } = await sb.from('goals').insert(row).select().single();
   if(error) throw new Error(error.message);
   return data;
+}
+
+async function toggleGoalItemDone(goal, itemId){
+  const doneBy = { ...(goal.done_by||{}) };
+  const mySet = new Set(doneBy[state.user.uid] || []);
+  if(mySet.has(itemId)) mySet.delete(itemId); else mySet.add(itemId);
+  doneBy[state.user.uid] = [...mySet];
+  await updateGoal(goal.id, { done_by: doneBy });
+  goal.done_by = doneBy;
 }
 
 async function updateGoal(id, patch){
@@ -2445,7 +2480,7 @@ async function listMyGoals(){
 
 async function searchPublicGoalRooms(query){
   if(!supabaseReady) throw backendNotConfiguredError();
-  let q = sb.from('goals').select('*').eq('is_public', true).eq('kind', 'habit');
+  let q = sb.from('goals').select('*').eq('is_public', true);
   if(query) q = q.ilike('title', `%${query}%`);
   const { data, error } = await q.limit(20);
   if(error) throw new Error(error.message);
@@ -2479,15 +2514,18 @@ function goalDayKey(d){
 }
 
 function computeGoalPercent(goal, progressEntries, forUid){
+  if(goal.kind === 'checklist'){
+    const items = goal.items || [];
+    if(!items.length) return 0;
+    const uid = forUid || state.user.uid;
+    const doneIds = new Set((goal.done_by||{})[uid] || []);
+    const doneCount = items.filter(it => doneIds.has(it.id)).length;
+    return Math.min(100, (doneCount/items.length)*100);
+  }
   const relevant = forUid ? progressEntries.filter(p => p.uid === forUid) : progressEntries;
   if(goal.kind === 'numeric'){
     const total = relevant.reduce((s,p) => s + Number(p.value||0), 0);
     return goal.target_value ? Math.min(100, (total/goal.target_value)*100) : 0;
-  }
-  if(goal.kind === 'checklist'){
-    const totalDays = Math.max(1, Math.round((goal.end_ts - goal.start_ts)/(24*60*60*1000)) + 1);
-    const doneDays = new Set(relevant.filter(p => Number(p.value) > 0).map(p => p.day)).size;
-    return Math.min(100, (doneDays/totalDays)*100);
   }
   return 0;
 }
@@ -2559,6 +2597,40 @@ function openGoalModal(){
   numericWrap.appendChild(targetInput); numericWrap.appendChild(unitInput);
   box.appendChild(numericWrap);
 
+  // Чек-лист — список из нескольких дел, каждое со своей галочкой (а не одна общая отметка).
+  let checklistItems = [];
+  const itemsWrap = el('div','');
+  itemsWrap.style.display = 'none';
+  itemsWrap.appendChild(el('div','top-tag','Дела в списке'));
+  const itemsListEl = el('div','');
+  itemsWrap.appendChild(itemsListEl);
+  function renderChecklistItems(){
+    itemsListEl.innerHTML = '';
+    checklistItems.forEach((it, idx) => {
+      const row = el('div','event-modal-row');
+      row.style.marginBottom = '6px';
+      row.appendChild(el('span','', it.text));
+      const rm = el('button','btn ghost icon-only-btn','✕');
+      rm.onclick = () => { checklistItems.splice(idx,1); renderChecklistItems(); };
+      row.appendChild(rm);
+      itemsListEl.appendChild(row);
+    });
+  }
+  const addItemRow = el('div','event-modal-row');
+  const newItemInput = document.createElement('input'); newItemInput.type='text'; newItemInput.placeholder='Например: прочитать книгу';
+  const addItemBtn = el('button','btn ghost','+ Добавить дело');
+  addItemBtn.onclick = () => {
+    const text = newItemInput.value.trim();
+    if(!text) return;
+    checklistItems.push({ id: 'i'+Date.now()+Math.random(), text });
+    newItemInput.value = '';
+    renderChecklistItems();
+  };
+  newItemInput.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); addItemBtn.onclick(); } });
+  addItemRow.appendChild(newItemInput); addItemRow.appendChild(addItemBtn);
+  itemsWrap.appendChild(addItemRow);
+  box.appendChild(itemsWrap);
+
   const periodWrap = el('div','');
   periodWrap.appendChild(el('div','top-tag','Период'));
   const periodSelect = document.createElement('select');
@@ -2616,7 +2688,8 @@ function openGoalModal(){
   box.appendChild(publicWrap);
   kindSelect.onchange = () => {
     numericWrap.style.display = kindSelect.value === 'numeric' ? '' : 'none';
-    publicWrap.style.display = kindSelect.value === 'habit' ? '' : 'none';
+    itemsWrap.style.display = kindSelect.value === 'checklist' ? '' : 'none';
+    publicWrap.style.display = (kindSelect.value === 'habit' || kindSelect.value === 'checklist') ? '' : 'none';
   };
   kindSelect.onchange();
 
@@ -2649,7 +2722,8 @@ function openGoalModal(){
         unit: unitInput.value.trim() || null,
         period: periodSelect.value, startTs, endTs,
         mode: modeSelect.value, participants,
-        isPublic: kindSelect.value === 'habit' && publicCheckbox.checked,
+        items: kindSelect.value === 'checklist' ? checklistItems : [],
+        isPublic: (kindSelect.value === 'habit' || kindSelect.value === 'checklist') && publicCheckbox.checked,
       });
       state.goalsLoaded = false;
       ov.remove();
@@ -2659,6 +2733,65 @@ function openGoalModal(){
       errEl.textContent = 'Не удалось создать: ' + e.message; errEl.style.display='';
       saveBtn.disabled = false; saveBtn.textContent = 'Создать';
     }
+  };
+  btnRow.appendChild(cancelBtn); btnRow.appendChild(saveBtn);
+  box.appendChild(btnRow);
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
+function openEditChecklistModal(goal, onDone){
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box';
+  box.appendChild(el('div','','Редактировать список')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:15px;';
+
+  let items = [...(goal.items||[])];
+  const listEl = el('div','');
+  function renderList(){
+    listEl.innerHTML = '';
+    items.forEach((it, idx) => {
+      const row = el('div','event-modal-row');
+      row.style.marginBottom = '6px';
+      row.appendChild(el('span','', it.text));
+      const rm = el('button','btn ghost icon-only-btn','✕');
+      rm.onclick = () => { items.splice(idx,1); renderList(); };
+      row.appendChild(rm);
+      listEl.appendChild(row);
+    });
+  }
+  renderList();
+  box.appendChild(listEl);
+
+  const addRow = el('div','event-modal-row');
+  const newInput = document.createElement('input'); newInput.type='text'; newInput.placeholder='Новое дело…';
+  const addBtn = el('button','btn ghost','+ Добавить');
+  addBtn.onclick = () => {
+    const text = newInput.value.trim();
+    if(!text) return;
+    items.push({ id: 'i'+Date.now()+Math.random(), text });
+    newInput.value = '';
+    renderList();
+  };
+  newInput.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); addBtn.onclick(); } });
+  addRow.appendChild(newInput); addRow.appendChild(addBtn);
+  box.appendChild(addRow);
+
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:8px;';
+  const cancelBtn = document.createElement('button'); cancelBtn.className='btn ghost'; cancelBtn.textContent='Отмена';
+  cancelBtn.onclick = () => ov.remove();
+  const saveBtn = document.createElement('button'); saveBtn.className='btn'; saveBtn.textContent='Сохранить';
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    try{
+      await updateGoal(goal.id, { items });
+      state.goalsLoaded = false;
+      ov.remove();
+      onDone();
+    }catch(e){ showToast('Не удалось сохранить: '+e.message); saveBtn.disabled=false; }
   };
   btnRow.appendChild(cancelBtn); btnRow.appendChild(saveBtn);
   box.appendChild(btnRow);
@@ -2693,6 +2826,12 @@ async function openGoalDetail(goal){
     tCol.appendChild(el('div','meta', goalPeriodLabel(goal)));
     titleRow.appendChild(tCol);
     if(mine){
+      if(goal.kind === 'checklist'){
+        const editBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.edit);
+        editBtn.title = 'Редактировать список';
+        editBtn.onclick = () => openEditChecklistModal(goal, () => { ov.remove(); render(); });
+        titleRow.appendChild(editBtn);
+      }
       const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
       delBtn.onclick = () => showConfirmModal('Удалить эту цель?', async () => {
         try{ await deleteGoal(goal.id); state.goalsLoaded=false; ov.remove(); render(); }
@@ -2713,13 +2852,46 @@ async function openGoalDetail(goal){
       box.appendChild(avRow);
     }
 
-    const todayKey = goalDayKey();
-
     if(goal.kind === 'habit'){
       const streak = computeGoalStreak(progress, goal.mode === 'competition' ? state.user.uid : null);
       box.appendChild(el('div','goal-streak-big', `🔥 ${streak} ${streak===1?'день':'дней'} подряд`));
+
+      const weekDates = [];
+      const now = new Date();
+      const dow = (now.getDay() + 6) % 7; // 0=пн
+      for(let i=0;i<7;i++){ const d = new Date(now); d.setDate(now.getDate() - dow + i); weekDates.push(d); }
+      const dayLetters = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+
+      function buildWeekRow(uid, label){
+        const wrap = el('div','goal-week-row-wrap');
+        if(label) wrap.appendChild(el('div','meta', label));
+        const row = el('div','goal-week-row');
+        weekDates.forEach((d, i) => {
+          const key = goalDayKey(d);
+          const entry = progress.find(p => p.uid === uid && p.day === key);
+          const col = el('div','goal-week-col');
+          col.appendChild(el('div','goal-week-daylabel', dayLetters[i]));
+          let mark = '';
+          let cls = 'goal-week-box';
+          if(entry && Number(entry.value) > 0){ mark = '✓'; cls += ' done'; }
+          else if(entry && Number(entry.value) <= 0){ mark = '✗'; cls += ' failed'; }
+          const box2 = el('div', cls, mark);
+          if(d.toDateString() === now.toDateString()) box2.classList.add('today');
+          col.appendChild(box2);
+          row.appendChild(col);
+        });
+        wrap.appendChild(row);
+        return wrap;
+      }
+
+      box.appendChild(buildWeekRow(state.user.uid, uniquePeople.length > 1 ? 'Вы' : null));
+      uniquePeople.filter(p => p.uid !== state.user.uid).forEach(p => {
+        box.appendChild(buildWeekRow(p.uid, p.name));
+      });
+
+      const todayKey = goalDayKey();
       const doneToday = progress.some(p => p.uid === state.user.uid && p.day === todayKey && Number(p.value) > 0);
-      const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
+      const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;margin-top:8px;';
       const okBtn = el('button','btn', doneToday ? '✅ Сегодня отмечено' : '✅ Получилось сегодня');
       okBtn.disabled = doneToday;
       okBtn.onclick = async () => {
@@ -2745,6 +2917,7 @@ async function openGoalDetail(goal){
       box.appendChild(buildProgressRing(pct, 84, goal.color || 'var(--gold)'));
       const total = progress.filter(p => !forUid || p.uid === forUid).reduce((s,p)=>s+Number(p.value||0),0);
       box.appendChild(el('div','meta', `${total} из ${goal.target_value||'?'} ${goal.unit||''}`));
+      const todayKey = goalDayKey();
       const logRow = el('div','event-modal-row');
       const amountInput = document.createElement('input'); amountInput.type='number'; amountInput.placeholder='Добавить за сегодня';
       const logBtn = el('button','btn','Добавить');
@@ -2759,16 +2932,38 @@ async function openGoalDetail(goal){
       logRow.appendChild(amountInput); logRow.appendChild(logBtn);
       box.appendChild(logRow);
     } else {
-      const forUid = goal.mode === 'competition' ? state.user.uid : null;
-      const pct = computeGoalPercent(goal, progress, forUid);
+      // Чек-лист: список из нескольких дел, каждое со своей галочкой.
+      const pct = computeGoalPercent(goal, progress, state.user.uid);
       box.appendChild(buildProgressRing(pct, 84, goal.color || 'var(--gold)'));
-      const doneToday = progress.some(p => p.uid === state.user.uid && p.day === todayKey && Number(p.value) > 0);
-      const toggleBtn = el('button','btn', doneToday ? '✅ Сегодня выполнено' : 'Отметить сегодня выполненным');
-      toggleBtn.onclick = async () => {
-        try{ await logGoalProgress(goal.id, todayKey, doneToday ? 0 : 1); progress = await listGoalProgress(goal.id); draw(); }
-        catch(e){ showToast('Не получилось сохранить: '+e.message); }
-      };
-      box.appendChild(toggleBtn);
+
+      function buildChecklistRows(uid, label, interactive){
+        const wrap = el('div','goal-checklist-wrap');
+        if(label) wrap.appendChild(el('div','meta', label));
+        const doneIds = new Set((goal.done_by||{})[uid] || []);
+        (goal.items||[]).forEach(item => {
+          const row = el('div','goal-checklist-row' + (interactive ? ' interactive' : ''));
+          const box2 = el('div','goal-week-box' + (doneIds.has(item.id) ? ' done' : ''), doneIds.has(item.id) ? '✓' : '');
+          row.appendChild(box2);
+          row.appendChild(el('span','', item.text));
+          if(interactive){
+            row.onclick = async () => {
+              try{ await toggleGoalItemDone(goal, item.id); draw(); }
+              catch(e){ showToast('Не получилось сохранить: '+e.message); }
+            };
+          }
+          wrap.appendChild(row);
+        });
+        return wrap;
+      }
+
+      if(!(goal.items||[]).length){
+        box.appendChild(el('div','footer-note','В этом списке пока нет дел.'));
+      } else {
+        box.appendChild(buildChecklistRows(state.user.uid, uniquePeople.length > 1 ? 'Вы' : null, true));
+        uniquePeople.filter(p => p.uid !== state.user.uid).forEach(p => {
+          box.appendChild(buildChecklistRows(p.uid, p.name, false));
+        });
+      }
     }
 
     if(goal.mode === 'competition' && uniquePeople.length > 1){
@@ -2880,6 +3075,28 @@ function renderGoalsScreen(){
     root.appendChild(w);
     return;
   }
+
+  const statsCard = el('div','card card-translucent goal-stats-card');
+  statsCard.appendChild(el('div','footer-note','Считаем статистику…'));
+  w.appendChild(statsCard);
+  Promise.all(goals.map(g => listGoalProgress(g.id).then(p => ({ g, p })).catch(() => ({ g, p: [] })))).then(results => {
+    let totalPct = 0, wins = 0, competitions = 0;
+    results.forEach(({ g, p }) => {
+      totalPct += computeGoalPercent(g, p, g.mode === 'competition' ? state.user.uid : null);
+      if(g.mode === 'competition'){
+        competitions++;
+        const people = [{ uid: g.owner_uid }, ...(g.participants||[])];
+        const seen = new Set(); const uniq = people.filter(x => !seen.has(x.uid) && seen.add(x.uid));
+        const myPct = computeGoalPercent(g, p, state.user.uid);
+        const best = Math.max(...uniq.map(x => computeGoalPercent(g, p, x.uid)));
+        if(myPct >= best && myPct > 0) wins++;
+      }
+    });
+    const avgPct = goals.length ? Math.round(totalPct / goals.length) : 0;
+    statsCard.innerHTML = '';
+    statsCard.appendChild(el('div','goal-stats-row',
+      `Выполнено в среднем: ${avgPct}%` + (competitions ? ` · Побед в соревнованиях: ${wins} из ${competitions}` : '')));
+  });
 
   const grid = el('div','goals-grid');
   goals.forEach(goal => {
