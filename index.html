@@ -155,23 +155,8 @@
     color-scheme: light;
   }
   input[type=date]::-webkit-calendar-picker-indicator, input[type=time]::-webkit-calendar-picker-indicator{
-    filter: var(--date-icon-filter, none);
     cursor: pointer;
-    opacity: 0.75;
-  }
-  body[data-theme="light"] input[type=date]::-webkit-calendar-picker-indicator,
-  body[data-theme="nebula"] input[type=date]::-webkit-calendar-picker-indicator,
-  body[data-theme="light"] input[type=time]::-webkit-calendar-picker-indicator,
-  body[data-theme="nebula"] input[type=time]::-webkit-calendar-picker-indicator{
-    filter: invert(0);
-  }
-  body:not([data-theme]) input[type=date]::-webkit-calendar-picker-indicator,
-  body[data-theme="ocean"] input[type=date]::-webkit-calendar-picker-indicator,
-  body[data-theme="forest"] input[type=date]::-webkit-calendar-picker-indicator,
-  body:not([data-theme]) input[type=time]::-webkit-calendar-picker-indicator,
-  body[data-theme="ocean"] input[type=time]::-webkit-calendar-picker-indicator,
-  body[data-theme="forest"] input[type=time]::-webkit-calendar-picker-indicator{
-    filter: invert(1);
+    opacity: 0.8;
   }
 
   select{
@@ -1082,6 +1067,17 @@
   .event-modal-checkbox-label input{ width:auto; margin-bottom:0 !important; }
   .event-modal-schedule-options{ background: var(--bg-soft); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
   .event-modal-participants{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom: 8px; }
+  .event-modal-search-results{
+    position: absolute; top: calc(100% - 10px); left: 0; right: 0; z-index: 20;
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--line); border-radius: 10px;
+    max-height: 180px; overflow-y: auto;
+  }
+  .event-modal-search-result-item{
+    padding: 9px 12px; font-size: 13.5px; cursor: pointer;
+  }
+  .event-modal-search-result-item:hover{ background: color-mix(in srgb, var(--gold) 12%, transparent); }
   .event-modal-participant-chip{
     font-size: 12.5px; padding: 5px 10px; border-radius: 999px; background: var(--bg-soft); border: 1px solid var(--line);
   }
@@ -1983,6 +1979,7 @@ async function createCalendarEvent(evt){
     schedule_pattern: evt.schedulePattern || null,
     reminder_minutes: evt.reminderMinutes || null,
     excluded_ts: [],
+    description: evt.description || null,
     color: evt.color || '#7c9eff',
   };
   const { data, error } = await sb.from('calendar_events').insert(row).select().single();
@@ -2537,6 +2534,11 @@ function openDayDetail(year, month, day, items){
       info.style.flex = '1'; info.style.minWidth = '0';
       info.appendChild(el('div','calendar-day-detail-title', item.title));
       if(timeStr) info.appendChild(el('div','meta', timeStr));
+      if(item.isPendingForMe && item.event){
+        const names = (item.event.participants||[]).map(p => p.uid === state.user.uid ? 'вы' : p.name);
+        if(names.length) info.appendChild(el('div','meta', 'Участники: ' + names.join(', ')));
+        if(item.event.description) info.appendChild(el('div','meta', item.event.description));
+      }
       row.appendChild(info);
       const actionsWrap = el('div','calendar-day-detail-actions');
       if(item.event && !item.isBirthday){
@@ -2682,6 +2684,13 @@ function openEventModal(opts){
   const startDateInput = document.createElement('input'); startDateInput.type='date'; startDateInput.value = formatDateInputValue(baseDate);
   const startTimeInput = document.createElement('input'); startTimeInput.type='time'; startTimeInput.value = editing ? formatTimeInputValue(new Date(ev0.start_ts)) : '12:00';
   const endTimeInput = document.createElement('input'); endTimeInput.type='time'; endTimeInput.value = editing ? formatTimeInputValue(new Date(ev0.end_ts)) : '13:00';
+  startTimeInput.addEventListener('change', () => {
+    const [sh,sm] = startTimeInput.value.split(':').map(Number);
+    if(isNaN(sh) || isNaN(sm)) return;
+    let eh = sh + 1, em = sm;
+    if(eh > 23) eh = 23;
+    endTimeInput.value = String(eh).padStart(2,'0') + ':' + String(em).padStart(2,'0');
+  });
   dateRow.appendChild(startDateInput); dateRow.appendChild(startTimeInput); dateRow.appendChild(endTimeInput);
   box.appendChild(dateRow);
 
@@ -2763,25 +2772,47 @@ function openEventModal(opts){
   renderParticipants();
   participantsSection.appendChild(participantsListEl);
 
-  const addParticipantRow = el('div','event-modal-row');
-  const friendSelect = document.createElement('select');
-  friendSelect.appendChild(new Option('+ Добавить контакт…',''));
-  listFriends().then(friends => {
-    friends.forEach(f => { if(!participants.some(p=>p.uid===f.uid)) friendSelect.appendChild(new Option(f.name, f.uid)); });
-    friendSelect.dataset.loaded = '1';
-    friendSelect._friends = friends;
-  }).catch(()=>{});
-  friendSelect.onchange = () => {
-    const uid = friendSelect.value;
-    if(!uid) return;
-    const f = (friendSelect._friends||[]).find(x => x.uid === uid);
-    if(f && !participants.some(p=>p.uid===f.uid)){ participants.push(f); renderParticipants(); }
-    friendSelect.value = '';
-  };
-  addParticipantRow.appendChild(friendSelect);
+  const addParticipantRow = el('div','');
+  addParticipantRow.style.position = 'relative';
+  const friendSearchInput = document.createElement('input');
+  friendSearchInput.type = 'text'; friendSearchInput.placeholder = '🔍 Найти контакт…';
+  const friendResultsList = el('div','event-modal-search-results');
+  friendResultsList.style.display = 'none';
+  let allFriendsForSearch = [];
+  listFriends().then(friends => { allFriendsForSearch = friends; }).catch(()=>{});
+  function renderFriendSearchResults(){
+    const q = friendSearchInput.value.trim().toLowerCase();
+    friendResultsList.innerHTML = '';
+    if(!q){ friendResultsList.style.display = 'none'; return; }
+    const matches = allFriendsForSearch.filter(f => !participants.some(p=>p.uid===f.uid) && f.name.toLowerCase().includes(q)).slice(0, 8);
+    if(!matches.length){ friendResultsList.style.display = 'none'; return; }
+    friendResultsList.style.display = '';
+    matches.forEach(f => {
+      const item = el('div','event-modal-search-result-item', f.name);
+      item.onclick = () => {
+        participants.push(f);
+        renderParticipants();
+        friendSearchInput.value = '';
+        friendResultsList.style.display = 'none';
+      };
+      friendResultsList.appendChild(item);
+    });
+  }
+  friendSearchInput.addEventListener('input', renderFriendSearchResults);
+  addParticipantRow.appendChild(friendSearchInput);
+  addParticipantRow.appendChild(friendResultsList);
   participantsSection.appendChild(addParticipantRow);
   box.appendChild(participantsSection);
   if(scheduleCheckbox.checked) participantsSection.style.display = 'none';
+
+  const notesWrap = el('div','');
+  notesWrap.appendChild(el('div','top-tag','Заметка (необязательно)'));
+  const notesInput = document.createElement('textarea');
+  notesInput.placeholder = 'Например: адрес встречи, что взять с собой…';
+  notesInput.style.minHeight = '60px';
+  notesInput.value = editing ? (ev0.description || '') : '';
+  notesWrap.appendChild(notesInput);
+  box.appendChild(notesWrap);
 
   const errEl = el('div','err','');
   errEl.style.display = 'none';
@@ -2830,6 +2861,7 @@ function openEventModal(opts){
         const patch = {
           title, start_ts: startTs, end_ts: endTs, all_day: allDayCheckbox.checked,
           reminder_minutes: reminderSelect.value ? parseInt(reminderSelect.value, 10) : null,
+          description: notesInput.value.trim() || null,
         };
         if(scheduleCheckbox.checked){
           patch.recurrence = 'none'; patch.kind = 'work_schedule'; patch.schedule_pattern = patternSelect.value;
@@ -2854,6 +2886,7 @@ function openEventModal(opts){
           title, startTs, endTs, allDay: allDayCheckbox.checked,
           recurrence: recurrenceSelect.value, groupId: opts.groupId || null,
           reminderMinutes: reminderSelect.value ? parseInt(reminderSelect.value, 10) : null,
+          description: notesInput.value.trim() || null,
           participants, color: opts.groupId ? '#c792ea' : '#7c9eff',
         });
       }
@@ -3573,19 +3606,6 @@ function renderNav(active){
   brand.onclick = () => { state.screen='landing'; render(); };
   brandRow.appendChild(brand);
 
-  if(state.user){
-    const bellBtn = el('button','notif-bell-btn','🔔');
-    bellBtn.id = 'notif-bell-btn';
-    bellBtn.title = 'Уведомления календаря';
-    const unreadCount = unreadCalendarNotifCount();
-    if(unreadCount){
-      const badge = el('span','notif-bell-badge', String(unreadCount));
-      bellBtn.appendChild(badge);
-    }
-    bellBtn.onclick = (e) => { e.stopPropagation(); openNotificationPanel(); };
-    brandRow.appendChild(bellBtn);
-  }
-
   const nav = el('div','nav');
   const links = el('div','nav-links');
 
@@ -3606,7 +3626,7 @@ function renderNav(active){
     const hasCalendarNotif = unreadCalendarNotifCount() > 0;
     const calendarLink = el('button','nav-link' + (active==='calendar' ? ' active' : '') + (hasCalendarNotif ? ' alert' : ''),
       'Календарь' + (hasCalendarNotif ? ' •'+unreadCalendarNotifCount() : ''));
-    calendarLink.onclick = () => { invalidateCalendarCache(); state.screen = 'calendar'; render(); };
+    calendarLink.onclick = () => { invalidateCalendarCache(); markCalendarNotificationsRead(); state.screen = 'calendar'; render(); };
 
     const myLink = el('button','nav-link' + (active==='mine' ? ' active' : ''), state.graph ? 'Моя схема' : 'Написать о себе');
     myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
