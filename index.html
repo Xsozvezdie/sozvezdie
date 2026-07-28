@@ -1148,8 +1148,15 @@
   .goal-empty-cta-btn{ font-size: 16px; padding: 16px 32px; }
 
   .goal-section-title{ font-size: 20px; margin: 24px 0 12px; }
+  .goals-quadrant-wrap{ display:grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  .goals-quadrant-col{ display:flex; flex-direction:column; gap: 14px; min-width: 0; }
+  @media (max-width: 860px){ .goals-quadrant-wrap{ grid-template-columns: 1fr; } }
 
-  .goal-featured-card{ padding: 20px 24px; margin-bottom: 20px; }
+  .goal-featured-card{
+    padding: 20px 24px; margin-bottom: 20px;
+    background: color-mix(in srgb, var(--panel) 35%, transparent) !important;
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  }
   .goal-featured-top{ display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap; }
   .goal-help-btn{ font-size: 12.5px; opacity: 0.85; }
   .goal-featured-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 19px; color: var(--gold); }
@@ -1158,6 +1165,8 @@
     display:flex; gap: 22px; margin: 10px 0 16px; font-size: 13.5px; color: var(--ink-dim); flex-wrap: wrap;
   }
   .goal-days-urgent{ color: #e0555a !important; font-weight: 700; }
+  .goal-period-edit{ background:none; border:none; color: var(--ink-dim); cursor:pointer; font-size: 13.5px; padding: 0; text-decoration: underline dotted; }
+  .goal-period-edit:hover{ color: var(--gold); }
   .goal-featured-body{ display:flex; gap: 20px; align-items:flex-start; flex-wrap: wrap; }
   .goal-featured-list{ flex: 1; min-width: 220px; max-height: 320px; overflow-y: auto; }
   .goal-featured-list.dense .goal-featured-item{ padding: 4px 0; font-size: 12.5px; }
@@ -1190,6 +1199,14 @@
   .goal-mini-bar-fill{ height: 100%; background: var(--gold); border-radius: 999px; transition: width .3s ease; }
   .goal-mini-bar-pct{ font-size: 12px; color: var(--ink-dim); min-width: 32px; text-align:right; }
   .goal-featured-pager{ display:flex; justify-content:center; gap: 16px; margin-top: 14px; }
+  .goal-done-row{ display:flex; align-items:center; gap: 10px; margin-top: 14px; }
+  .goal-done-badge{ font-weight: 700; color: #3a9a5c; background: color-mix(in srgb, #7fe0a0 25%, transparent); padding: 6px 14px; border-radius: 999px; }
+  .goal-pager-icon{
+    background: none; border: none; color: var(--ink-dim); cursor: pointer;
+    font-size: 13px; padding: 14px 20px; margin: -14px -6px; border-radius: 10px;
+    transition: color .15s ease, background .15s ease;
+  }
+  .goal-pager-icon:hover{ color: var(--gold); background: color-mix(in srgb, var(--gold) 8%, transparent); }
 
   .graph-body-row{
     flex: 1;
@@ -2636,6 +2653,7 @@ function goalPeriodLabel(goal){
 }
 
 const GOAL_MILESTONES = [1,3,7,14,21,30,60,90,180,365];
+const celebratedGoalIds = new Set();
 
 function playGoalCelebration(){
   const burst = document.createElement('div');
@@ -3172,6 +3190,37 @@ function openRoomSearchModal(){
   document.body.appendChild(ov);
 }
 
+function openArchiveModal(){
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box';
+  box.appendChild(el('div','','Архив')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
+  const archived = (state.goals||[]).filter(g => g.archived);
+  if(!archived.length){
+    box.appendChild(el('div','footer-note','Архив пуст.'));
+  } else {
+    archived.forEach(goal => {
+      const row = el('div','goal-room-row');
+      row.appendChild(el('div','', goal.title));
+      const restoreBtn = el('button','btn ghost','Вернуть');
+      restoreBtn.onclick = async () => {
+        try{ await updateGoal(goal.id, { archived: false }); state.goalsLoaded = false; ov.remove(); render(); }
+        catch(e){ showToast('Не удалось вернуть: '+e.message); }
+      };
+      row.appendChild(restoreBtn);
+      box.appendChild(row);
+    });
+  }
+  const closeBtn = el('button','btn ghost','Закрыть');
+  closeBtn.style.marginTop = '8px';
+  closeBtn.onclick = () => ov.remove();
+  box.appendChild(closeBtn);
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
 function daysRemaining(goal){
   const now = Date.now();
   return Math.max(0, Math.ceil((goal.end_ts - now) / (24*60*60*1000)));
@@ -3206,35 +3255,43 @@ function renderGoalsScreen(){
     return;
   }
 
-  const goals = state.goals || [];
+  const goals = (state.goals || []).filter(g => !g.archived);
   const checklists = goals.filter(g => g.kind === 'checklist').sort((a,b) => a.end_ts - b.end_ts);
   const habits = goals.filter(g => g.kind === 'habit');
   const numerics = goals.filter(g => g.kind === 'numeric');
+
+  const archiveLink = el('button','btn ghost','🗄 Архив');
+  archiveLink.onclick = () => openArchiveModal();
+  headerBtns.appendChild(archiveLink);
+
+  const quadrantWrap = el('div','goals-quadrant-wrap');
+  const leftCol = el('div','goals-quadrant-col');
+  const rightCol = el('div','goals-quadrant-col');
+
+  if(numerics.length){
+    leftCol.appendChild(el('h1','goal-section-title','Числовые цели'));
+    numerics.forEach(goal => leftCol.appendChild(buildGoalGridCard(goal)));
+  }
 
   if(!checklists.length){
     const cta = el('div','card card-translucent goal-empty-cta');
     const ctaBtn = el('button','btn goal-empty-cta-btn','+ Добавить дела');
     ctaBtn.onclick = () => openGoalModal();
     cta.appendChild(ctaBtn);
-    w.appendChild(cta);
+    rightCol.appendChild(cta);
   } else {
     if(state.goalsFeaturedIndex == null || state.goalsFeaturedIndex >= checklists.length) state.goalsFeaturedIndex = 0;
-    w.appendChild(buildFeaturedChecklistCard(checklists, state.goalsFeaturedIndex));
+    rightCol.appendChild(buildFeaturedChecklistCard(checklists, state.goalsFeaturedIndex));
   }
 
   if(habits.length){
-    w.appendChild(el('h1','goal-section-title','Трекер'));
-    const habitGrid = el('div','goals-grid');
-    habits.forEach(goal => habitGrid.appendChild(buildGoalGridCard(goal)));
-    w.appendChild(habitGrid);
+    rightCol.appendChild(el('h1','goal-section-title','Трекер'));
+    habits.forEach(goal => rightCol.appendChild(buildGoalGridCard(goal)));
   }
 
-  if(numerics.length){
-    w.appendChild(el('h1','goal-section-title','Числовые цели'));
-    const numGrid = el('div','goals-grid');
-    numerics.forEach(goal => numGrid.appendChild(buildGoalGridCard(goal)));
-    w.appendChild(numGrid);
-  }
+  quadrantWrap.appendChild(leftCol);
+  quadrantWrap.appendChild(rightCol);
+  w.appendChild(quadrantWrap);
 
   root.appendChild(w);
 }
@@ -3275,6 +3332,56 @@ function buildGoalGridCard(goal){
     card.appendChild(avRow);
   }
   return card;
+}
+
+function openEditPeriodModal(goal){
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box';
+  box.appendChild(el('div','','Изменить срок')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:15px;';
+
+  const periodSelect = document.createElement('select');
+  [['day','На день'],['week','На неделю'],['month','На месяц'],['custom','Свой период']]
+    .forEach(([v,l]) => periodSelect.appendChild(new Option(l, v, false, goal.period === v)));
+  box.appendChild(periodSelect);
+
+  const datesRow = el('div','event-modal-row');
+  const startInput = document.createElement('input'); startInput.type='date'; startInput.value = formatDateInputValue(new Date(goal.start_ts));
+  const endInput = document.createElement('input'); endInput.type='date'; endInput.value = formatDateInputValue(new Date(goal.end_ts));
+  datesRow.appendChild(startInput); datesRow.appendChild(endInput);
+  datesRow.style.display = goal.period === 'custom' ? '' : 'none';
+  box.appendChild(datesRow);
+  periodSelect.onchange = () => { datesRow.style.display = periodSelect.value === 'custom' ? '' : 'none'; };
+
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+  const cancelBtn = document.createElement('button'); cancelBtn.className='btn ghost'; cancelBtn.textContent='Отмена';
+  cancelBtn.onclick = () => ov.remove();
+  const saveBtn = document.createElement('button'); saveBtn.className='btn'; saveBtn.textContent='Сохранить';
+  saveBtn.onclick = async () => {
+    let startTs = goal.start_ts, endTs;
+    const now = new Date();
+    if(periodSelect.value === 'day'){ startTs = new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime(); endTs = startTs + 24*60*60*1000 - 1000; }
+    else if(periodSelect.value === 'week'){ startTs = now.getTime(); endTs = startTs + 7*24*60*60*1000; }
+    else if(periodSelect.value === 'month'){ startTs = now.getTime(); endTs = startTs + 30*24*60*60*1000; }
+    else {
+      const [sy,sm,sd] = startInput.value.split('-').map(Number);
+      const [ey,em,ed] = endInput.value.split('-').map(Number);
+      startTs = new Date(sy,sm-1,sd).getTime(); endTs = new Date(ey,em-1,ed,23,59).getTime();
+    }
+    saveBtn.disabled = true;
+    try{
+      await updateGoal(goal.id, { period: periodSelect.value, start_ts: startTs, end_ts: endTs });
+      state.goalsLoaded = false;
+      ov.remove(); render();
+    }catch(e){ showToast('Не удалось сохранить: '+e.message); saveBtn.disabled=false; }
+  };
+  btnRow.appendChild(cancelBtn); btnRow.appendChild(saveBtn);
+  box.appendChild(btnRow);
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
 }
 
 function buildFeaturedChecklistCard(checklists, index){
@@ -3329,13 +3436,21 @@ function buildFeaturedChecklistCard(checklists, index){
   const addBtn = el('button','btn ghost icon-only-btn','＋');
   addBtn.title = 'Новый список';
   addBtn.onclick = () => openGoalModal();
-  iconsWrap.appendChild(editBtn); iconsWrap.appendChild(addBtn);
+  const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
+  delBtn.title = 'Удалить список';
+  delBtn.onclick = () => showConfirmModal('Удалить этот список целиком?', async () => {
+    try{ await deleteGoal(goal.id); state.goalsLoaded = false; state.goalsFeaturedIndex = 0; render(); }
+    catch(e){ showToast('Не удалось удалить: '+e.message); }
+  }, 'Удалить');
+  iconsWrap.appendChild(editBtn); iconsWrap.appendChild(addBtn); iconsWrap.appendChild(delBtn);
   topRow.appendChild(iconsWrap);
   card.appendChild(topRow);
 
   const metaRow = el('div','goal-featured-meta');
   const periodNames = { day:'На день', week:'На неделю', month:'На месяц', custom:'Свой срок' };
-  metaRow.appendChild(el('div','', periodNames[goal.period] || 'Срок'));
+  const periodLabel = el('button','goal-period-edit', periodNames[goal.period] || 'Срок');
+  periodLabel.onclick = () => openEditPeriodModal(goal);
+  metaRow.appendChild(periodLabel);
   const daysLeft = daysRemaining(goal);
   const daysEl = el('div','', `Осталось ${daysLeft} ${daysLeft===1?'день':(daysLeft>=2&&daysLeft<=4?'дня':'дней')}`);
   metaRow.appendChild(daysEl);
@@ -3354,9 +3469,9 @@ function buildFeaturedChecklistCard(checklists, index){
 
   if(checklists.length > 1){
     const pageRow = el('div','goal-featured-pager');
-    const prevBtn = el('button','btn ghost icon-only-btn','«');
+    const prevBtn = el('button','goal-pager-icon','«');
     prevBtn.onclick = () => { state.goalsFeaturedIndex = (index - 1 + checklists.length) % checklists.length; render(); };
-    const nextBtn = el('button','btn ghost icon-only-btn','»');
+    const nextBtn = el('button','goal-pager-icon','»');
     nextBtn.onclick = () => { state.goalsFeaturedIndex = (index + 1) % checklists.length; render(); };
     pageRow.appendChild(prevBtn); pageRow.appendChild(nextBtn);
     card.appendChild(pageRow);
@@ -3383,7 +3498,28 @@ function buildFeaturedChecklistCard(checklists, index){
         barWrap.appendChild(barFill);
         row.appendChild(barWrap);
         const plusBtn = el('button','btn ghost icon-only-btn','+');
-        plusBtn.onclick = async () => { try{ await logGoalItemAmount(goal, item.id, 1); state.goalsLoaded=false; render(); }catch(e){ showToast('Ошибка: '+e.message); } };
+        plusBtn.onclick = (e) => {
+          e.stopPropagation();
+          const existing = document.getElementById('goal-amount-popup'); if(existing) existing.remove();
+          const popup = el('div','emoji-picker'); popup.id = 'goal-amount-popup';
+          popup.style.width = '200px'; popup.style.maxHeight = 'none'; popup.style.padding = '12px';
+          const rect = plusBtn.getBoundingClientRect();
+          popup.style.left = Math.max(8, rect.left - 80) + 'px'; popup.style.top = (rect.bottom + 6) + 'px';
+          const amtInput = document.createElement('input'); amtInput.type='number'; amtInput.placeholder='Сколько добавить?'; amtInput.value='1';
+          const okBtn = el('button','btn','Добавить'); okBtn.style.marginTop='8px'; okBtn.style.width='100%';
+          okBtn.onclick = async () => {
+            const v = parseFloat(amtInput.value) || 0;
+            popup.remove();
+            try{ await logGoalItemAmount(goal, item.id, v); state.goalsLoaded=false; render(); }
+            catch(err){ showToast('Ошибка: '+err.message); }
+          };
+          popup.appendChild(amtInput); popup.appendChild(okBtn);
+          document.body.appendChild(popup);
+          amtInput.focus(); amtInput.select();
+          setTimeout(() => document.addEventListener('click', function closeAmt(ev){
+            if(!popup.contains(ev.target) && ev.target !== plusBtn){ popup.remove(); document.removeEventListener('click', closeAmt); }
+          }), 0);
+        };
         row.appendChild(plusBtn);
       } else {
         row.appendChild(el('span','goal-featured-item-text', item.text));
@@ -3411,6 +3547,22 @@ function buildFeaturedChecklistCard(checklists, index){
     const overallPct = computeGoalPercent(goal, progress, state.user.uid);
     ringCol.appendChild(buildProgressRing(overallPct, 92, goal.color || 'var(--gold)'));
     if(daysLeft <= 1 && overallPct < 100) daysEl.classList.add('goal-days-urgent');
+
+    if(overallPct >= 100){
+      if(!celebratedGoalIds.has(goal.id)){
+        celebratedGoalIds.add(goal.id);
+        playGoalCelebration();
+      }
+      const doneRow = el('div','goal-done-row');
+      doneRow.appendChild(el('span','goal-done-badge','✓ Готово!'));
+      const hideBtn = el('button','btn ghost','Скрыть');
+      hideBtn.onclick = async () => {
+        try{ await updateGoal(goal.id, { archived: true }); state.goalsLoaded = false; state.goalsFeaturedIndex = 0; render(); }
+        catch(e){ showToast('Не удалось скрыть: '+e.message); }
+      };
+      doneRow.appendChild(hideBtn);
+      card.appendChild(doneRow);
+    }
 
     if(uniquePeople.length > 1){
       barsWrap.innerHTML = '';
