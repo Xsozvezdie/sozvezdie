@@ -1134,6 +1134,19 @@
   .goal-checklist-row.interactive:hover{ background: color-mix(in srgb, var(--gold) 8%, transparent); }
   .goal-checklist-row .goal-week-box{ width: 22px; height: 22px; border-radius: 6px; font-size: 12px; flex-shrink: 0; }
 
+  .goal-item-edit-row{ display:flex; align-items:center; gap: 10px; padding: 6px 0; }
+  .goal-item-edit-text{ flex: 1; }
+  .goal-item-edit-target{ color: var(--ink-dim); font-size: 13px; }
+  .goal-item-amount{ font-weight: 700; color: var(--gold); margin: 0 6px; }
+  .goal-item-avatars{ display:flex; gap: 3px; margin-left: 8px; }
+  .goal-progress-bar-wrap{
+    width: 100%; height: 8px; border-radius: 999px; margin-top: 10px;
+    background: color-mix(in srgb, var(--bg-soft) 40%, transparent); overflow: hidden;
+  }
+  .goal-progress-bar-fill{ height: 100%; border-radius: 999px; transition: width .3s ease; }
+  .goal-empty-cta{ display:flex; justify-content:center; padding: 28px; margin-bottom: 14px; }
+  .goal-empty-cta-btn{ font-size: 16px; padding: 16px 32px; }
+
   .graph-body-row{
     flex: 1;
     min-height: 0;
@@ -2452,9 +2465,18 @@ async function createGoal(g){
 
 async function toggleGoalItemDone(goal, itemId){
   const doneBy = { ...(goal.done_by||{}) };
-  const mySet = new Set(doneBy[state.user.uid] || []);
-  if(mySet.has(itemId)) mySet.delete(itemId); else mySet.add(itemId);
-  doneBy[state.user.uid] = [...mySet];
+  const mine = { ...(doneBy[state.user.uid] || {}) };
+  mine[itemId] = mine[itemId] ? 0 : 1;
+  doneBy[state.user.uid] = mine;
+  await updateGoal(goal.id, { done_by: doneBy });
+  goal.done_by = doneBy;
+}
+
+async function logGoalItemAmount(goal, itemId, delta){
+  const doneBy = { ...(goal.done_by||{}) };
+  const mine = { ...(doneBy[state.user.uid] || {}) };
+  mine[itemId] = (Number(mine[itemId]) || 0) + delta;
+  doneBy[state.user.uid] = mine;
   await updateGoal(goal.id, { done_by: doneBy });
   goal.done_by = doneBy;
 }
@@ -2518,9 +2540,16 @@ function computeGoalPercent(goal, progressEntries, forUid){
     const items = goal.items || [];
     if(!items.length) return 0;
     const uid = forUid || state.user.uid;
-    const doneIds = new Set((goal.done_by||{})[uid] || []);
-    const doneCount = items.filter(it => doneIds.has(it.id)).length;
-    return Math.min(100, (doneCount/items.length)*100);
+    const myValues = (goal.done_by||{})[uid] || {};
+    let doneShare = 0;
+    items.forEach(it => {
+      if(it.target){
+        doneShare += Math.min(1, (Number(myValues[it.id])||0) / it.target);
+      } else {
+        doneShare += myValues[it.id] ? 1 : 0;
+      }
+    });
+    return Math.min(100, (doneShare/items.length)*100);
   }
   const relevant = forUid ? progressEntries.filter(p => p.uid === forUid) : progressEntries;
   if(goal.kind === 'numeric'){
@@ -2597,7 +2626,9 @@ function openGoalModal(){
   numericWrap.appendChild(targetInput); numericWrap.appendChild(unitInput);
   box.appendChild(numericWrap);
 
-  // Чек-лист — список из нескольких дел, каждое со своей галочкой (а не одна общая отметка).
+  // Чек-лист — список из нескольких дел, каждое со своей галочкой. У каждого дела можно
+  // задать количество (по умолчанию "-" — просто галочка, но можно поставить любое число —
+  // тогда дело отслеживается как "20/100" и т.п.).
   let checklistItems = [];
   const itemsWrap = el('div','');
   itemsWrap.style.display = 'none';
@@ -2607,9 +2638,9 @@ function openGoalModal(){
   function renderChecklistItems(){
     itemsListEl.innerHTML = '';
     checklistItems.forEach((it, idx) => {
-      const row = el('div','event-modal-row');
-      row.style.marginBottom = '6px';
-      row.appendChild(el('span','', it.text));
+      const row = el('div','goal-item-edit-row');
+      row.appendChild(el('span','goal-item-edit-text', it.text));
+      row.appendChild(el('span','goal-item-edit-target', it.target ? `× ${it.target}` : '—'));
       const rm = el('button','btn ghost icon-only-btn','✕');
       rm.onclick = () => { checklistItems.splice(idx,1); renderChecklistItems(); };
       row.appendChild(rm);
@@ -2618,16 +2649,19 @@ function openGoalModal(){
   }
   const addItemRow = el('div','event-modal-row');
   const newItemInput = document.createElement('input'); newItemInput.type='text'; newItemInput.placeholder='Например: прочитать книгу';
+  const newItemTarget = document.createElement('input'); newItemTarget.type='number'; newItemTarget.placeholder='Кол-во (необязательно)'; newItemTarget.min='1';
+  newItemTarget.style.maxWidth = '160px';
   const addItemBtn = el('button','btn ghost','+ Добавить дело');
   addItemBtn.onclick = () => {
     const text = newItemInput.value.trim();
     if(!text) return;
-    checklistItems.push({ id: 'i'+Date.now()+Math.random(), text });
-    newItemInput.value = '';
+    const target = parseFloat(newItemTarget.value) || null;
+    checklistItems.push({ id: 'i'+Date.now()+Math.random(), text, target });
+    newItemInput.value = ''; newItemTarget.value = '';
     renderChecklistItems();
   };
   newItemInput.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); addItemBtn.onclick(); } });
-  addItemRow.appendChild(newItemInput); addItemRow.appendChild(addItemBtn);
+  addItemRow.appendChild(newItemInput); addItemRow.appendChild(newItemTarget); addItemRow.appendChild(addItemBtn);
   itemsWrap.appendChild(addItemRow);
   box.appendChild(itemsWrap);
 
@@ -2753,9 +2787,9 @@ function openEditChecklistModal(goal, onDone){
   function renderList(){
     listEl.innerHTML = '';
     items.forEach((it, idx) => {
-      const row = el('div','event-modal-row');
-      row.style.marginBottom = '6px';
-      row.appendChild(el('span','', it.text));
+      const row = el('div','goal-item-edit-row');
+      row.appendChild(el('span','goal-item-edit-text', it.text));
+      row.appendChild(el('span','goal-item-edit-target', it.target ? `× ${it.target}` : '—'));
       const rm = el('button','btn ghost icon-only-btn','✕');
       rm.onclick = () => { items.splice(idx,1); renderList(); };
       row.appendChild(rm);
@@ -2767,16 +2801,19 @@ function openEditChecklistModal(goal, onDone){
 
   const addRow = el('div','event-modal-row');
   const newInput = document.createElement('input'); newInput.type='text'; newInput.placeholder='Новое дело…';
+  const newTarget = document.createElement('input'); newTarget.type='number'; newTarget.placeholder='Кол-во (необязательно)'; newTarget.min='1';
+  newTarget.style.maxWidth = '160px';
   const addBtn = el('button','btn ghost','+ Добавить');
   addBtn.onclick = () => {
     const text = newInput.value.trim();
     if(!text) return;
-    items.push({ id: 'i'+Date.now()+Math.random(), text });
-    newInput.value = '';
+    const target = parseFloat(newTarget.value) || null;
+    items.push({ id: 'i'+Date.now()+Math.random(), text, target });
+    newInput.value = ''; newTarget.value = '';
     renderList();
   };
   newInput.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); addBtn.onclick(); } });
-  addRow.appendChild(newInput); addRow.appendChild(addBtn);
+  addRow.appendChild(newInput); addRow.appendChild(newTarget); addRow.appendChild(addBtn);
   box.appendChild(addRow);
 
   const btnRow = document.createElement('div');
@@ -2932,18 +2969,31 @@ async function openGoalDetail(goal){
       logRow.appendChild(amountInput); logRow.appendChild(logBtn);
       box.appendChild(logRow);
     } else {
-      // Чек-лист: список из нескольких дел, каждое со своей галочкой.
+      // Чек-лист: список из нескольких дел. У дела может быть количество ("20/100" с +/-)
+      // или просто галочка. В общем режиме — один список, у каждого дела мини-аватарки
+      // тех, кто его выполнил. В режиме соревнования — у каждого свой список, ниже.
       const pct = computeGoalPercent(goal, progress, state.user.uid);
       box.appendChild(buildProgressRing(pct, 84, goal.color || 'var(--gold)'));
 
-      function buildChecklistRows(uid, label, interactive){
-        const wrap = el('div','goal-checklist-wrap');
-        if(label) wrap.appendChild(el('div','meta', label));
-        const doneIds = new Set((goal.done_by||{})[uid] || []);
-        (goal.items||[]).forEach(item => {
-          const row = el('div','goal-checklist-row' + (interactive ? ' interactive' : ''));
-          const box2 = el('div','goal-week-box' + (doneIds.has(item.id) ? ' done' : ''), doneIds.has(item.id) ? '✓' : '');
-          row.appendChild(box2);
+      function itemRow(item, uid, interactive){
+        const row = el('div','goal-checklist-row' + (interactive ? ' interactive' : ''));
+        const myVal = (goal.done_by||{})[uid]?.[item.id];
+        if(item.target){
+          const cur = Number(myVal) || 0;
+          row.appendChild(el('span','', item.text));
+          const amt = el('span','goal-item-amount', `${cur}/${item.target}`);
+          row.appendChild(amt);
+          if(interactive){
+            const minus = el('button','btn ghost icon-only-btn','−');
+            minus.onclick = async (e) => { e.stopPropagation(); try{ await logGoalItemAmount(goal, item.id, -1); draw(); }catch(err){ showToast('Ошибка: '+err.message); } };
+            const plus = el('button','btn ghost icon-only-btn','+');
+            plus.onclick = async (e) => { e.stopPropagation(); try{ await logGoalItemAmount(goal, item.id, 1); draw(); }catch(err){ showToast('Ошибка: '+err.message); } };
+            row.appendChild(minus); row.appendChild(plus);
+          }
+        } else {
+          const done = !!myVal;
+          const box2 = el('div','goal-week-box' + (done ? ' done' : ''), done ? '✓' : '');
+          row.insertBefore(box2, row.firstChild);
           row.appendChild(el('span','', item.text));
           if(interactive){
             row.onclick = async () => {
@@ -2951,18 +3001,58 @@ async function openGoalDetail(goal){
               catch(e){ showToast('Не получилось сохранить: '+e.message); }
             };
           }
-          wrap.appendChild(row);
-        });
-        return wrap;
+        }
+        return row;
       }
 
       if(!(goal.items||[]).length){
         box.appendChild(el('div','footer-note','В этом списке пока нет дел.'));
-      } else {
-        box.appendChild(buildChecklistRows(state.user.uid, uniquePeople.length > 1 ? 'Вы' : null, true));
+      } else if(goal.mode === 'competition' && uniquePeople.length > 1){
+        function buildChecklistRows(uid, label, interactive){
+          const wrap = el('div','goal-checklist-wrap');
+          if(label) wrap.appendChild(el('div','meta', label));
+          (goal.items||[]).forEach(item => wrap.appendChild(itemRow(item, uid, interactive)));
+          return wrap;
+        }
+        box.appendChild(buildChecklistRows(state.user.uid, 'Вы', true));
         uniquePeople.filter(p => p.uid !== state.user.uid).forEach(p => {
           box.appendChild(buildChecklistRows(p.uid, p.name, false));
         });
+      } else {
+        // Общий режим (или один(а)) — один список; если участников несколько, у каждого
+        // дела показываем мини-аватарки тех, кто его уже выполнил.
+        const wrap = el('div','goal-checklist-wrap');
+        (goal.items||[]).forEach(item => {
+          const row = itemRow(item, state.user.uid, true);
+          if(uniquePeople.length > 1){
+            const doneBy = goal.done_by || {};
+            const completers = uniquePeople.filter(p => {
+              const v = doneBy[p.uid]?.[item.id];
+              return item.target ? (Number(v)||0) >= item.target : !!v;
+            });
+            if(completers.length){
+              const avGroup = el('div','goal-item-avatars');
+              completers.forEach(p => {
+                const av = el('div','avatar-circle', (p.name||'?')[0].toUpperCase());
+                av.style.width='18px'; av.style.height='18px'; av.style.fontSize='9px'; av.title=p.name;
+                fillAvatarAsync(av, p.uid);
+                avGroup.appendChild(av);
+              });
+              row.appendChild(avGroup);
+            }
+          }
+          wrap.appendChild(row);
+        });
+        box.appendChild(wrap);
+      }
+
+      if((goal.items||[]).length > 1){
+        const barWrap = el('div','goal-progress-bar-wrap');
+        const barFill = el('div','goal-progress-bar-fill');
+        barFill.style.width = pct + '%';
+        barFill.style.background = goal.color || 'var(--gold)';
+        barWrap.appendChild(barFill);
+        box.appendChild(barWrap);
       }
     }
 
@@ -3097,6 +3187,14 @@ function renderGoalsScreen(){
     statsCard.appendChild(el('div','goal-stats-row',
       `Выполнено в среднем: ${avgPct}%` + (competitions ? ` · Побед в соревнованиях: ${wins} из ${competitions}` : '')));
   });
+
+  if(!goals.some(g => g.kind === 'checklist')){
+    const cta = el('div','card card-translucent goal-empty-cta');
+    const ctaBtn = el('button','btn goal-empty-cta-btn','+ Добавить дела');
+    ctaBtn.onclick = () => openGoalModal();
+    cta.appendChild(ctaBtn);
+    w.appendChild(cta);
+  }
 
   const grid = el('div','goals-grid');
   goals.forEach(goal => {
