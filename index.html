@@ -38,7 +38,7 @@
     display:flex;
     flex-direction:column;
   }
-  .wrap.wide{ max-width: 1280px; }
+  .wrap.wide{ max-width: 1480px; }
   .eyebrow{
     font-family:'Space Grotesk',sans-serif;
     text-transform: uppercase;
@@ -912,23 +912,24 @@
   .image-preview-overlay{
     position: fixed; inset: 0; z-index: 980;
     background: rgba(4,4,8,0.9);
-    display:flex; flex-direction: column; align-items:center; justify-content:center; gap: 18px;
+    display:flex; align-items:center; justify-content:center;
     padding: 24px; cursor: zoom-out;
   }
-  .image-preview-actionbar{
-    display:flex; gap: 10px; cursor: default;
-  }
-  .image-preview-action-btn{
-    display:flex; align-items:center; gap:6px;
-    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
-    color: #fff; border-radius: 999px; padding: 10px 18px; font-size: 14px;
-    cursor: pointer; font-family:'Inter',sans-serif;
-  }
-  .image-preview-action-btn:hover{ background: rgba(255,255,255,0.16); }
   .image-preview-img{
-    max-width: 100%; max-height: 100%; border-radius: 8px;
+    width: min(94vw, 1200px); max-height: 92vh; height: auto;
+    object-fit: contain; border-radius: 8px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    cursor: zoom-in;
   }
+  .image-preview-edit-btn{
+    position: absolute; top: 20px; right: 20px; z-index: 10;
+    display:flex; align-items:center; justify-content:center;
+    width: 38px; height: 38px; border-radius: 50%;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+    color: #fff; cursor: pointer;
+  }
+  .image-preview-edit-btn:hover{ background: rgba(255,255,255,0.18); }
+  .image-preview-edit-btn svg{ width: 16px; height: 16px; }
 
   .send-preview-overlay{
     position: fixed; inset: 0; z-index: 985;
@@ -1186,9 +1187,14 @@
     border: 1px solid var(--line); overflow: hidden; position: relative; flex-shrink: 0;
   }
   .goal-featured-item-progress-fill{
-    height: 100%; background: color-mix(in srgb, #7fe0a0 55%, transparent);
-    display:flex; align-items:center; justify-content:center; font-size: 11px; font-weight:700; color: var(--ink);
-    white-space: nowrap; padding: 0 8px; transition: width .3s ease;
+    position: absolute; left: 0; top: 0; height: 100%;
+    background: color-mix(in srgb, #7fe0a0 55%, transparent);
+    transition: width .3s ease;
+  }
+  .goal-featured-item-progress-label{
+    position: absolute; inset: 0;
+    display:flex; align-items:center; justify-content:center;
+    font-size: 11px; font-weight:700; color: var(--ink); white-space: nowrap;
   }
   .goal-featured-ring{ flex-shrink: 0; display:flex; align-items:center; justify-content:center; padding: 6px; }
   .goal-featured-bars{ display:flex; flex-direction:column; gap: 8px; margin-top: 16px; }
@@ -1302,6 +1308,15 @@
   }
   #chat-messages::-webkit-scrollbar-thumb:hover{
     background: color-mix(in srgb, var(--gold) 65%, transparent);
+  }
+  .scroll-to-bottom-btn{
+    position: absolute; bottom: 90px; right: 20px; z-index: 50;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: color-mix(in srgb, var(--panel) 55%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--line); color: var(--ink);
+    align-items: center; justify-content: center; font-size: 18px; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
   }
   .shell-main .chat-panel-card{
     flex: 1;
@@ -2524,22 +2539,39 @@ async function createGoal(g){
   return data;
 }
 
-async function toggleGoalItemDone(goal, itemId){
-  const doneBy = { ...(goal.done_by||{}) };
-  const mine = { ...(doneBy[state.user.uid] || {}) };
-  mine[itemId] = mine[itemId] ? 0 : 1;
-  doneBy[state.user.uid] = mine;
-  await updateGoal(goal.id, { done_by: doneBy });
-  goal.done_by = doneBy;
+// Раньше прогресс по пунктам списка хранился в одном общем поле done_by на самой цели —
+// из-за этого если два человека отмечали галочки почти одновременно, тот, кто сохранял
+// вторым, читал устаревшую копию этого поля и своей записью стирал прогресс первого.
+// Теперь прогресс каждого человека — это его собственная независимая строка в таблице
+// goal_progress (goal_id, uid, item_id) — записи разных людей никогда не пересекаются.
+async function logGoalItemProgress(goalId, itemId, value){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('goal_progress').upsert(
+    { goal_id: goalId, uid: state.user.uid, item_id: itemId, value },
+    { onConflict: 'goal_id,uid,item_id' }
+  );
+  if(error) throw new Error(error.message);
 }
 
-async function logGoalItemAmount(goal, itemId, delta){
-  const doneBy = { ...(goal.done_by||{}) };
-  const mine = { ...(doneBy[state.user.uid] || {}) };
-  mine[itemId] = (Number(mine[itemId]) || 0) + delta;
-  doneBy[state.user.uid] = mine;
-  await updateGoal(goal.id, { done_by: doneBy });
-  goal.done_by = doneBy;
+async function listGoalItemProgress(goalId){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { data, error } = await sb.from('goal_progress').select('*').eq('goal_id', goalId).not('item_id', 'is', null);
+  if(error) throw new Error(error.message);
+  return data || [];
+}
+
+async function toggleGoalItemDone(goal, itemId, itemProgress){
+  const mine = (itemProgress||[]).find(p => p.uid === state.user.uid && p.item_id === itemId);
+  const newVal = (mine && Number(mine.value) > 0) ? 0 : 1;
+  await logGoalItemProgress(goal.id, itemId, newVal);
+  return newVal;
+}
+
+async function logGoalItemAmount(goal, itemId, delta, itemProgress){
+  const mine = (itemProgress||[]).find(p => p.uid === state.user.uid && p.item_id === itemId);
+  const newVal = (mine ? Number(mine.value) : 0) + delta;
+  await logGoalItemProgress(goal.id, itemId, newVal);
+  return newVal;
 }
 
 async function updateGoal(id, patch){
@@ -2586,7 +2618,7 @@ async function logGoalProgress(goalId, dayKey, value){
 
 async function listGoalProgress(goalId){
   if(!supabaseReady) throw backendNotConfiguredError();
-  const { data, error } = await sb.from('goal_progress').select('*').eq('goal_id', goalId);
+  const { data, error } = await sb.from('goal_progress').select('*').eq('goal_id', goalId).is('item_id', null);
   if(error) throw new Error(error.message);
   return data || [];
 }
@@ -2596,18 +2628,20 @@ function goalDayKey(d){
   return formatDateInputValue(d);
 }
 
-function computeGoalPercent(goal, progressEntries, forUid){
+function computeGoalPercent(goal, progressEntries, forUid, itemProgress){
   if(goal.kind === 'checklist'){
     const items = goal.items || [];
     if(!items.length) return 0;
     const uid = forUid || state.user.uid;
-    const myValues = (goal.done_by||{})[uid] || {};
+    const mine = (itemProgress||[]).filter(p => p.uid === uid);
     let doneShare = 0;
     items.forEach(it => {
+      const rec = mine.find(p => p.item_id === it.id);
+      const val = rec ? Number(rec.value) : 0;
       if(it.target){
-        doneShare += Math.min(1, (Number(myValues[it.id])||0) / it.target);
+        doneShare += Math.min(1, val / it.target);
       } else {
-        doneShare += myValues[it.id] ? 1 : 0;
+        doneShare += val > 0 ? 1 : 0;
       }
     });
     return Math.min(100, (doneShare/items.length)*100);
@@ -2663,27 +2697,27 @@ function playGoalCelebration(){
   setTimeout(() => burst.remove(), 1800);
 }
 
-function openGoalModal(){
+function openGoalModal(presetKind){
   const ov = document.createElement('div');
   ov.className = 'send-preview-overlay';
   const box = document.createElement('div');
   box.className = 'send-preview-box';
-  box.appendChild(el('div','','Новая цель')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
+  box.appendChild(el('div','','Новый план')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
 
   const titleInput = document.createElement('input');
   titleInput.type = 'text'; titleInput.placeholder = 'Например: сыграть 20 партий';
   box.appendChild(titleInput);
 
   const kindWrap = el('div','');
-  kindWrap.appendChild(el('div','top-tag','Тип цели'));
+  kindWrap.appendChild(el('div','top-tag','Тип плана'));
   const kindSelect = document.createElement('select');
-  [['checklist','Чек-лист (просто отмечать дни)'],['numeric','Число (набрать цифру)'],['habit','Привычка (стрик по дням)']]
-    .forEach(([v,l]) => kindSelect.appendChild(new Option(l, v)));
+  [['checklist','Список дел (несколько задач со своими галочками)'],['numeric','Число (набрать цифру)'],['habit','Привычка (стрик по дням)']]
+    .forEach(([v,l]) => kindSelect.appendChild(new Option(l, v, false, presetKind === v)));
   kindWrap.appendChild(kindSelect);
   box.appendChild(kindWrap);
 
   const numericWrap = el('div','event-modal-row');
-  const targetInput = document.createElement('input'); targetInput.type='number'; targetInput.placeholder='Цель (например 20)'; targetInput.min='1';
+  const targetInput = document.createElement('input'); targetInput.type='number'; targetInput.placeholder='Сколько нужно (например 20)'; targetInput.min='1';
   const unitInput = document.createElement('input'); unitInput.type='text'; unitInput.placeholder='Единица (партий, раз…)';
   numericWrap.appendChild(targetInput); numericWrap.appendChild(unitInput);
   box.appendChild(numericWrap);
@@ -2694,7 +2728,7 @@ function openGoalModal(){
   let checklistItems = [];
   const itemsWrap = el('div','');
   itemsWrap.style.display = 'none';
-  itemsWrap.appendChild(el('div','top-tag','Дела в списке'));
+  itemsWrap.appendChild(el('div','top-tag','Список дел'));
   const itemsListEl = el('div','');
   itemsWrap.appendChild(itemsListEl);
   function renderChecklistItems(){
@@ -2785,7 +2819,7 @@ function openGoalModal(){
   kindSelect.onchange = () => {
     numericWrap.style.display = kindSelect.value === 'numeric' ? '' : 'none';
     itemsWrap.style.display = kindSelect.value === 'checklist' ? '' : 'none';
-    publicWrap.style.display = (kindSelect.value === 'habit' || kindSelect.value === 'checklist') ? '' : 'none';
+    publicWrap.style.display = kindSelect.value === 'habit' ? '' : 'none';
   };
   kindSelect.onchange();
 
@@ -2819,7 +2853,7 @@ function openGoalModal(){
         period: periodSelect.value, startTs, endTs,
         mode: modeSelect.value, participants,
         items: kindSelect.value === 'checklist' ? checklistItems : [],
-        isPublic: (kindSelect.value === 'habit' || kindSelect.value === 'checklist') && publicCheckbox.checked,
+        isPublic: kindSelect.value === 'habit' && publicCheckbox.checked,
       });
       state.goalsLoaded = false;
       ov.remove();
@@ -2852,8 +2886,19 @@ function openEditChecklistModal(goal, onDone){
       const row = el('div','goal-item-edit-row');
       row.appendChild(el('span','goal-item-edit-text', it.text));
       row.appendChild(el('span','goal-item-edit-target', it.target ? `× ${it.target}` : '—'));
+      const editItemBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.edit);
+      editItemBtn.onclick = () => {
+        const newText = prompt('Название дела', it.text);
+        if(newText === null) return;
+        const newTargetRaw = prompt('Количество (оставь пустым, если просто галочка)', it.target || '');
+        if(newTargetRaw === null) return;
+        it.text = newText.trim() || it.text;
+        it.target = parseFloat(newTargetRaw) || null;
+        renderList();
+      };
       const rm = el('button','btn ghost icon-only-btn','✕');
       rm.onclick = () => { items.splice(idx,1); renderList(); };
+      row.appendChild(editItemBtn);
       row.appendChild(rm);
       listEl.appendChild(row);
     });
@@ -3231,14 +3276,12 @@ function renderGoalsScreen(){
   w.appendChild(renderNav('goals'));
 
   const headerRow = el('div','calendar-header-row');
-  headerRow.appendChild(el('h1','','Цели'));
+  headerRow.appendChild(el('h1','','Планы'));
   const headerBtns = el('div','');
   headerBtns.style.display = 'flex'; headerBtns.style.gap = '10px';
   const findRoomBtn = el('button','btn ghost','🔍 Найти комнату');
   findRoomBtn.onclick = () => openRoomSearchModal();
-  const newGoalBtn = el('button','btn','+ Новая цель');
-  newGoalBtn.onclick = () => openGoalModal();
-  headerBtns.appendChild(findRoomBtn); headerBtns.appendChild(newGoalBtn);
+  headerBtns.appendChild(findRoomBtn);
   headerRow.appendChild(headerBtns);
   w.appendChild(headerRow);
 
@@ -3268,25 +3311,29 @@ function renderGoalsScreen(){
   const leftCol = el('div','goals-quadrant-col');
   const rightCol = el('div','goals-quadrant-col');
 
-  if(numerics.length){
-    leftCol.appendChild(el('h1','goal-section-title','Числовые цели'));
-    numerics.forEach(goal => leftCol.appendChild(buildGoalGridCard(goal)));
-  }
-
   if(!checklists.length){
     const cta = el('div','card card-translucent goal-empty-cta');
     const ctaBtn = el('button','btn goal-empty-cta-btn','+ Добавить дела');
-    ctaBtn.onclick = () => openGoalModal();
+    ctaBtn.onclick = () => openGoalModal('checklist');
     cta.appendChild(ctaBtn);
-    rightCol.appendChild(cta);
+    leftCol.appendChild(cta);
   } else {
     if(state.goalsFeaturedIndex == null || state.goalsFeaturedIndex >= checklists.length) state.goalsFeaturedIndex = 0;
-    rightCol.appendChild(buildFeaturedChecklistCard(checklists, state.goalsFeaturedIndex));
+    leftCol.appendChild(buildFeaturedChecklistCard(checklists, state.goalsFeaturedIndex));
   }
 
-  if(habits.length){
-    rightCol.appendChild(el('h1','goal-section-title','Трекер'));
-    habits.forEach(goal => rightCol.appendChild(buildGoalGridCard(goal)));
+  const trackerHeaderRow = el('div','calendar-header-row');
+  trackerHeaderRow.appendChild(el('h1','goal-section-title','Трекер'));
+  const addHabitBtn = el('button','btn ghost icon-only-btn','+');
+  addHabitBtn.title = 'Добавить трекер';
+  addHabitBtn.onclick = () => openGoalModal('habit');
+  trackerHeaderRow.appendChild(addHabitBtn);
+  leftCol.appendChild(trackerHeaderRow);
+  habits.forEach(goal => leftCol.appendChild(buildGoalGridCard(goal)));
+
+  if(numerics.length){
+    rightCol.appendChild(el('h1','goal-section-title','Числовые цели'));
+    numerics.forEach(goal => rightCol.appendChild(buildGoalGridCard(goal)));
   }
 
   quadrantWrap.appendChild(leftCol);
@@ -3392,16 +3439,6 @@ function buildFeaturedChecklistCard(checklists, index){
   const helpBtn = el('button','btn ghost goal-help-btn','+ Позвать на помощь');
   helpBtn.onclick = (e) => {
     e.stopPropagation();
-    buildContactSearchPicker({
-      excludeUids: () => [goal.owner_uid, ...(goal.participants||[]).map(p=>p.uid)],
-      onSelect: async (f) => {
-        try{
-          const participants = [...(goal.participants||[]), { uid: f.uid, name: f.name }];
-          await updateGoal(goal.id, { participants, mode: goal.mode === 'solo' ? 'shared' : goal.mode });
-          state.goalsLoaded = false; render();
-        }catch(err){ showToast('Не удалось добавить: '+err.message); }
-      },
-    });
     // Открываем мини-поповер с поиском прямо под кнопкой
     const rect = helpBtn.getBoundingClientRect();
     const existing = document.getElementById('help-picker-popup'); if(existing) existing.remove();
@@ -3457,6 +3494,14 @@ function buildFeaturedChecklistCard(checklists, index){
   metaRow.appendChild(el('div','', goal.mode === 'solo' ? 'Одиночный' : 'Совместный'));
   card.appendChild(metaRow);
 
+  if(goal.owner_uid !== state.user.uid){
+    card.appendChild(el('div','meta', `Создатель: ${goal.owner_name || '?'}`));
+  }
+  if((goal.participants||[]).length){
+    const allNames = [goal.owner_uid === state.user.uid ? 'вы' : (goal.owner_name||'?'), ...goal.participants.map(p => p.uid === state.user.uid ? 'вы' : p.name)];
+    card.appendChild(el('div','meta', `Участники: ${allNames.join(', ')}`));
+  }
+
   const bodyRow = el('div','goal-featured-body');
   const listCol = el('div','goal-featured-list');
   bodyRow.appendChild(listCol);
@@ -3477,25 +3522,29 @@ function buildFeaturedChecklistCard(checklists, index){
     card.appendChild(pageRow);
   }
 
-  listGoalProgress(goal.id).then(progress => {
+  let itemProgress = [];
+
+  function refreshBody(){
     const allPeople = [{ uid: goal.owner_uid, name: goal.owner_name }, ...(goal.participants||[])];
     const seen = new Set(); const uniquePeople = allPeople.filter(p => !seen.has(p.uid) && seen.add(p.uid));
     const items = goal.items || [];
-    const doneBy = goal.done_by || {};
+
+    function myRec(itemId){ return itemProgress.find(p => p.uid === state.user.uid && p.item_id === itemId); }
 
     listCol.innerHTML = '';
     if(items.length > 8) listCol.classList.add('dense');
     items.forEach(item => {
       const row = el('div','goal-featured-item');
-      const myVal = doneBy[state.user.uid]?.[item.id];
+      const rec = myRec(item.id);
       if(item.target){
-        const cur = Number(myVal) || 0;
+        const cur = rec ? Number(rec.value) : 0;
         const pct = Math.min(100, (cur/item.target)*100);
         row.appendChild(el('span','goal-featured-item-text', item.text));
         const barWrap = el('div','goal-featured-item-progress');
-        const barFill = el('div','goal-featured-item-progress-fill', `${cur}/${item.target}`);
+        const barFill = el('div','goal-featured-item-progress-fill');
         barFill.style.width = pct+'%';
         barWrap.appendChild(barFill);
+        barWrap.appendChild(el('div','goal-featured-item-progress-label', `${cur}/${item.target}`));
         row.appendChild(barWrap);
         const plusBtn = el('button','btn ghost icon-only-btn','+');
         plusBtn.onclick = (e) => {
@@ -3510,7 +3559,13 @@ function buildFeaturedChecklistCard(checklists, index){
           okBtn.onclick = async () => {
             const v = parseFloat(amtInput.value) || 0;
             popup.remove();
-            try{ await logGoalItemAmount(goal, item.id, v); state.goalsLoaded=false; render(); }
+            try{
+              const newVal = await logGoalItemAmount(goal, item.id, v, itemProgress);
+              const existingRec = myRec(item.id);
+              if(existingRec) existingRec.value = newVal;
+              else itemProgress.push({ goal_id: goal.id, uid: state.user.uid, item_id: item.id, value: newVal });
+              refreshBody();
+            }
             catch(err){ showToast('Ошибка: '+err.message); }
           };
           popup.appendChild(amtInput); popup.appendChild(okBtn);
@@ -3523,12 +3578,22 @@ function buildFeaturedChecklistCard(checklists, index){
         row.appendChild(plusBtn);
       } else {
         row.appendChild(el('span','goal-featured-item-text', item.text));
-        const done = !!myVal;
+        const done = rec && Number(rec.value) > 0;
         const cb = el('div','goal-featured-checkbox' + (done?' done':''), done?'✓':'');
-        cb.onclick = async () => { try{ await toggleGoalItemDone(goal, item.id); state.goalsLoaded=false; render(); }catch(e){ showToast('Ошибка: '+e.message); } };
+        // Локально обновляем галочку и диаграмму, не перезагружая всю страницу — своя
+        // запись прогресса уже известна, а чужие записи мы не трогаем и не перезаписываем.
+        cb.onclick = async () => {
+          try{
+            const newVal = await toggleGoalItemDone(goal, item.id, itemProgress);
+            const existingRec = myRec(item.id);
+            if(existingRec) existingRec.value = newVal;
+            else itemProgress.push({ goal_id: goal.id, uid: state.user.uid, item_id: item.id, value: newVal });
+            refreshBody();
+          }catch(e){ showToast('Ошибка: '+e.message); }
+        };
         row.appendChild(cb);
         if(uniquePeople.length > 1){
-          const completers = uniquePeople.filter(p => doneBy[p.uid]?.[item.id]);
+          const completers = uniquePeople.filter(p => itemProgress.some(rp => rp.uid === p.uid && rp.item_id === item.id && Number(rp.value) > 0));
           if(completers.length){
             const avGroup = el('div','goal-item-avatars');
             completers.forEach(p => {
@@ -3544,10 +3609,13 @@ function buildFeaturedChecklistCard(checklists, index){
       listCol.appendChild(row);
     });
 
-    const overallPct = computeGoalPercent(goal, progress, state.user.uid);
+    const overallPct = computeGoalPercent(goal, [], state.user.uid, itemProgress);
+    ringCol.innerHTML = '';
     ringCol.appendChild(buildProgressRing(overallPct, 92, goal.color || 'var(--gold)'));
+    daysEl.classList.remove('goal-days-urgent');
     if(daysLeft <= 1 && overallPct < 100) daysEl.classList.add('goal-days-urgent');
 
+    const existingDoneRow = card.querySelector('.goal-done-row'); if(existingDoneRow) existingDoneRow.remove();
     if(overallPct >= 100){
       if(!celebratedGoalIds.has(goal.id)){
         celebratedGoalIds.add(goal.id);
@@ -3567,12 +3635,13 @@ function buildFeaturedChecklistCard(checklists, index){
     if(uniquePeople.length > 1){
       barsWrap.innerHTML = '';
       uniquePeople.forEach(p => {
-        const pct = Math.round(computeGoalPercent(goal, progress, p.uid));
+        const pct = Math.round(computeGoalPercent(goal, [], p.uid, itemProgress));
         const row = el('div','goal-mini-bar-row');
         const av = el('div','avatar-circle', (p.name||'?')[0].toUpperCase());
         av.style.width='20px'; av.style.height='20px'; av.style.fontSize='9px';
         fillAvatarAsync(av, p.uid);
         row.appendChild(av);
+        row.appendChild(el('span','', p.name));
         const track = el('div','goal-mini-bar-track');
         const fill = el('div','goal-mini-bar-fill'); fill.style.width = pct+'%';
         track.appendChild(fill);
@@ -3581,7 +3650,9 @@ function buildFeaturedChecklistCard(checklists, index){
         barsWrap.appendChild(row);
       });
     }
-  }).catch(e => console.error('load featured checklist progress failed', e));
+  }
+  refreshBody();
+  listGoalItemProgress(goal.id).then(ip => { itemProgress = ip; refreshBody(); }).catch(e => console.error('load item progress failed', e));
 
   return card;
 }
@@ -4556,6 +4627,22 @@ async function listChatThreads(){
     ...t,
     unread: !!(t.latest && t.latest.fromUid !== me && (t.latest.ts||0) > (lastRead[t.chatId]||0))
   }));
+
+  // Имя собеседника в переписке раньше бралось из "снимка" на момент отправки сообщения —
+  // если тогда оно почему-то было пустым, в списке чатов так и оставалось "Без имени"
+  // навсегда, даже после того как человек указал имя. Подтягиваем актуальное имя из профиля.
+  const otherUids = [...new Set(threads.filter(t => !t.isGroup && t.otherUid).map(t => t.otherUid))];
+  if(otherUids.length){
+    try{
+      const { data: profs } = await sb.from('profiles').select('id, name').in('id', otherUids);
+      const nameByUid = {};
+      (profs||[]).forEach(p => { nameByUid[p.id] = p.name; });
+      threads.forEach(t => {
+        if(!t.isGroup && t.otherUid && nameByUid[t.otherUid]) t.otherName = nameByUid[t.otherUid];
+      });
+    }catch(e){ console.error('live name lookup failed', e); }
+  }
+
   threads.sort((a,b) => (b.latest?.ts||0) - (a.latest?.ts||0));
   return threads;
 }
@@ -4621,7 +4708,7 @@ function showToast(msg){
   }, 2400);
 }
 
-function showImageSendPreview(dataUrl, onSend, onCancel){
+function showImageSendPreview(dataUrl, onSend, onCancel, prefillCaption){
   const ov = document.createElement('div');
   ov.className = 'send-preview-overlay';
   const box = document.createElement('div');
@@ -4641,6 +4728,7 @@ function showImageSendPreview(dataUrl, onSend, onCancel){
   const capInput = document.createElement('input');
   capInput.type = 'text'; capInput.placeholder = 'Подпись к фото…';
   capInput.className = 'send-preview-caption-input';
+  if(prefillCaption) capInput.value = prefillCaption;
   const sendBtn = document.createElement('button');
   sendBtn.className = 'btn send-preview-send'; sendBtn.innerHTML = CHAT_ICONS.attach.replace('width="20" height="20"','width="18" height="18"') || 'Отправить';
   sendBtn.textContent = '➤';
@@ -4653,7 +4741,7 @@ function showImageSendPreview(dataUrl, onSend, onCancel){
   ov.appendChild(box);
   ov.onclick = (e) => { if(e.target === ov){ ov.remove(); if(onCancel) onCancel(); } };
   document.body.appendChild(ov);
-  setTimeout(() => capInput.focus(), 0);
+  setTimeout(() => { capInput.focus(); if(prefillCaption) capInput.setSelectionRange(capInput.value.length, capInput.value.length); }, 0);
 }
 
 function openImagePreview(src, msgContext){
@@ -4664,26 +4752,55 @@ function openImagePreview(src, msgContext){
   img.className = 'image-preview-img';
   overlay.appendChild(img);
 
-  if(msgContext && msgContext.mine){
-    const bar = document.createElement('div');
-    bar.className = 'image-preview-actionbar';
+  // Приближение колёсиком мыши (и щипком на тачскрине через тот же wheel-жест в браузере) —
+  // раньше это не работало вообще. Двойной клик — сброс масштаба.
+  let scale = 1;
+  img.style.transition = 'transform .08s ease-out';
+  img.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    scale = Math.min(5, Math.max(1, scale - e.deltaY * 0.0015));
+    img.style.transform = `scale(${scale})`;
+    img.style.cursor = scale > 1 ? 'zoom-out' : 'zoom-in';
+  }, { passive: false });
+  img.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    scale = scale > 1 ? 1 : 2.2;
+    img.style.transform = `scale(${scale})`;
+  });
 
-    const delBtn = document.createElement('button');
-    delBtn.className = 'image-preview-action-btn';
-    delBtn.title = 'Удалить';
-    delBtn.innerHTML = '🗑';
-    delBtn.onclick = (e) => {
-      e.stopPropagation();
-      showConfirmModal('Удалить это фото у всех?', async () => {
-        try{ await deleteMessageForEveryone(msgContext.id); overlay.remove(); }
-        catch(err){ console.error('delete photo message failed', err); showToast('Не удалось удалить'); }
-      });
+  // Копировать — по правому клику на самом фото, отдельной кнопки для этого больше нет.
+  img.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const existing = document.getElementById('image-context-menu'); if(existing) existing.remove();
+    const menu = document.createElement('div');
+    menu.id = 'image-context-menu';
+    menu.className = 'context-menu';
+    menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px';
+    const copyItem = document.createElement('div');
+    copyItem.className = 'context-menu-item';
+    copyItem.textContent = '📋 Копировать';
+    copyItem.onclick = async () => {
+      menu.remove();
+      try{
+        const resp = await fetch(src);
+        const blob = await resp.blob();
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        showToast('Фото скопировано ✓');
+      }catch(err){
+        console.error('copy image failed', err);
+        showToast('Не удалось скопировать — попробуй скачать');
+      }
     };
+    menu.appendChild(copyItem);
+    document.body.appendChild(menu);
+    setTimeout(() => document.addEventListener('click', function closeMenu(){ menu.remove(); document.removeEventListener('click', closeMenu); }), 0);
+  });
 
+  if(msgContext && msgContext.mine){
     const editBtn = document.createElement('button');
-    editBtn.className = 'image-preview-action-btn';
-    editBtn.title = 'Ред.';
-    editBtn.innerHTML = '✎ <span>Ред.</span>';
+    editBtn.className = 'image-preview-edit-btn';
+    editBtn.title = 'Редактировать';
+    editBtn.innerHTML = CHAT_ICONS.edit;
     editBtn.onclick = (e) => {
       e.stopPropagation();
       const fileInput = document.createElement('input');
@@ -4691,7 +4808,7 @@ function openImagePreview(src, msgContext){
       fileInput.onchange = async () => {
         const file = fileInput.files[0];
         if(!file) return;
-        editBtn.disabled = true; editBtn.innerHTML = '…';
+        editBtn.disabled = true;
         try{
           const dataUrl = await compressImageToDataUrl(file);
           await editMessageImage(msgContext.id, dataUrl);
@@ -4699,42 +4816,15 @@ function openImagePreview(src, msgContext){
         }catch(err){
           console.error('edit photo message failed', err);
           showToast('Не удалось заменить фото');
-          editBtn.disabled = false; editBtn.innerHTML = '✎ <span>Ред.</span>';
+          editBtn.disabled = false;
         }
       };
       fileInput.click();
     };
-
-    bar.appendChild(delBtn);
-    bar.appendChild(editBtn);
-    overlay.appendChild(bar);
+    overlay.appendChild(editBtn);
   }
 
-  // Копировать фото — доступно всегда, не только для своих сообщений
-  const copyBar = document.createElement('div');
-  copyBar.className = 'image-preview-actionbar';
-  const copyBtn = document.createElement('button');
-  copyBtn.className = 'image-preview-action-btn';
-  copyBtn.title = 'Копировать';
-  copyBtn.innerHTML = '📋 <span>Копировать</span>';
-  copyBtn.onclick = async (e) => {
-    e.stopPropagation();
-    copyBtn.disabled = true;
-    try{
-      const resp = await fetch(src);
-      const blob = await resp.blob();
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-      showToast('Фото скопировано ✓');
-    }catch(err){
-      console.error('copy image failed', err);
-      showToast('Не удалось скопировать — попробуй скачать');
-    }
-    copyBtn.disabled = false;
-  };
-  copyBar.appendChild(copyBtn);
-  overlay.appendChild(copyBar);
-
-  overlay.onclick = (e) => { if(e.target === overlay || e.target === img) overlay.remove(); };
+  overlay.onclick = (e) => { if(e.target === overlay || (e.target === img && scale <= 1)) overlay.remove(); };
   document.body.appendChild(overlay);
 }
 
@@ -4880,7 +4970,40 @@ async function extractWaveformPeaks(dataUrl, barCount){
 const root = document.getElementById('root');
 let state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
 
+function saveScreenState(){
+  if(!state.user) return;
+  try{
+    const toSave = { screen: state.screen };
+    if(state.screen === 'messages' && state.chatWith){
+      toSave.chatWith = state.chatWith.isGroup
+        ? { isGroup: true, groupId: state.chatWith.groupId, name: state.chatWith.name }
+        : { isGroup: false, uid: state.chatWith.uid, name: state.chatWith.name };
+    }
+    localStorage.setItem('sozvezdie_last_screen', JSON.stringify(toSave));
+  }catch(e){ /* localStorage может быть недоступен — тихо игнорируем */ }
+}
+
+function restoreScreenState(){
+  try{
+    const raw = localStorage.getItem('sozvezdie_last_screen');
+    if(!raw) return false;
+    const saved = JSON.parse(raw);
+    const restorable = ['messages','friends','people','calendar','goals','account','result','support'];
+    if(!restorable.includes(saved.screen)) return false;
+    if(saved.screen === 'messages' && saved.chatWith){
+      if(saved.chatWith.isGroup) openGroupChat(saved.chatWith.groupId, saved.chatWith.name);
+      else openChat(saved.chatWith.uid, saved.chatWith.name);
+    } else if(saved.screen === 'messages'){
+      openMessagesTab();
+    } else {
+      state.screen = saved.screen;
+    }
+    return true;
+  }catch(e){ console.error('restore screen state failed', e); return false; }
+}
+
 function render(){
+  saveScreenState();
   document.querySelectorAll('.record-live-preview, .record-live-preview-backdrop').forEach(p => p.remove());
   root.innerHTML = '';
   if(state.screen === 'landing') renderLanding();
@@ -4995,8 +5118,8 @@ function renderNav(active){
     const supportLink = el('button','nav-link' + (active==='support' ? ' active' : ''), 'Поддержка');
     supportLink.onclick = () => { openSupport(); };
 
-    const goalsLink = el('button','nav-link' + (active==='goals' ? ' active' : ''), 'Цели');
-    goalsLink.onclick = () => { state.screen = 'goals'; render(); };
+    const goalsLink = el('button','nav-link' + (active==='goals' ? ' active' : ''), 'Планы');
+    goalsLink.onclick = () => { state.goalsLoaded = false; state.screen = 'goals'; render(); };
 
     links.appendChild(messagesLink);
     links.appendChild(friendsLink);
@@ -5379,6 +5502,16 @@ async function openFriends(){
   try{
     const [incoming, friends] = await Promise.all([listIncomingRequests(), listFriends()]);
     state.incomingRequests = incoming;
+    // Подтягиваем схемы всех контактов одним запросом — чтобы показать процент совместимости
+    // в списке контактов, как это уже сделано на вкладке "Пользователи".
+    if(friends.length){
+      try{
+        const { data: profs } = await sb.from('profiles').select('id, graph').in('id', friends.map(f => f.uid));
+        const graphByUid = {};
+        (profs||[]).forEach(p => { graphByUid[p.id] = p.graph; });
+        friends.forEach(f => { f.graph = graphByUid[f.uid] || null; });
+      }catch(e){ console.error('load friend graphs failed', e); }
+    }
     state.friendsList = friends;
   }catch(e){
     console.error('friends load failed', e);
@@ -5439,7 +5572,13 @@ function renderFriends(){
       const fAvatar = avatarCircleEl(f.name, 36);
       fillAvatarAsync(fAvatar, f.uid);
       left.appendChild(fAvatar);
-      left.appendChild(el('div','name', f.name));
+      const nameCol = el('div','');
+      nameCol.appendChild(el('div','name', f.name));
+      if(state.graph && f.graph){
+        const compat = computeCompatibility(state.graph, f.graph);
+        nameCol.appendChild(el('div','meta', `${compat.percent}% совпадение`));
+      }
+      left.appendChild(nameCol);
       row.appendChild(left);
       const msgIcon = el('button','icon-btn','✉️');
       msgIcon.title = 'Написать';
@@ -5977,6 +6116,11 @@ async function downloadDataUrl(url, filename){
 function renderChatMessages(){
   const box = document.getElementById('chat-messages');
   if(!box) return;
+  // Запоминаем, был ли человек уже внизу переписки (или только что открыл чат) — раньше
+  // при каждом обновлении (опрос/реалтайм) прокрутку всегда сбрасывало в самый низ, даже
+  // если человек в этот момент читал старые сообщения выше — это и мешало читать.
+  const wasNearBottom = box.scrollHeight === 0 || (box.scrollHeight - box.scrollTop - box.clientHeight < 120);
+  const prevScrollFromBottom = box.scrollHeight - box.scrollTop;
   box.innerHTML = '';
   applyChatWallpaper();
 
@@ -6133,7 +6277,20 @@ function renderChatMessages(){
       box.appendChild(seenCap);
     }
   });
-  box.scrollTop = box.scrollHeight;
+  if(wasNearBottom){
+    box.scrollTop = box.scrollHeight;
+    const btn = document.getElementById('scroll-to-bottom-btn');
+    if(btn) btn.style.display = 'none';
+  } else {
+    box.scrollTop = Math.max(0, box.scrollHeight - prevScrollFromBottom);
+    const btn = document.getElementById('scroll-to-bottom-btn');
+    if(btn) btn.style.display = 'flex';
+  }
+  box.onscroll = () => {
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+    const btn = document.getElementById('scroll-to-bottom-btn');
+    if(btn) btn.style.display = nearBottom ? 'none' : 'flex';
+  };
 }
 
 // Большой набор эмодзи по категориям (как в Телеграме) + ключевые слова для поиска.
@@ -6586,10 +6743,20 @@ function buildChatPanel(container){
   container.appendChild(headerRow);
 
   const card = el('div','card chat-panel-card card-translucent');
+  card.style.position = 'relative';
   const box = el('div','');
   box.id = 'chat-messages';
   box.className = 'chat-box';
   card.appendChild(box);
+
+  const scrollDownBtn = el('button','scroll-to-bottom-btn','↓');
+  scrollDownBtn.id = 'scroll-to-bottom-btn';
+  scrollDownBtn.style.display = 'none';
+  scrollDownBtn.onclick = () => {
+    box.scrollTop = box.scrollHeight;
+    scrollDownBtn.style.display = 'none';
+  };
+  card.appendChild(scrollDownBtn);
 
   const replyBannerSlot = el('div','');
   replyBannerSlot.id = 'reply-banner-slot';
@@ -6623,7 +6790,8 @@ function buildChatPanel(container){
         showImageSendPreview(dataUrl, async (caption) => {
           try{ await doSendImage(dataUrl, caption); }
           catch(e){ console.error('image send failed', e); showToast('Не удалось отправить фото'); }
-        });
+        }, null, input.value.trim());
+        input.value = '';
       }catch(e){
         console.error('image prep failed', e);
         attachBtn.disabled = false; attachBtn.innerHTML = CHAT_ICONS.attach;
@@ -6641,7 +6809,9 @@ function buildChatPanel(container){
       if(dataUrl.length > 15000000){
         showToast('Файл слишком большой для отправки (лимит ~10 МБ)');
       } else {
-        await doSendFile(dataUrl, file.name);
+        const typedText = input.value.trim();
+        await doSendFile(dataUrl, file.name, typedText || null);
+        input.value = '';
       }
     }catch(e){ console.error('file send failed', e); }
     attachBtn.disabled = false; attachBtn.innerHTML = CHAT_ICONS.attach;
@@ -6792,7 +6962,8 @@ function buildChatPanel(container){
           showImageSendPreview(dataUrl, async (caption) => {
             try{ await doSendImage(dataUrl, caption); }
             catch(err){ console.error('pasted image send failed', err); showToast('Не удалось отправить фото'); }
-          });
+          }, null, input.value.trim());
+          input.value = '';
         }catch(err){ console.error('pasted image prep failed', err); }
         break;
       }
@@ -9079,7 +9250,10 @@ if(supabaseReady){
         state.isAdmin = profileRow?.is_admin === true;
         applyTheme(profileRow?.theme || 'dark');
         applyBgMotion(state.profile?.bgMotion === true);
-        if(state.screen === 'landing'){ openMessagesTab(); }
+        if(state.screen === 'landing'){
+          const restored = restoreScreenState();
+          if(!restored) openMessagesTab();
+        }
         refreshNotificationCounts().then(render);
         startNotificationPolling();
         startCalendarRealtime();
