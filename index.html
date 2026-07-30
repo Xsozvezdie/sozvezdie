@@ -108,6 +108,10 @@
     -webkit-backdrop-filter: blur(16px);
   }
 
+  .goal-panel-50{
+    background: color-mix(in srgb, var(--panel) 50%, transparent);
+  }
+
   textarea{
     width:100%;
     min-height: 220px;
@@ -239,6 +243,9 @@
   body[data-theme="light"] .card-translucent{
     background: color-mix(in srgb, var(--panel) 88%, transparent);
   }
+  body[data-theme="light"] .goal-panel-50{
+    background: color-mix(in srgb, var(--panel) 70%, transparent);
+  }
   body[data-theme="light"] .card, body[data-theme="light"] .nav, body[data-theme="light"] .chat-bubble{
     box-shadow: 0 2px 10px rgba(20,20,40,0.06);
   }
@@ -280,7 +287,7 @@
   }
   body[data-theme="ocean"]{ --gold: #4fc3f7; }
   body.bg-motion[data-theme="ocean"]::before{
-    animation: gentle-drift-b 28s ease-in-out infinite;
+    animation: none;
   }
 
   body[data-theme="forest"]::before{
@@ -290,7 +297,7 @@
   }
   body[data-theme="forest"]{ --gold: #7fe0a0; }
   body.bg-motion[data-theme="forest"]::before{
-    animation: gentle-drift-c 30s ease-in-out infinite;
+    animation: none;
   }
 
   body[data-theme="nebula"]::before{
@@ -1155,12 +1162,36 @@
 
   .goal-featured-card{
     padding: 20px 24px; margin-bottom: 20px;
-    background: color-mix(in srgb, var(--panel) 35%, transparent) !important;
+    background: color-mix(in srgb, var(--panel) 50%, transparent) !important;
     backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
   }
   .goal-featured-top{ display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap; }
   .goal-help-btn{ font-size: 12.5px; opacity: 0.85; }
   .goal-featured-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 19px; color: var(--gold); }
+
+  .goal-tracker-panel{
+    position: relative; padding: 18px 20px; min-height: 140px;
+    background: color-mix(in srgb, var(--panel) 50%, transparent) !important;
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .goal-tracker-add-btn{ position: absolute; top: 14px; right: 14px; }
+  .goal-tracker-row{
+    padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; padding-right: 40px;
+  }
+  .goal-tracker-row:last-of-type{ border-bottom: none; }
+  .goal-tracker-row-top{ display:flex; align-items:center; justify-content:space-between; gap: 10px; }
+  .goal-tracker-row-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 15px; }
+  .goal-tracker-row-people{ display:flex; gap: 14px; margin-top: 8px; flex-wrap: wrap; }
+  .goal-tracker-tick-item{ display:flex; align-items:center; gap: 6px; }
+  .goal-tracker-tick-name{ font-size: 12px; color: var(--ink-dim); }
+  .goal-tracker-row .goal-week-box{ width: 26px; height: 26px; border-radius: 7px; }
+  .goal-tracker-row .goal-week-box.clickable{ cursor: pointer; }
+  .goal-tracker-row .goal-week-box.clickable:hover{ border-color: var(--gold); }
+  .goal-tracker-empty-actions{
+    flex: 1; display:flex; flex-direction: column; align-items:center; justify-content:center;
+    gap: 10px; min-height: 70px;
+  }
   .goal-featured-icons{ display:flex; gap: 8px; }
   .goal-featured-meta{
     display:flex; gap: 22px; margin: 10px 0 16px; font-size: 13.5px; color: var(--ink-dim); flex-wrap: wrap;
@@ -1493,6 +1524,7 @@ const RTC_CONFIG = { iceServers: [
 ] };
 
 let currentCall = null; // { callId, pc, localStream, remoteStream, unsubs:[], role, type }
+let currentGroupCall = null; // { sessionId, groupId, groupName, type, localStream, peers:{uid:{pc,remoteStream,...}}, unsubs:[] }
 let incomingCallUnsub = null;
 let incomingCallDoc = null;
 
@@ -1578,8 +1610,8 @@ function listenForIncomingCalls(){
   async function refetch(){
     const { data } = await sb.from('calls').select('*').eq('to_uid', state.user.uid).eq('status', 'ringing').limit(1);
     const row = data && data[0];
-    if(row && !currentCall){
-      incomingCallDoc = { id: row.id, fromUid: row.from_uid, fromName: row.from_name, toUid: row.to_uid, toName: row.to_name, type: row.type, offer: row.offer };
+    if(row && !currentCall && !currentGroupCall){
+      incomingCallDoc = { id: row.id, fromUid: row.from_uid, fromName: row.from_name, toUid: row.to_uid, toName: row.to_name, type: row.type, offer: row.offer, groupId: row.group_id || null, sessionId: row.session_id || null, groupName: row.group_name || null };
       renderIncomingCallBanner();
     } else if(!row && incomingCallDoc){
       incomingCallDoc = null;
@@ -1647,6 +1679,21 @@ async function startCall(toUid, toName, type){
     if(pc.iceConnectionState === 'failed'){ showToast('Не удалось установить соединение (проблема с сетью/TURN)'); }
   };
 
+  // ВАЖНО: onicecandidate назначаем СРАЗУ после создания pc, а не после insert в БД —
+  // иначе браузер начинает генерировать кандидаты сразу после setLocalDescription,
+  // и почти все они терялись, пока callId ещё не был известен (звонок был "немой").
+  // Кандидаты, сгенерированные до появления callId, буферизуем и досылаем сразу как он готов.
+  let pendingLocalCandidates = [];
+  let callIdForCandidates = null;
+  pc.onicecandidate = (e) => {
+    if(!e.candidate) return;
+    if(callIdForCandidates){
+      sb.from('call_candidates').insert({ call_id: callIdForCandidates, side: 'caller', candidate: e.candidate.toJSON() });
+    } else {
+      pendingLocalCandidates.push(e.candidate.toJSON());
+    }
+  };
+
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
 
@@ -1656,11 +1703,14 @@ async function startCall(toUid, toName, type){
   }).select().single();
   if(error){ showToast('Не удалось начать звонок'); return; }
   const callId = callRow.id;
+  callIdForCandidates = callId;
+  if(pendingLocalCandidates.length){
+    pendingLocalCandidates.forEach(c => sb.from('call_candidates').insert({ call_id: callId, side: 'caller', candidate: c }));
+    pendingLocalCandidates = [];
+  }
 
   currentCall = { callId, pc, localStream, remoteStream, unsubs: [], speakingCleanup: [], role: 'caller', type, hasCamera, otherUid: toUid, otherName: toName, startedAt: null, screenSharing: false, screenTrack: null };
   currentCall.speakingCleanup.push(attachSpeakingDetector(localStream, 'call-tile-local', true));
-
-  pc.onicecandidate = (e) => { if(e.candidate) sb.from('call_candidates').insert({ call_id: callId, side: 'caller', candidate: e.candidate.toJSON() }); };
 
   const channel1 = sb.channel('call-' + callId)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${callId}` }, async (payload) => {
@@ -1691,6 +1741,10 @@ async function acceptIncomingCall(){
   const call = incomingCallDoc;
   incomingCallDoc = null;
   renderIncomingCallBanner();
+  if(call.groupId){
+    await joinGroupCallFromInvite(call);
+    return;
+  }
   const constraints = call.type === 'video' ? { audio: true, video: true } : { audio: true };
   let localStream, hasCamera;
   try{
@@ -1806,7 +1860,9 @@ function renderIncomingCallBanner(){
   const icon = incomingCallDoc.type === 'video' ? '📹' : '📞';
   const text = document.createElement('div');
   text.className = 'incoming-call-text';
-  text.textContent = `${icon} ${incomingCallDoc.fromName} звонит…`;
+  text.textContent = incomingCallDoc.groupId
+    ? `${icon} Групповой звонок «${incomingCallDoc.groupName || ''}» · зовёт ${incomingCallDoc.fromName}`
+    : `${icon} ${incomingCallDoc.fromName} звонит…`;
   banner.appendChild(text);
 
   const actions = document.createElement('div');
@@ -2042,6 +2098,381 @@ function renderCallScreen(){
 
 function pairId(uidA, uidB){
   return [uidA, uidB].sort().join('_');
+}
+
+// ---------------- групповые звонки (полная mesh-сетка: каждый участник соединён с каждым) ----------------
+// currentGroupCall = { sessionId, groupId, groupName, type, localStream, hasCamera,
+//   peers: { [uid]: { pc, remoteStream, name, rowId, unsubs:[], speakingCleanup:[] } }, unsubs:[], speakingCleanup:[] }
+// Каждая пара участников — это отдельная строка в 'calls' (как в обычном 1:1 звонке), помеченная
+// group_id/session_id/group_name. Первое приглашение от инициатора идёт как обычный статус 'ringing'
+// (использует уже существующий баннер входящего звонка). Все остальные соединения внутри mesh-сетки
+// заводятся автоматически со статусом 'mesh-pending' — без баннера, т.к. согласие уже дано фактом
+// присоединения к звонку. Кто из пары кому звонит при mesh-довключении решает сравнение uid (меньший uid
+// инициирует), чтобы не было двойных встречных предложений.
+
+function attachGroupSessionChannel(){
+  const gc = currentGroupCall;
+  if(!gc) return;
+  const channel = sb.channel('group-session-' + gc.sessionId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'calls', filter: `session_id=eq.${gc.sessionId}` }, (payload) => {
+      const row = payload.new;
+      if(!row || !currentGroupCall || currentGroupCall.sessionId !== gc.sessionId) return;
+      if(row.status === 'active'){
+        if(row.from_uid && row.from_uid !== state.user.uid) maybeConnectToActivePeer(row.from_uid, row.from_name);
+        if(row.to_uid && row.to_uid !== state.user.uid) maybeConnectToActivePeer(row.to_uid, row.to_name);
+      }
+      if(row.to_uid === state.user.uid && row.status === 'mesh-pending' && !currentGroupCall.peers[row.from_uid]){
+        createGroupPeer(row.from_uid, row.from_name, false, row);
+      }
+      if(row.status === 'ended' || row.status === 'declined'){
+        if(row.from_uid && row.from_uid !== state.user.uid) removeGroupPeer(row.from_uid);
+        if(row.to_uid && row.to_uid !== state.user.uid) removeGroupPeer(row.to_uid);
+      }
+    })
+    .subscribe();
+  gc.unsubs.push(() => sb.removeChannel(channel));
+}
+
+function maybeConnectToActivePeer(peerUid, peerName){
+  const gc = currentGroupCall;
+  if(!gc || peerUid === state.user.uid || gc.peers[peerUid]) return;
+  // Договорённость, чтобы не подключаться друг к другу дважды одновременно с двух сторон:
+  // инициирует та сторона, у которой uid меньше.
+  if(String(state.user.uid) < String(peerUid)){
+    createGroupPeer(peerUid, peerName, true, null, 'mesh-pending');
+  }
+}
+
+async function discoverActiveSessionPeers(){
+  const gc = currentGroupCall;
+  if(!gc) return;
+  try{
+    const { data } = await sb.from('calls').select('*').eq('session_id', gc.sessionId).eq('status', 'active');
+    (data||[]).forEach(row => {
+      if(row.from_uid && row.from_uid !== state.user.uid) maybeConnectToActivePeer(row.from_uid, row.from_name);
+      if(row.to_uid && row.to_uid !== state.user.uid) maybeConnectToActivePeer(row.to_uid, row.to_name);
+    });
+  }catch(e){ console.error('discoverActiveSessionPeers failed', e); }
+}
+
+async function createGroupPeer(peerUid, peerName, isOfferer, existingCallRow, initialStatus){
+  const gc = currentGroupCall;
+  if(!gc || gc.peers[peerUid]) return;
+  const pc = new RTCPeerConnection(RTC_CONFIG);
+  gc.localStream.getTracks().forEach(t => pc.addTrack(t, gc.localStream));
+  const remoteStream = new MediaStream();
+  let speakingAttached = false;
+  const peer = { pc, remoteStream, name: peerName, unsubs: [], speakingCleanup: [] };
+  gc.peers[peerUid] = peer;
+  pc.ontrack = (e) => {
+    e.streams[0].getTracks().forEach(t => remoteStream.addTrack(t));
+    renderGroupCallScreen();
+    if(!speakingAttached && remoteStream.getAudioTracks().length && currentGroupCall && currentGroupCall.peers[peerUid]){
+      speakingAttached = true;
+      peer.speakingCleanup.push(attachSpeakingDetector(remoteStream, 'group-call-tile-' + peerUid, true));
+    }
+  };
+  pc.oniceconnectionstatechange = () => {
+    if(pc.iceConnectionState === 'failed'){ console.warn('group call ICE failed with', peerUid); }
+  };
+
+  // Тот же приём, что и в 1:1 звонках: onicecandidate назначаем сразу, а кандидаты,
+  // сгенерированные до появления id строки в БД, буферизуем и досылаем следом.
+  let pendingCandidates = [];
+  let rowIdReady = existingCallRow ? existingCallRow.id : null;
+  const mySide = isOfferer ? 'caller' : 'callee';
+  const otherSide = isOfferer ? 'callee' : 'caller';
+  pc.onicecandidate = (e) => {
+    if(!e.candidate) return;
+    if(rowIdReady){
+      sb.from('call_candidates').insert({ call_id: rowIdReady, side: mySide, candidate: e.candidate.toJSON() });
+    } else {
+      pendingCandidates.push(e.candidate.toJSON());
+    }
+  };
+
+  let rowId;
+  if(isOfferer){
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    const { data: callRow, error } = await sb.from('calls').insert({
+      from_uid: state.user.uid, from_name: state.user.name, to_uid: peerUid, to_name: peerName,
+      type: gc.type, status: initialStatus || 'mesh-pending', offer: { sdp: offer.sdp, type: offer.type },
+      group_id: gc.groupId, session_id: gc.sessionId, group_name: gc.groupName, ts: Date.now()
+    }).select().single();
+    if(error){ console.error('group peer offer insert failed', error); delete gc.peers[peerUid]; try{ pc.close(); }catch(e2){} return; }
+    rowId = callRow.id;
+  } else {
+    rowId = existingCallRow.id;
+    await pc.setRemoteDescription(new RTCSessionDescription(existingCallRow.offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await sb.from('calls').update({ status: 'active', answer: { sdp: answer.sdp, type: answer.type } }).eq('id', rowId);
+  }
+  rowIdReady = rowId;
+  if(pendingCandidates.length){
+    pendingCandidates.forEach(c => sb.from('call_candidates').insert({ call_id: rowId, side: mySide, candidate: c }));
+    pendingCandidates = [];
+  }
+  peer.rowId = rowId;
+
+  const ch1 = sb.channel('group-call-row-' + rowId)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${rowId}` }, async (payload) => {
+      const data = payload.new;
+      if(!data || !currentGroupCall || !currentGroupCall.peers[peerUid]) return;
+      if(data.status === 'declined' || data.status === 'ended'){ removeGroupPeer(peerUid); return; }
+      if(isOfferer && data.answer && pc.currentRemoteDescription === null){
+        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      }
+    })
+    .subscribe();
+  const ch2 = sb.channel('group-call-cand-' + rowId + '-' + otherSide)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_candidates', filter: `call_id=eq.${rowId}` }, (payload) => {
+      const row = payload.new;
+      if(row && row.side === otherSide) pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
+    })
+    .subscribe();
+  peer.unsubs.push(() => sb.removeChannel(ch1), () => sb.removeChannel(ch2));
+  renderGroupCallScreen();
+}
+
+function removeGroupPeer(peerUid){
+  const gc = currentGroupCall;
+  if(!gc) return;
+  const peer = gc.peers[peerUid];
+  if(!peer) return;
+  delete gc.peers[peerUid];
+  peer.unsubs.forEach(fn => { try{ fn(); }catch(e){} });
+  (peer.speakingCleanup||[]).forEach(fn => { try{ fn(); }catch(e){} });
+  try{ peer.pc.close(); }catch(e){}
+  renderGroupCallScreen();
+}
+
+async function startGroupCall(groupId, groupName, type){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  if(currentCall || currentGroupCall){ showToast('Уже есть активный звонок'); return; }
+  let localStream, hasCamera;
+  try{
+    const res = await getCallStream(type);
+    localStream = res.stream; hasCamera = res.hasCamera;
+  }catch(e){
+    showToast('Нет доступа к микрофону/камере: ' + (e.name || e.message));
+    return;
+  }
+  let members;
+  try{
+    const { data } = await sb.from('groups').select('members, member_names').eq('id', groupId).single();
+    members = (data?.members || []).filter(uid => uid !== state.user.uid).map(uid => ({ uid, name: data.member_names?.[uid] || 'Без имени' }));
+  }catch(e){
+    showToast('Не удалось загрузить участников группы'); try{ localStream.getTracks().forEach(t=>t.stop()); }catch(e2){} return;
+  }
+  if(!members.length){ showToast('В группе больше никого нет'); try{ localStream.getTracks().forEach(t=>t.stop()); }catch(e2){} return; }
+  const sessionId = groupId + '_' + Date.now();
+  currentGroupCall = { sessionId, groupId, groupName, type, localStream, hasCamera, peers: {}, screenSharing: false, screenTrack: null, unsubs: [] };
+  currentGroupCall.speakingCleanup = [attachSpeakingDetector(localStream, 'group-call-tile-local', true)];
+  attachGroupSessionChannel();
+  renderGroupCallScreen();
+  for(const m of members){
+    await createGroupPeer(m.uid, m.name, true, null, 'ringing');
+  }
+}
+
+// Принять входящее приглашение в групповой звонок (из баннера)
+async function joinGroupCallFromInvite(call){
+  let localStream, hasCamera;
+  try{
+    const res = await getCallStream(call.type);
+    localStream = res.stream; hasCamera = res.hasCamera;
+  }catch(e){
+    showToast('Нет доступа к микрофону/камере: ' + (e.name || e.message));
+    try{ await sb.from('calls').update({ status: 'declined' }).eq('id', call.id); }catch(e2){}
+    return;
+  }
+  currentGroupCall = { sessionId: call.sessionId, groupId: call.groupId, groupName: call.groupName, type: call.type, localStream, hasCamera, peers: {}, screenSharing: false, screenTrack: null, unsubs: [] };
+  currentGroupCall.speakingCleanup = [attachSpeakingDetector(localStream, 'group-call-tile-local', true)];
+  attachGroupSessionChannel();
+  renderGroupCallScreen();
+  await createGroupPeer(call.fromUid, call.fromName, false, { id: call.id, offer: call.offer });
+  await discoverActiveSessionPeers();
+}
+
+// Присоединиться к уже идущему групповому звонку без личного приглашения (кнопка «Присоединиться» в чате)
+async function joinOngoingGroupCall(groupId, groupName, sessionId, type){
+  if(currentCall || currentGroupCall){ showToast('Уже есть активный звонок'); return; }
+  let localStream, hasCamera;
+  try{
+    const res = await getCallStream(type);
+    localStream = res.stream; hasCamera = res.hasCamera;
+  }catch(e){
+    showToast('Нет доступа к микрофону/камере: ' + (e.name || e.message));
+    return;
+  }
+  currentGroupCall = { sessionId, groupId, groupName, type, localStream, hasCamera, peers: {}, screenSharing: false, screenTrack: null, unsubs: [] };
+  currentGroupCall.speakingCleanup = [attachSpeakingDetector(localStream, 'group-call-tile-local', true)];
+  attachGroupSessionChannel();
+  renderGroupCallScreen();
+  await discoverActiveSessionPeers();
+}
+
+async function checkForOngoingGroupCall(groupId){
+  if(!supabaseReady) return null;
+  try{
+    const since = Date.now() - 4*3600*1000;
+    const { data } = await sb.from('calls').select('session_id, type, ts').eq('group_id', groupId).eq('status', 'active').gt('ts', since).order('ts', { ascending: false }).limit(1);
+    const row = data && data[0];
+    return row ? { sessionId: row.session_id, type: row.type } : null;
+  }catch(e){ console.error('checkForOngoingGroupCall failed', e); return null; }
+}
+
+function endGroupCall(){
+  const gc = currentGroupCall;
+  if(!gc) return;
+  currentGroupCall = null;
+  Object.keys(gc.peers).forEach(uid => {
+    const peer = gc.peers[uid];
+    peer.unsubs.forEach(fn => { try{ fn(); }catch(e){} });
+    (peer.speakingCleanup||[]).forEach(fn => { try{ fn(); }catch(e){} });
+    try{ peer.pc.close(); }catch(e){}
+    if(peer.rowId) sb.from('calls').update({ status: 'ended' }).eq('id', peer.rowId).then(()=>{}).catch(()=>{});
+  });
+  (gc.unsubs||[]).forEach(fn => { try{ fn(); }catch(e){} });
+  (gc.speakingCleanup||[]).forEach(fn => { try{ fn(); }catch(e){} });
+  try{ gc.localStream.getTracks().forEach(t => t.stop()); }catch(e){}
+  try{ if(gc.screenTrack) gc.screenTrack.stop(); }catch(e){}
+  renderGroupCallScreen();
+}
+
+function renderGroupCallScreen(){
+  let overlay = document.getElementById('group-call-overlay');
+  if(overlay) overlay.remove();
+  if(!currentGroupCall) return;
+  const gc = currentGroupCall;
+
+  overlay = document.createElement('div');
+  overlay.id = 'group-call-overlay';
+  overlay.className = 'call-overlay';
+
+  const topBar = document.createElement('div');
+  topBar.className = 'call-topbar';
+  const peerCount = Object.keys(gc.peers).length;
+  topBar.textContent = '👥 ' + gc.groupName + ' · ' + (peerCount + 1) + ' в звонке';
+  overlay.appendChild(topBar);
+
+  const grid = document.createElement('div');
+  grid.className = 'call-grid';
+
+  function makeTile(labelName, tileId){
+    const tile = document.createElement('div');
+    tile.className = 'call-tile';
+    tile.id = tileId;
+    const label = document.createElement('div');
+    label.className = 'call-tile-label';
+    label.appendChild(document.createTextNode(labelName));
+    tile.appendChild(label);
+    return tile;
+  }
+
+  // локальный тайл
+  const localTile = makeTile('Ты', 'group-call-tile-local');
+  const localVid = document.createElement('video');
+  localVid.autoplay = true; localVid.playsInline = true; localVid.muted = true; localVid.className = 'call-tile-video';
+  localVid.srcObject = gc.localStream;
+  const localAvatar = document.createElement('div');
+  localAvatar.className = 'call-avatar';
+  localAvatar.textContent = 'Я';
+  const updateLocalAvatarVisibility = () => {
+    const track = gc.localStream.getVideoTracks()[0];
+    const camOn = !!track && track.enabled;
+    localVid.classList.toggle('cam-off', !camOn);
+    localAvatar.style.display = camOn ? 'none' : 'flex';
+  };
+  localTile.insertBefore(localAvatar, localTile.firstChild);
+  localTile.insertBefore(localVid, localTile.firstChild);
+  updateLocalAvatarVisibility();
+  gc.updateLocalAvatarVisibility = updateLocalAvatarVisibility;
+  grid.appendChild(localTile);
+
+  const remoteMediaEls = [localVid];
+  Object.keys(gc.peers).forEach(uid => {
+    const peer = gc.peers[uid];
+    const tile = makeTile(peer.name || '?', 'group-call-tile-' + uid);
+    const vid = document.createElement('video');
+    vid.autoplay = true; vid.playsInline = true; vid.className = 'call-tile-video';
+    vid.srcObject = peer.remoteStream;
+    const avatar = document.createElement('div');
+    avatar.className = 'call-avatar';
+    avatar.textContent = (peer.name || '?')[0].toUpperCase();
+    const updateVisibility = () => {
+      const track = peer.remoteStream.getVideoTracks()[0];
+      const camOn = !!track && !track.muted && track.enabled;
+      vid.classList.toggle('cam-off', !camOn);
+      avatar.style.display = camOn ? 'none' : 'flex';
+    };
+    tile.insertBefore(avatar, tile.firstChild);
+    tile.insertBefore(vid, tile.firstChild);
+    updateVisibility();
+    peer.remoteStream.addEventListener('addtrack', updateVisibility);
+    grid.appendChild(tile);
+    remoteMediaEls.push(vid);
+  });
+  overlay.appendChild(grid);
+
+  const unmuteBtn = document.createElement('button');
+  unmuteBtn.className = 'call-ctrl-btn-labeled';
+  unmuteBtn.style.cssText = 'position:absolute;top:14px;right:20px;background:#e6453a;color:#fff;border:none;border-radius:24px;padding:8px 16px;font-family:Inter,sans-serif;font-size:13px;cursor:pointer;z-index:2;';
+  unmuteBtn.textContent = '🔇 Включить звук';
+  unmuteBtn.style.display = 'none';
+  unmuteBtn.onclick = () => {
+    remoteMediaEls.forEach(m => { m.muted = (m === localVid); m.play().catch(()=>{}); });
+    unmuteBtn.style.display = 'none';
+  };
+  overlay.appendChild(unmuteBtn);
+  remoteMediaEls.forEach(m => {
+    if(m === localVid) return;
+    m.play().catch(err => {
+      console.warn('autoplay blocked, showing manual unmute button', err);
+      unmuteBtn.style.display = 'block';
+    });
+  });
+
+  const bar = document.createElement('div');
+  bar.className = 'call-bottom-bar';
+
+  const micBtn = document.createElement('button');
+  micBtn.className = 'call-ctrl-btn';
+  const micEnabled = () => gc.localStream.getAudioTracks().every(t => t.enabled);
+  const renderMicBtn = () => {
+    micBtn.innerHTML = micEnabled() ? CALL_ICONS.mic : CALL_ICONS.micOff;
+    micBtn.classList.toggle('off', !micEnabled());
+  };
+  micBtn.onclick = () => {
+    gc.localStream.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
+    renderMicBtn();
+  };
+  renderMicBtn();
+  bar.appendChild(micBtn);
+
+  if(gc.hasCamera){
+    const camBtn = document.createElement('button');
+    camBtn.className = 'call-ctrl-btn';
+    const camEnabled = () => gc.localStream.getVideoTracks().every(t => t.enabled);
+    const renderCamBtn = () => { camBtn.innerHTML = camEnabled() ? CALL_ICONS.cam : CALL_ICONS.camOff; camBtn.classList.toggle('off', !camEnabled()); };
+    camBtn.onclick = () => {
+      gc.localStream.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
+      renderCamBtn();
+      if(gc.updateLocalAvatarVisibility) gc.updateLocalAvatarVisibility();
+    };
+    renderCamBtn();
+    bar.appendChild(camBtn);
+  }
+
+  const hangupBtn = document.createElement('button');
+  hangupBtn.className = 'call-hangup-btn'; hangupBtn.innerHTML = CALL_ICONS.phone;
+  hangupBtn.onclick = () => endGroupCall();
+  bar.appendChild(hangupBtn);
+  overlay.appendChild(bar);
+
+  document.body.appendChild(overlay);
 }
 
 function mapFriendRequestRow(r){
@@ -2544,10 +2975,10 @@ async function createGoal(g){
 // вторым, читал устаревшую копию этого поля и своей записью стирал прогресс первого.
 // Теперь прогресс каждого человека — это его собственная независимая строка в таблице
 // goal_progress (goal_id, uid, item_id) — записи разных людей никогда не пересекаются.
-async function logGoalItemProgress(goalId, itemId, value){
+async function logGoalItemProgress(goalId, itemId, value, targetUid){
   if(!supabaseReady) throw backendNotConfiguredError();
   const { error } = await sb.from('goal_progress').upsert(
-    { goal_id: goalId, uid: state.user.uid, item_id: itemId, value },
+    { goal_id: goalId, uid: targetUid || state.user.uid, item_id: itemId, value },
     { onConflict: 'goal_id,uid,item_id' }
   );
   if(error) throw new Error(error.message);
@@ -2560,17 +2991,26 @@ async function listGoalItemProgress(goalId){
   return data || [];
 }
 
+// В режиме "Вместе" (shared) задача одна на всех — любое отмеченное действие любого
+// участника должно писаться в ОДНУ и ту же общую запись (привязанную к владельцу цели),
+// а не в свою отдельную. В режиме "Соревнование" у каждого по-прежнему своя запись.
+function goalProgressUid(goal){
+  return goal.mode === 'shared' ? goal.owner_uid : state.user.uid;
+}
+
 async function toggleGoalItemDone(goal, itemId, itemProgress){
-  const mine = (itemProgress||[]).find(p => p.uid === state.user.uid && p.item_id === itemId);
+  const uid = goalProgressUid(goal);
+  const mine = (itemProgress||[]).find(p => p.uid === uid && p.item_id === itemId);
   const newVal = (mine && Number(mine.value) > 0) ? 0 : 1;
-  await logGoalItemProgress(goal.id, itemId, newVal);
+  await logGoalItemProgress(goal.id, itemId, newVal, uid);
   return newVal;
 }
 
 async function logGoalItemAmount(goal, itemId, delta, itemProgress){
-  const mine = (itemProgress||[]).find(p => p.uid === state.user.uid && p.item_id === itemId);
+  const uid = goalProgressUid(goal);
+  const mine = (itemProgress||[]).find(p => p.uid === uid && p.item_id === itemId);
   const newVal = (mine ? Number(mine.value) : 0) + delta;
-  await logGoalItemProgress(goal.id, itemId, newVal);
+  await logGoalItemProgress(goal.id, itemId, newVal, uid);
   return newVal;
 }
 
@@ -2632,7 +3072,7 @@ function computeGoalPercent(goal, progressEntries, forUid, itemProgress){
   if(goal.kind === 'checklist'){
     const items = goal.items || [];
     if(!items.length) return 0;
-    const uid = forUid || state.user.uid;
+    const uid = goal.mode === 'shared' ? goal.owner_uid : (forUid || state.user.uid);
     const mine = (itemProgress||[]).filter(p => p.uid === uid);
     let doneShare = 0;
     items.forEach(it => {
@@ -3182,11 +3622,11 @@ async function openGoalDetail(goal){
 
     const closeBtn = el('button','btn ghost','Закрыть');
     closeBtn.style.marginTop = '6px';
-    closeBtn.onclick = () => ov.remove();
+    closeBtn.onclick = () => { ov.remove(); if(state.screen === 'goals'){ state.goalsLoaded = false; render(); } };
     box.appendChild(closeBtn);
   }
   draw();
-  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  ov.onclick = (e) => { if(e.target === ov){ ov.remove(); if(state.screen === 'goals'){ state.goalsLoaded = false; render(); } } };
 }
 
 function openRoomSearchModal(){
@@ -3276,9 +3716,8 @@ function renderGoalsScreen(){
   w.appendChild(renderNav('goals'));
 
   const headerRow = el('div','calendar-header-row');
-  headerRow.appendChild(el('h1','','Планы'));
   const headerBtns = el('div','');
-  headerBtns.style.display = 'flex'; headerBtns.style.gap = '10px';
+  headerBtns.style.display = 'flex'; headerBtns.style.gap = '10px'; headerBtns.style.marginLeft = 'auto';
   const findRoomBtn = el('button','btn ghost','🔍 Найти комнату');
   findRoomBtn.onclick = () => openRoomSearchModal();
   headerBtns.appendChild(findRoomBtn);
@@ -3322,14 +3761,7 @@ function renderGoalsScreen(){
     leftCol.appendChild(buildFeaturedChecklistCard(checklists, state.goalsFeaturedIndex));
   }
 
-  const trackerHeaderRow = el('div','calendar-header-row');
-  trackerHeaderRow.appendChild(el('h1','goal-section-title','Трекер'));
-  const addHabitBtn = el('button','btn ghost icon-only-btn','+');
-  addHabitBtn.title = 'Добавить трекер';
-  addHabitBtn.onclick = () => openGoalModal('habit');
-  trackerHeaderRow.appendChild(addHabitBtn);
-  leftCol.appendChild(trackerHeaderRow);
-  habits.forEach(goal => leftCol.appendChild(buildGoalGridCard(goal)));
+  leftCol.appendChild(buildTrackerPanel(habits));
 
   if(numerics.length){
     rightCol.appendChild(el('h1','goal-section-title','Числовые цели'));
@@ -3379,6 +3811,110 @@ function buildGoalGridCard(goal){
     card.appendChild(avRow);
   }
   return card;
+}
+
+function buildTrackerPanel(habits){
+  const panel = el('div','card card-translucent goal-panel-50 goal-tracker-panel');
+
+  const addHabitBtn = el('button','btn ghost icon-only-btn goal-tracker-add-btn','+');
+  addHabitBtn.title = 'Добавить трекер';
+  addHabitBtn.onclick = () => openGoalModal('habit');
+  panel.appendChild(addHabitBtn);
+
+  // Общая привычка занимает больше места (нужно место под строки всех участников),
+  // поэтому если первая привычка на двоих — показываем только её; для одиночных
+  // привычек в карточку помещается две.
+  let shown = [];
+  if(habits.length){
+    shown = habits[0].mode !== 'solo' ? habits.slice(0,1) : habits.slice(0,2);
+  }
+
+  shown.forEach(goal => panel.appendChild(buildInlineHabitRow(goal)));
+
+  if(shown.length <= 1){
+    const btnRow = el('div','goal-tracker-empty-actions');
+    if(shown.length === 1){
+      const inviteBtn = el('button','btn ghost','Пригласить друга');
+      inviteBtn.onclick = (e) => openInviteFriendPopover(shown[0], inviteBtn);
+      btnRow.appendChild(inviteBtn);
+    }
+    const addBtn = el('button','btn ghost','+ добавить трекер');
+    addBtn.onclick = () => openGoalModal('habit');
+    btnRow.appendChild(addBtn);
+    panel.appendChild(btnRow);
+  }
+
+  return panel;
+}
+
+function openInviteFriendPopover(goal, anchorBtn){
+  const rect = anchorBtn.getBoundingClientRect();
+  const existing = document.getElementById('help-picker-popup'); if(existing) existing.remove();
+  const popup = el('div','emoji-picker'); popup.id = 'help-picker-popup';
+  popup.style.left = rect.left + 'px'; popup.style.top = (rect.bottom + 6) + 'px'; popup.style.width='260px'; popup.style.maxHeight='none';
+  const picker = buildContactSearchPicker({
+    excludeUids: () => [goal.owner_uid, ...(goal.participants||[]).map(p=>p.uid)],
+    onSelect: async (f) => {
+      popup.remove();
+      try{
+        const participants = [...(goal.participants||[]), { uid: f.uid, name: f.name }];
+        await updateGoal(goal.id, { participants, mode: goal.mode === 'solo' ? 'shared' : goal.mode });
+        state.goalsLoaded = false; render();
+      }catch(err){ showToast('Не удалось добавить: '+err.message); }
+    },
+  });
+  popup.appendChild(picker);
+  document.body.appendChild(popup);
+  setTimeout(() => document.addEventListener('click', function closeHelp(ev){
+    if(!popup.contains(ev.target) && ev.target !== anchorBtn){ popup.remove(); document.removeEventListener('click', closeHelp); }
+  }), 0);
+}
+
+function buildInlineHabitRow(goal){
+  const row = el('div','goal-tracker-row');
+  row.onclick = () => openGoalDetail(goal);
+  const topLine = el('div','goal-tracker-row-top');
+  topLine.appendChild(el('div','goal-tracker-row-title', goal.title));
+  const streakBadge = el('div','goal-streak-badge','🔥 …');
+  topLine.appendChild(streakBadge);
+  row.appendChild(topLine);
+
+  const peopleWrap = el('div','goal-tracker-row-people');
+  row.appendChild(peopleWrap);
+
+  const allPeople = [{ uid: goal.owner_uid, name: goal.owner_name }, ...(goal.participants||[])];
+  const seen = new Set(); const uniquePeople = allPeople.filter(p => !seen.has(p.uid) && seen.add(p.uid));
+  const showNames = uniquePeople.length > 1;
+
+  function refresh(){
+    listGoalProgress(goal.id).then(progress => {
+      const streak = computeGoalStreak(progress, goal.mode === 'competition' ? state.user.uid : null);
+      streakBadge.textContent = `🔥 ${streak}`;
+      peopleWrap.innerHTML = '';
+      const todayKey = goalDayKey();
+      const relevantPeople = goal.mode === 'solo' ? [uniquePeople[0]] : uniquePeople;
+      relevantPeople.forEach(p => {
+        const entry = progress.find(e => e.uid === p.uid && e.day === todayKey);
+        const done = !!entry && Number(entry.value) > 0;
+        const item = el('div','goal-tracker-tick-item');
+        if(showNames) item.appendChild(el('span','goal-tracker-tick-name', p.uid === state.user.uid ? 'Вы' : p.name));
+        const tick = el('div','goal-week-box' + (done ? ' done' : ''), done ? '✓' : '');
+        if(p.uid === state.user.uid){
+          tick.classList.add('clickable');
+          tick.onclick = async (e) => {
+            e.stopPropagation();
+            try{ await logGoalProgress(goal.id, todayKey, done ? 0 : 1); refresh(); }
+            catch(err){ showToast('Не получилось сохранить: '+err.message); }
+          };
+        }
+        item.appendChild(tick);
+        peopleWrap.appendChild(item);
+      });
+    }).catch(()=>{});
+  }
+  refresh();
+
+  return row;
 }
 
 function openEditPeriodModal(goal){
@@ -3433,7 +3969,7 @@ function openEditPeriodModal(goal){
 
 function buildFeaturedChecklistCard(checklists, index){
   const goal = checklists[index];
-  const card = el('div','card card-translucent goal-featured-card');
+  const card = el('div','card card-translucent goal-panel-50 goal-featured-card');
 
   const topRow = el('div','goal-featured-top');
   const helpBtn = el('button','btn ghost goal-help-btn','+ Позвать на помощь');
@@ -3529,7 +4065,8 @@ function buildFeaturedChecklistCard(checklists, index){
     const seen = new Set(); const uniquePeople = allPeople.filter(p => !seen.has(p.uid) && seen.add(p.uid));
     const items = goal.items || [];
 
-    function myRec(itemId){ return itemProgress.find(p => p.uid === state.user.uid && p.item_id === itemId); }
+    const progressUid = goalProgressUid(goal);
+    function myRec(itemId){ return itemProgress.find(p => p.uid === progressUid && p.item_id === itemId); }
 
     listCol.innerHTML = '';
     if(items.length > 8) listCol.classList.add('dense');
@@ -3563,7 +4100,7 @@ function buildFeaturedChecklistCard(checklists, index){
               const newVal = await logGoalItemAmount(goal, item.id, v, itemProgress);
               const existingRec = myRec(item.id);
               if(existingRec) existingRec.value = newVal;
-              else itemProgress.push({ goal_id: goal.id, uid: state.user.uid, item_id: item.id, value: newVal });
+              else itemProgress.push({ goal_id: goal.id, uid: progressUid, item_id: item.id, value: newVal });
               refreshBody();
             }
             catch(err){ showToast('Ошибка: '+err.message); }
@@ -3587,13 +4124,15 @@ function buildFeaturedChecklistCard(checklists, index){
             const newVal = await toggleGoalItemDone(goal, item.id, itemProgress);
             const existingRec = myRec(item.id);
             if(existingRec) existingRec.value = newVal;
-            else itemProgress.push({ goal_id: goal.id, uid: state.user.uid, item_id: item.id, value: newVal });
+            else itemProgress.push({ goal_id: goal.id, uid: progressUid, item_id: item.id, value: newVal });
             refreshBody();
           }catch(e){ showToast('Ошибка: '+e.message); }
         };
         row.appendChild(cb);
         if(uniquePeople.length > 1){
-          const completers = uniquePeople.filter(p => itemProgress.some(rp => rp.uid === p.uid && rp.item_id === item.id && Number(rp.value) > 0));
+          const completers = goal.mode === 'shared'
+            ? (done ? uniquePeople : [])
+            : uniquePeople.filter(p => itemProgress.some(rp => rp.uid === p.uid && rp.item_id === item.id && Number(rp.value) > 0));
           if(completers.length){
             const avGroup = el('div','goal-item-avatars');
             completers.forEach(p => {
@@ -3632,8 +4171,8 @@ function buildFeaturedChecklistCard(checklists, index){
       card.appendChild(doneRow);
     }
 
-    if(uniquePeople.length > 1){
-      barsWrap.innerHTML = '';
+    barsWrap.innerHTML = '';
+    if(goal.mode === 'competition' && uniquePeople.length > 1){
       uniquePeople.forEach(p => {
         const pct = Math.round(computeGoalPercent(goal, [], p.uid, itemProgress));
         const row = el('div','goal-mini-bar-row');
@@ -4419,6 +4958,186 @@ async function sendGroupMessage(groupId, text, imageData, voiceData, videoData, 
   if(error) throw new Error(error.message);
 }
 
+// ---------------- роли и права в группе ----------------
+// group.created_by — владелец, все права всегда, не может быть удалён/понижен.
+// group.admins — массив uid админов, назначаются владельцем; могут удалять обычных участников
+//   (но не других админов и не владельца) и имеют все обычные права по умолчанию.
+// group.member_perms — { [uid]: { addMembers: bool, editInfo: bool } } — точечные ограничения,
+//   которые владелец/админ может снять с конкретного обычного участника (по умолчанию у всех true).
+function isGroupOwner(group, uid){ return !!group && group.created_by === uid; }
+function isGroupAdmin(group, uid){ return !!group && Array.isArray(group.admins) && group.admins.includes(uid); }
+function groupMemberCan(group, uid, key){
+  if(isGroupOwner(group, uid) || isGroupAdmin(group, uid)) return true;
+  const perms = group?.member_perms?.[uid];
+  if(!perms || perms[key] === undefined) return true; // по умолчанию всё разрешено
+  return !!perms[key];
+}
+function canManageGroupMember(group, actorUid, targetUid){
+  if(actorUid === targetUid) return false;
+  if(isGroupOwner(group, actorUid)) return targetUid !== group.created_by;
+  if(isGroupAdmin(group, actorUid)) return !isGroupOwner(group, targetUid) && !isGroupAdmin(group, targetUid);
+  return false;
+}
+
+async function loadGroupInfo(groupId){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { data, error } = await sb.from('groups').select('*').eq('id', groupId).single();
+  if(error) throw new Error(error.message);
+  return data;
+}
+
+async function updateGroupInfo(groupId, patch){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('groups').update(patch).eq('id', groupId);
+  if(error) throw new Error(error.message);
+}
+
+async function setGroupMemberPerm(group, targetUid, key, value){
+  const perms = { ...(group.member_perms || {}) };
+  perms[targetUid] = { ...(perms[targetUid] || {}), [key]: value };
+  await updateGroupInfo(group.id, { member_perms: perms });
+  group.member_perms = perms;
+}
+
+async function setGroupAdmin(group, targetUid, makeAdmin){
+  const admins = new Set(group.admins || []);
+  if(makeAdmin) admins.add(targetUid); else admins.delete(targetUid);
+  const list = [...admins];
+  await updateGroupInfo(group.id, { admins: list });
+  group.admins = list;
+}
+
+async function removeGroupMember(group, targetUid){
+  const members = (group.members || []).filter(uid => uid !== targetUid);
+  const memberNames = { ...(group.member_names || {}) };
+  delete memberNames[targetUid];
+  const admins = (group.admins || []).filter(uid => uid !== targetUid);
+  const memberPerms = { ...(group.member_perms || {}) };
+  delete memberPerms[targetUid];
+  await updateGroupInfo(group.id, { members, member_names: memberNames, admins, member_perms: memberPerms });
+  group.members = members; group.member_names = memberNames; group.admins = admins; group.member_perms = memberPerms;
+}
+
+function renderGroupMembersSection(container, group, canAddMembers){
+  container.innerHTML = '';
+  const me = state.user.uid;
+  const card = el('div','card');
+  card.appendChild(el('div','', 'Участники (' + (group.members||[]).length + ')')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:15px;margin-bottom:10px;';
+
+  const listWrap = el('div','');
+  card.appendChild(listWrap);
+
+  function refresh(){
+    renderGroupMembersSection(container, group, groupMemberCan(group, me, 'addMembers'));
+  }
+
+  (group.members||[]).forEach(uid => {
+    const name = group.member_names?.[uid] || 'Без имени';
+    const row = el('div','');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:10px;';
+    const av = el('div','avatar-circle', (name||'?')[0].toUpperCase());
+    av.style.width = '34px'; av.style.height = '34px'; av.style.fontSize = '14px'; av.style.flexShrink = '0';
+    fillAvatarAsync(av, uid);
+    row.appendChild(av);
+
+    const col = el('div','');
+    col.style.flex = '1'; col.style.minWidth = '0';
+    const nameLine = el('div','');
+    nameLine.style.display = 'flex'; nameLine.style.alignItems = 'center'; nameLine.style.gap = '6px';
+    nameLine.appendChild(el('span','', name + (uid === me ? ' (ты)' : '')));
+    if(isGroupOwner(group, uid)) nameLine.appendChild(el('span','badge-owner','Владелец')).style.cssText = 'font-size:11px;padding:2px 7px;border-radius:8px;background:rgba(124,158,255,0.22);color:var(--accent, #7c9eff);';
+    else if(isGroupAdmin(group, uid)) nameLine.appendChild(el('span','badge-admin','Админ')).style.cssText = 'font-size:11px;padding:2px 7px;border-radius:8px;background:rgba(52,199,89,0.18);color:#34c759;';
+    col.appendChild(nameLine);
+    const statusLine = el('div','meta','');
+    col.appendChild(statusLine);
+    if(uid !== me){
+      getStatusText(uid).then(s => { statusLine.textContent = s || ''; }).catch(()=>{});
+    }
+    row.appendChild(col);
+
+    if(canManageGroupMember(group, me, uid)){
+      const moreBtn = el('button','icon-btn','⋯');
+      moreBtn.title = 'Управление участником';
+      moreBtn.onclick = (e) => {
+        e.stopPropagation();
+        closeContextMenu();
+        const menu = el('div','context-menu');
+        menu.id = 'msg-context-menu';
+        const amOwner = isGroupOwner(group, me);
+        if(amOwner){
+          const perms = ['addMembers','editInfo'];
+          const permLabels = { addMembers: 'Может добавлять участников', editInfo: 'Может менять фото/название группы' };
+          perms.forEach(key => {
+            const item = el('div','context-menu-item');
+            const cb = document.createElement('input');
+            cb.type = 'checkbox'; cb.checked = groupMemberCan(group, uid, key);
+            cb.style.width = 'auto'; cb.style.marginRight = '8px'; cb.style.marginBottom = '0';
+            item.appendChild(cb);
+            item.appendChild(document.createTextNode(permLabels[key]));
+            item.onclick = async (ev) => {
+              ev.stopPropagation();
+              cb.checked = !cb.checked;
+              try{ await setGroupMemberPerm(group, uid, key, cb.checked); showToast('Права обновлены ✓'); }
+              catch(err){ showToast('Не удалось сохранить: ' + (err.message||'ошибка')); cb.checked = !cb.checked; }
+            };
+            menu.appendChild(item);
+          });
+          const adminItem = el('div','context-menu-item', isGroupAdmin(group, uid) ? '➖ Убрать из админов' : '➕ Сделать админом');
+          adminItem.onclick = async (ev) => {
+            ev.stopPropagation(); closeContextMenu();
+            try{ await setGroupAdmin(group, uid, !isGroupAdmin(group, uid)); showToast('Готово ✓'); refresh(); }
+            catch(err){ showToast('Не удалось сохранить: ' + (err.message||'ошибка')); }
+          };
+          menu.appendChild(adminItem);
+        }
+        const removeItem = el('div','context-menu-item','🗑 Удалить из группы');
+        removeItem.style.color = '#e6453a';
+        removeItem.onclick = async (ev) => {
+          ev.stopPropagation(); closeContextMenu();
+          if(!confirm(name + ' будет удалён(а) из группы. Продолжить?')) return;
+          try{ await removeGroupMember(group, uid); showToast('Участник удалён ✓'); refresh(); }
+          catch(err){ showToast('Не удалось удалить: ' + (err.message||'ошибка')); }
+        };
+        menu.appendChild(removeItem);
+        document.body.appendChild(menu);
+        const rect = moreBtn.getBoundingClientRect();
+        const menuWidth = menu.offsetWidth || 200;
+        let left = rect.left;
+        if(left + menuWidth > window.innerWidth - 8){ left = window.innerWidth - menuWidth - 8; }
+        if(left < 8) left = 8;
+        menu.style.left = left + 'px';
+        menu.style.top = (rect.bottom + 6) + 'px';
+        setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+      };
+      row.appendChild(moreBtn);
+    }
+    listWrap.appendChild(row);
+  });
+
+  if(canAddMembers){
+    const addWrap = el('div','');
+    addWrap.style.marginTop = '10px';
+    const picker = buildContactSearchPicker({
+      placeholder: '🔍 Добавить друга в группу…',
+      excludeUids: () => group.members || [],
+      onSelect: async (f) => {
+        try{
+          const members = [...(group.members||[]), f.uid];
+          const memberNames = { ...(group.member_names||{}), [f.uid]: f.name };
+          await updateGroupInfo(group.id, { members, member_names: memberNames });
+          group.members = members; group.member_names = memberNames;
+          showToast(f.name + ' добавлен(а) в группу ✓');
+          refresh();
+        }catch(err){ showToast('Не удалось добавить: ' + (err.message||'ошибка')); }
+      }
+    });
+    addWrap.appendChild(picker);
+    card.appendChild(addWrap);
+  }
+
+  container.appendChild(card);
+}
+
 async function createGroup(name, memberUidsAndNames){
   if(!supabaseReady) throw backendNotConfiguredError();
   const me = state.user;
@@ -4485,12 +5204,38 @@ function listenToMessages(chatId, callback){
     const { data, error } = await sb.from('messages').select('*').eq('chat_id', chatId)
       .order('ts', { ascending: false }).limit(80);
     if(error){ console.error('chat listen failed', error); return; }
-    callback((data||[]).map(mapMessageRow).reverse());
+    const mapped = (data||[]).map(mapMessageRow).reverse();
+    chatMessagesCache[chatId] = mapped;
+    callback(mapped);
   }
+  // Если чат уже открывали раньше в этой сессии — отдаём кэш немедленно,
+  // без ожидания сети, чтобы экран не казался пустым на пару секунд.
+  if(chatMessagesCache[chatId]) callback(chatMessagesCache[chatId]);
   refetch();
-  const channel = sb.channel('messages-' + chatId)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` }, refetch)
-    .subscribe();
+  // Канал реалтайма иногда сам "умирает" (обрыв сети, вкладка долго была свёрнута) и
+  // после этого просто перестаёт присылать события — раньше это лечилось только
+  // перезагрузкой страницы. Теперь при статусе ошибки/обрыва/таймаута пересоздаём канал.
+  let channel = null;
+  let reconnectTimer = null;
+  let stopped = false;
+  function connect(){
+    channel = sb.channel('messages-' + chatId + '-' + Date.now())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` }, refetch)
+      .subscribe((status) => {
+        if(stopped) return;
+        if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED'){
+          if(reconnectTimer) return;
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            if(stopped) return;
+            sb.removeChannel(channel);
+            connect();
+            refetch();
+          }, 2000);
+        }
+      });
+  }
+  connect();
   // Резервный опрос: realtime-подписка иногда молча теряет событие (особенно если вкладка
   // была в фоне) — без опроса переписка тогда зависает и не обновляется до перезагрузки
   // страницы. Раз в 5 секунд не так расточительно, зато чат всегда доходит до актуального.
@@ -4501,6 +5246,8 @@ function listenToMessages(chatId, callback){
   const onVisible = () => { if(document.visibilityState === 'visible') refetch(); };
   document.addEventListener('visibilitychange', onVisible);
   return () => {
+    stopped = true;
+    if(reconnectTimer) clearTimeout(reconnectTimer);
     sb.removeChannel(channel);
     clearInterval(pollId);
     document.removeEventListener('visibilitychange', onVisible);
@@ -4768,33 +5515,8 @@ function openImagePreview(src, msgContext){
     img.style.transform = `scale(${scale})`;
   });
 
-  // Копировать — по правому клику на самом фото, отдельной кнопки для этого больше нет.
-  img.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    const existing = document.getElementById('image-context-menu'); if(existing) existing.remove();
-    const menu = document.createElement('div');
-    menu.id = 'image-context-menu';
-    menu.className = 'context-menu';
-    menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px';
-    const copyItem = document.createElement('div');
-    copyItem.className = 'context-menu-item';
-    copyItem.textContent = '📋 Копировать';
-    copyItem.onclick = async () => {
-      menu.remove();
-      try{
-        const resp = await fetch(src);
-        const blob = await resp.blob();
-        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        showToast('Фото скопировано ✓');
-      }catch(err){
-        console.error('copy image failed', err);
-        showToast('Не удалось скопировать — попробуй скачать');
-      }
-    };
-    menu.appendChild(copyItem);
-    document.body.appendChild(menu);
-    setTimeout(() => document.addEventListener('click', function closeMenu(){ menu.remove(); document.removeEventListener('click', closeMenu); }), 0);
-  });
+  // Убрала своё меню по правому клику — стандартное меню браузера уже само умеет
+  // "Копировать картинку", так что лучше не перекрывать его.
 
   if(msgContext && msgContext.mine){
     const editBtn = document.createElement('button');
@@ -5580,9 +6302,14 @@ function renderFriends(){
       }
       left.appendChild(nameCol);
       row.appendChild(left);
+      row.style.cursor = 'pointer';
+      row.onclick = () => {
+        if(!f.graph){ showToast('Пользователь ещё не заполнил анкету'); return; }
+        state.selectedPerson = f; state.screen = 'personView'; render();
+      };
       const msgIcon = el('button','icon-btn','✉️');
       msgIcon.title = 'Написать';
-      msgIcon.onclick = () => { openChat(f.uid, f.name); };
+      msgIcon.onclick = (e) => { e.stopPropagation(); openChat(f.uid, f.name); };
       row.appendChild(msgIcon);
       grid.appendChild(row);
     });
@@ -5669,6 +6396,10 @@ function compressImageToDataUrl(file, maxW){
 
 let chatUnsubscribe = null;
 let notifInterval = null;
+// Кэш последних сообщений по chatId — при повторном открытии чата показываем
+// то, что уже видели, сразу (без 2-секундной "пустоты"), а свежие данные
+// подгружаются в фоне и подменяют кэш, когда придут.
+let chatMessagesCache = {};
 
 function startNotificationPolling(){
   if(notifInterval) return;
@@ -6482,8 +7213,79 @@ function openContactInfoPanel(){
     };
   }
   panel.appendChild(bigAvatar);
-  panel.appendChild(el('div','contact-info-name', state.chatWith.name));
+  const nameRow = el('div','');
+  nameRow.style.display = 'flex'; nameRow.style.alignItems = 'center'; nameRow.style.justifyContent = 'center'; nameRow.style.gap = '8px';
+  const nameEl = el('div','contact-info-name', state.chatWith.name);
+  nameRow.appendChild(nameEl);
+  panel.appendChild(nameRow);
   panel.appendChild(el('div','contact-info-status', state.chatWith.isGroup ? 'Группа' : (state.chatStatusText || '')));
+
+  // --- групповые настройки: аватар, название, участники и права ---
+  if(state.chatWith.isGroup){
+    const groupId = state.chatWith.groupId;
+    const membersSlot = el('div','');
+    panel.appendChild(membersSlot);
+    loadGroupInfo(groupId).then(group => {
+      if(!document.getElementById('contact-info-overlay')) return; // панель уже закрыта
+      const me = state.user.uid;
+      const canEditInfo = groupMemberCan(group, me, 'editInfo');
+      const canAddMembers = groupMemberCan(group, me, 'addMembers');
+
+      if(group.avatar_url){
+        bigAvatar.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = group.avatar_url;
+        bigAvatar.appendChild(img);
+      }
+      if(canEditInfo){
+        bigAvatar.style.cursor = 'pointer';
+        const avatarFileInput = document.createElement('input');
+        avatarFileInput.type = 'file'; avatarFileInput.accept = 'image/*'; avatarFileInput.style.display = 'none';
+        avatarFileInput.onchange = async () => {
+          const file = avatarFileInput.files[0];
+          if(!file) return;
+          try{
+            const dataUrl = await compressImageToDataUrl(file, 400);
+            const url = await uploadMediaToStorage(dataUrl, 'group-avatars');
+            await updateGroupInfo(groupId, { avatar_url: url });
+            group.avatar_url = url;
+            bigAvatar.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = url;
+            bigAvatar.appendChild(img);
+            showToast('Аватар группы обновлён ✓');
+          }catch(e){
+            console.error('group avatar upload failed', e);
+            showToast('Не удалось загрузить аватар: ' + (e.message || 'ошибка'));
+          }
+        };
+        bigAvatar.onclick = () => avatarFileInput.click();
+        panel.appendChild(avatarFileInput);
+
+        const editNameBtn = el('button','icon-btn', CHAT_ICONS.edit);
+        editNameBtn.title = 'Изменить название группы';
+        editNameBtn.onclick = () => {
+          const newName = prompt('Новое название группы:', group.name);
+          if(!newName || !newName.trim() || newName.trim() === group.name) return;
+          const trimmed = newName.trim();
+          updateGroupInfo(groupId, { name: trimmed }).then(() => {
+            group.name = trimmed;
+            nameEl.textContent = trimmed;
+            if(state.chatWith.groupId === groupId) state.chatWith.name = trimmed;
+            const headerName = document.querySelector('.chat-header-name');
+            if(headerName) headerName.textContent = trimmed;
+            showToast('Название сохранено ✓');
+          }).catch(e => showToast('Не удалось сохранить: ' + (e.message||'ошибка')));
+        };
+        nameRow.appendChild(editNameBtn);
+      }
+
+      renderGroupMembersSection(membersSlot, group, canAddMembers);
+    }).catch(e => {
+      console.error('group info load failed', e);
+      membersSlot.appendChild(el('div','footer-note','Не удалось загрузить информацию о группе.'));
+    });
+  }
 
   if(!state.chatWith.isGroup && state.chatWith.uid){
     const schemaSlot = el('div','');
@@ -6721,6 +7523,37 @@ function buildChatPanel(container){
     headerActionsWrap.appendChild(calBtn);
   }
   if(state.chatWith.isGroup){
+    const groupCallBtn = el('button','icon-btn', CHAT_ICONS.call);
+    groupCallBtn.title = 'Позвонить в группу';
+    groupCallBtn.style.color = 'var(--ink)';
+    groupCallBtn.onclick = async (e) => {
+      e.stopPropagation();
+      closeContextMenu();
+      const groupId = state.chatWith.groupId, groupName = state.chatWith.name;
+      const ongoing = await checkForOngoingGroupCall(groupId);
+      if(ongoing){
+        joinOngoingGroupCall(groupId, groupName, ongoing.sessionId, ongoing.type);
+        return;
+      }
+      const menu = el('div','context-menu');
+      menu.id = 'msg-context-menu';
+      const opt1 = el('div','context-menu-item','📞 Обычный звонок всем');
+      opt1.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); startGroupCall(groupId, groupName, 'audio'); };
+      const opt2 = el('div','context-menu-item','📹 Видеозвонок всем');
+      opt2.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); startGroupCall(groupId, groupName, 'video'); };
+      menu.appendChild(opt1); menu.appendChild(opt2);
+      document.body.appendChild(menu);
+      const rect = groupCallBtn.getBoundingClientRect();
+      const menuWidth = menu.offsetWidth || 170;
+      let left = rect.left;
+      if(left + menuWidth > window.innerWidth - 8){ left = window.innerWidth - menuWidth - 8; }
+      if(left < 8) left = 8;
+      menu.style.left = left + 'px';
+      menu.style.top = (rect.bottom + 6) + 'px';
+      setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+    };
+    headerActionsWrap.appendChild(groupCallBtn);
+
     const calBtn = el('button','icon-btn', CHAT_ICONS.calendar);
     calBtn.title = 'Создать событие для группы';
     calBtn.style.color = 'var(--ink)';
@@ -7308,6 +8141,7 @@ function renderCreateGroup(){
       const label = document.createElement('label');
       label.className = 'group-member-row';
       label.style.display='flex'; label.style.alignItems='center'; label.style.gap='10px'; label.style.marginBottom='8px'; label.style.cursor='pointer';
+      label.style.padding='6px 8px'; label.style.transition='background 0.15s, outline 0.15s';
       const av = el('div','avatar-circle', (f.name||'?')[0].toUpperCase());
       av.style.width = '34px'; av.style.height = '34px'; av.style.fontSize = '14px'; av.style.flexShrink = '0';
       fillAvatarAsync(av, f.uid);
@@ -7315,6 +8149,17 @@ function renderCreateGroup(){
       label.appendChild(el('span','', f.name));
       const cb = document.createElement('input');
       cb.type='checkbox'; cb.style.width='auto'; cb.style.marginBottom='0'; cb.style.marginLeft='auto';
+      const syncRowHighlight = () => {
+        if(cb.checked){
+          label.style.background = 'rgba(52, 199, 89, 0.18)';
+          label.style.borderRadius = '10px';
+          label.style.outline = '1px solid rgba(52, 199, 89, 0.55)';
+        } else {
+          label.style.background = '';
+          label.style.outline = '';
+        }
+      };
+      cb.addEventListener('change', syncRowHighlight);
       label.appendChild(cb);
       listWrap.appendChild(label);
       checks.push({ cb, friend: f, row: label });
@@ -7886,6 +8731,7 @@ function renderAccountScreen(){
     remindedEventIds.clear();
     stopListeningForIncomingCalls();
     if(currentCall) endCall(true);
+    if(currentGroupCall) endGroupCall();
     logoutUser();
     state = { screen: 'landing', user: null, text: '', graph: null, error: '', authMode: 'login' };
     render();
