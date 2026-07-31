@@ -30,6 +30,9 @@
     min-height: 100vh;
     overflow-x: hidden;
   }
+  @supports (min-height: 100dvh){
+    body{ min-height: 100dvh; }
+  }
   .wrap{
     max-width: 820px;
     margin: 0 auto;
@@ -37,6 +40,9 @@
     min-height: 100vh;
     display:flex;
     flex-direction:column;
+  }
+  @supports (min-height: 100dvh){
+    .wrap{ min-height: 100dvh; }
   }
   .wrap.wide{ max-width: 1480px; }
   .eyebrow{
@@ -419,6 +425,7 @@
   }
   .nav-link:hover{ color: var(--gold); border-color: var(--gold); }
   .nav-link.active{ color: var(--gold); border-color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, transparent); }
+  .nav-link.nav-dragging{ opacity: 0.5; border-color: var(--gold); cursor: grabbing; }
   .nav-link.alert{
     color: #1a1406;
     background: var(--gold);
@@ -447,6 +454,19 @@
   .person-row-incomplete .name{ color: var(--ink-dim); }
 
   .folder-tabs-row{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom: 14px; }
+  .folder-tab{ display: inline-flex; align-items: center; gap: 6px; }
+  .chat-search-row{
+    display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 8px 12px;
+    background: var(--bg-soft); border-radius: 12px; color: var(--ink-dim);
+  }
+  .chat-search-input{
+    border: none; background: transparent; outline: none; flex: 1; margin-bottom: 0;
+    color: var(--ink); font-family: 'Inter', sans-serif; font-size: 14px;
+  }
+  @media (max-width: 640px){
+    .folder-tab-label{ display: none; }
+    .folder-tab{ padding: 8px 10px; }
+  }
   .folder-tab{
     font-size: 12.5px; padding: 7px 12px; border-radius: 999px;
     border: 1px solid var(--line); background: var(--bg-soft); color: var(--ink-dim);
@@ -567,6 +587,11 @@
     font-size: 13px; margin-top: 6px; opacity: 0.9; line-height:1.4;
   }
   .voice-duration{ font-size: 11px; opacity: 0.75; flex-shrink:0; }
+  .voice-speed-btn{
+    font-size: 10.5px; opacity: 0.8; flex-shrink: 0; background: var(--bg-soft); border: none;
+    border-radius: 10px; padding: 2px 6px; cursor: pointer; color: inherit; font-family: inherit;
+  }
+  .voice-speed-btn:hover{ opacity: 1; }
 
   .account-avatar{
     width: 64px; height: 64px; border-radius: 50%;
@@ -600,6 +625,53 @@
   .msg-time{
     font-size: 10px; opacity: 0.6; text-align: right; margin-top: 4px;
   }
+  .msg-reactions{
+    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
+  }
+  .msg-reaction-chip{
+    display: inline-flex; align-items: center; gap: 3px; background: var(--bg-soft);
+    border-radius: 12px; padding: 2px 7px; font-size: 13px; cursor: pointer; line-height: 1.3;
+    border: 1px solid transparent;
+  }
+  .msg-reaction-chip:hover{ background: var(--bg-hover, var(--bg-soft)); }
+  .msg-reaction-chip.mine{ border-color: var(--gold, #e6c15c); background: rgba(230,193,92,0.15); }
+  .msg-reaction-count{ font-size: 11px; opacity: 0.75; }
+  /* Когда на сообщении всего одна эмодзи-реакция — показываем её крупнее, как просили. */
+  .msg-reactions.single .msg-reaction-chip{ padding: 4px 10px; }
+  .msg-reactions.single .msg-reaction-emoji{ font-size: 22px; line-height: 1; }
+  .msg-reactions.single .msg-reaction-count{ font-size: 13px; }
+  .emoji-picker-cell.active{ background: rgba(230,193,92,0.25); border-radius: 8px; }
+  .record-cancel-hint{
+    position: fixed; z-index: 3000; background: var(--bg-soft); color: var(--ink-dim);
+    padding: 6px 12px; border-radius: 14px; font-size: 12.5px; white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25); pointer-events: none;
+  }
+  .record-cancel-hint.armed{ background: #e6453a; color: #fff; }
+  .record-cancel-btn{ margin-left: 4px; color: #e6453a; }
+  .blocked-chat-bar{
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 12px; background: rgba(230,69,58,0.12); border-radius: 12px; font-size: 13px;
+  }
+  .scheduled-banner{
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 12px; background: rgba(230,193,92,0.12); border-radius: 12px; font-size: 13px; margin-bottom: 8px;
+  }
+  .scheduled-item{
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--line);
+  }
+  .poll-option-edit-row{ display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .poll-toggle-row{ display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13.5px; cursor: pointer; }
+  .poll-slot{ min-width: 220px; }
+  .poll-question{ font-weight: 700; margin-bottom: 6px; }
+  .poll-vote-row{ display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: pointer; font-size: 13.5px; }
+  .poll-options-vote{ margin: 8px 0; }
+  .poll-result-row{ margin-bottom: 8px; }
+  .poll-result-row.mine .poll-result-bar{ background: var(--gold); }
+  .poll-result-label{ display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 3px; }
+  .poll-result-bar-track{ height: 8px; border-radius: 4px; background: var(--bg-soft); overflow: hidden; }
+  .poll-result-bar{ height: 100%; background: color-mix(in srgb, var(--gold) 60%, var(--ink-dim)); border-radius: 4px; }
+  .mute-badge{ font-size: 11px; opacity: 0.7; }
   .download-chip{
     font-size: 11px; opacity: 0.8; cursor: pointer; margin-top: 6px; text-decoration: underline;
     display: inline-block;
@@ -1034,7 +1106,7 @@
     cursor: pointer; color: var(--ink); text-align: center;
   }
   .calendar-month-label:hover{ border-color: var(--gold); color: var(--gold); }
-  .calendar-card{ padding: 16px; background: color-mix(in srgb, var(--panel) 14%, transparent) !important; border-color: color-mix(in srgb, var(--line) 40%, transparent) !important; }
+  .calendar-card{ padding: 16px; background: color-mix(in srgb, var(--panel) 4%, transparent) !important; border-color: color-mix(in srgb, var(--line) 40%, transparent) !important; }
   .calendar-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
   .calendar-dow{ text-align:center; font-size: 12px; color: var(--ink-dim); padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
   .calendar-cell{
@@ -1373,7 +1445,10 @@
   .thread-open{ border-color: var(--gold); background: color-mix(in srgb, var(--gold) 8%, var(--bg-soft)); }
 
   @media (max-width: 900px){
-    .app-shell{ height: auto; }
+    /* Раньше здесь стояло height:auto — это ломало flex-раскладку (app-shell перестаёт
+       заполнять оставшуюся высоту экрана), из-за чего на телефоне строка ввода сообщения
+       "гуляла" по странице вместе с высотой истории переписки вместо того, чтобы быть
+       прижатой к низу. Просто не трогаем высоту — она и так наследуется как flex:1. */
     .shell-sidebar{ width: 100%; }
     .app-shell:has(.shell-main .chat-panel-card) .shell-sidebar{ display: none; }
     .app-shell:not(:has(.shell-main .chat-panel-card)) .shell-main{ display: none; }
@@ -1610,6 +1685,10 @@ function listenForIncomingCalls(){
   async function refetch(){
     const { data } = await sb.from('calls').select('*').eq('to_uid', state.user.uid).eq('status', 'ringing').limit(1);
     const row = data && data[0];
+    if(row && isUserBlocked(row.from_uid)){
+      sb.from('calls').update({ status: 'declined' }).eq('id', row.id).catch(()=>{});
+      return;
+    }
     if(row && !currentCall && !currentGroupCall){
       incomingCallDoc = { id: row.id, fromUid: row.from_uid, fromName: row.from_name, toUid: row.to_uid, toName: row.to_name, type: row.type, offer: row.offer, groupId: row.group_id || null, sessionId: row.session_id || null, groupName: row.group_name || null };
       renderIncomingCallBanner();
@@ -1623,7 +1702,10 @@ function listenForIncomingCalls(){
   const channel = sb.channel('incoming-calls-' + state.user.uid)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'calls', filter: `to_uid=eq.${state.user.uid}` }, refetch)
     .subscribe();
-  incomingCallUnsub = () => sb.removeChannel(channel);
+  // Резервный опрос — на случай, если Realtime не включён/не работает для таблицы 'calls'
+  // в проекте Supabase (частая забытая настройка), звонок всё равно должен долетать.
+  const pollId = setInterval(refetch, 3000);
+  incomingCallUnsub = () => { sb.removeChannel(channel); clearInterval(pollId); };
 }
 
 function stopListeningForIncomingCalls(){
@@ -1712,6 +1794,7 @@ async function startCall(toUid, toName, type){
   currentCall = { callId, pc, localStream, remoteStream, unsubs: [], speakingCleanup: [], role: 'caller', type, hasCamera, otherUid: toUid, otherName: toName, startedAt: null, screenSharing: false, screenTrack: null };
   currentCall.speakingCleanup.push(attachSpeakingDetector(localStream, 'call-tile-local', true));
 
+  const appliedCandidateIds = new Set();
   const channel1 = sb.channel('call-' + callId)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${callId}` }, async (payload) => {
       const data = payload.new;
@@ -1727,10 +1810,38 @@ async function startCall(toUid, toName, type){
   const channel2 = sb.channel('call-candidates-callee-' + callId)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_candidates', filter: `call_id=eq.${callId}` }, (payload) => {
       const row = payload.new;
-      if(row && row.side === 'callee') pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
+      if(row && row.side === 'callee' && !appliedCandidateIds.has(row.id)){
+        appliedCandidateIds.add(row.id);
+        pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
+      }
     })
     .subscribe();
-  currentCall.unsubs.push(() => sb.removeChannel(channel1), () => sb.removeChannel(channel2));
+  // Резервный опрос — если Realtime не включён/не работает для 'calls'/'call_candidates'
+  // в проекте Supabase, звонок раньше молча "зависал немым": SDP-обмен и ICE-кандидаты
+  // просто никогда не доходили. Опрос раз в 3 сек гарантирует соединение в любом случае.
+  const pollCallState = async () => {
+    if(!currentCall || currentCall.callId !== callId) return;
+    try{
+      const { data } = await sb.from('calls').select('*').eq('id', callId).single();
+      if(data){
+        if(data.status === 'declined'){ endCall(false, 'declined'); return; }
+        if(data.status === 'ended'){ endCall(false); return; }
+        if(data.answer && pc.currentRemoteDescription === null){
+          await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          currentCall.startedAt = Date.now();
+        }
+      }
+      const { data: cands } = await sb.from('call_candidates').select('*').eq('call_id', callId).eq('side', 'callee');
+      (cands||[]).forEach(row => {
+        if(!appliedCandidateIds.has(row.id)){
+          appliedCandidateIds.add(row.id);
+          pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
+        }
+      });
+    }catch(e){ /* тихо игнорируем — realtime мог справиться сам */ }
+  };
+  const callPollId = setInterval(pollCallState, 3000);
+  currentCall.unsubs.push(() => sb.removeChannel(channel1), () => sb.removeChannel(channel2), () => clearInterval(callPollId));
   currentCall.notifyEnd = () => sb.from('calls').update({ status: 'ended' }).eq('id', callId).then(()=>{}).catch(()=>{});
   renderCallScreen();
 }
@@ -1781,6 +1892,7 @@ async function acceptIncomingCall(){
   await pc.setLocalDescription(answer);
   await sb.from('calls').update({ status: 'active', answer: { sdp: answer.sdp, type: answer.type } }).eq('id', call.id);
 
+  const appliedCandidateIds = new Set();
   const channel1 = sb.channel('call-' + call.id)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${call.id}` }, (payload) => {
       const data = payload.new;
@@ -1790,10 +1902,30 @@ async function acceptIncomingCall(){
   const channel2 = sb.channel('call-candidates-caller-' + call.id)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_candidates', filter: `call_id=eq.${call.id}` }, (payload) => {
       const row = payload.new;
-      if(row && row.side === 'caller') pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
+      if(row && row.side === 'caller' && !appliedCandidateIds.has(row.id)){
+        appliedCandidateIds.add(row.id);
+        pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
+      }
     })
     .subscribe();
-  currentCall.unsubs.push(() => sb.removeChannel(channel1), () => sb.removeChannel(channel2));
+  // Тот же резервный опрос, что и у звонящего — на случай, если Realtime не работает
+  // для этих таблиц в проекте Supabase.
+  const pollCallStateCallee = async () => {
+    if(!currentCall || currentCall.callId !== call.id) return;
+    try{
+      const { data } = await sb.from('calls').select('status').eq('id', call.id).single();
+      if(data && data.status === 'ended'){ endCall(false); return; }
+      const { data: cands } = await sb.from('call_candidates').select('*').eq('call_id', call.id).eq('side', 'caller');
+      (cands||[]).forEach(row => {
+        if(!appliedCandidateIds.has(row.id)){
+          appliedCandidateIds.add(row.id);
+          pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
+        }
+      });
+    }catch(e){ /* тихо игнорируем */ }
+  };
+  const calleePollId = setInterval(pollCallStateCallee, 3000);
+  currentCall.unsubs.push(() => sb.removeChannel(channel1), () => sb.removeChannel(channel2), () => clearInterval(calleePollId));
   currentCall.notifyEnd = () => sb.from('calls').update({ status: 'ended' }).eq('id', call.id).then(()=>{}).catch(()=>{});
   renderCallScreen();
 }
@@ -1879,6 +2011,14 @@ function renderIncomingCallBanner(){
   wrap.appendChild(banner);
   document.body.appendChild(wrap);
 }
+
+const FOLDER_TAB_ICONS = {
+  all: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  unread: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>',
+  favorites: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  groups: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  search: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+};
 
 const CHAT_ICONS = {
   attach: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49"/></svg>',
@@ -2131,6 +2271,20 @@ function attachGroupSessionChannel(){
     })
     .subscribe();
   gc.unsubs.push(() => sb.removeChannel(channel));
+  // Резервный опрос всей сессии — та же причина, что и у 1:1 звонков: без него групповой
+  // звонок целиком зависит от Realtime, который может быть не включён для этих таблиц.
+  const pollSession = async () => {
+    if(!currentGroupCall || currentGroupCall.sessionId !== gc.sessionId) return;
+    await discoverActiveSessionPeers();
+    try{
+      const { data } = await sb.from('calls').select('*').eq('session_id', gc.sessionId).eq('to_uid', state.user.uid).eq('status', 'mesh-pending');
+      (data||[]).forEach(row => {
+        if(!currentGroupCall.peers[row.from_uid]) createGroupPeer(row.from_uid, row.from_name, false, row);
+      });
+    }catch(e){ /* тихо игнорируем */ }
+  };
+  const sessionPollId = setInterval(pollSession, 4000);
+  gc.unsubs.push(() => clearInterval(sessionPollId));
 }
 
 function maybeConnectToActivePeer(peerUid, peerName){
@@ -2232,7 +2386,28 @@ async function createGroupPeer(peerUid, peerName, isOfferer, existingCallRow, in
       if(row && row.side === otherSide) pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
     })
     .subscribe();
-  peer.unsubs.push(() => sb.removeChannel(ch1), () => sb.removeChannel(ch2));
+  const appliedCandidateIds = new Set();
+  const pollPeer = async () => {
+    if(!currentGroupCall || !currentGroupCall.peers[peerUid]) return;
+    try{
+      const { data } = await sb.from('calls').select('*').eq('id', rowId).single();
+      if(data){
+        if(data.status === 'declined' || data.status === 'ended'){ removeGroupPeer(peerUid); return; }
+        if(isOfferer && data.answer && pc.currentRemoteDescription === null){
+          await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        }
+      }
+      const { data: cands } = await sb.from('call_candidates').select('*').eq('call_id', rowId).eq('side', otherSide);
+      (cands||[]).forEach(row => {
+        if(!appliedCandidateIds.has(row.id)){
+          appliedCandidateIds.add(row.id);
+          pc.addIceCandidate(new RTCIceCandidate(row.candidate)).catch(()=>{});
+        }
+      });
+    }catch(e){ /* тихо игнорируем */ }
+  };
+  const peerPollId = setInterval(pollPeer, 3500);
+  peer.unsubs.push(() => sb.removeChannel(ch1), () => sb.removeChannel(ch2), () => clearInterval(peerPollId));
   renderGroupCallScreen();
 }
 
@@ -2896,8 +3071,49 @@ function stopCalendarRealtime(){
 
 // Напоминания "за сколько времени" — проверяем в рамках уже существующего опроса
 // уведомлений, не наступил ли момент напомнить о ближайшем событии.
-const remindedEventIds = new Set();
+// ВАЖНО: раньше remindedEventIds был просто переменной в памяти и обнулялся при каждой
+// перезагрузке страницы — из-за этого одно и то же напоминание могло вылезать заново
+// после каждого reload, хотя человек его уже видел. Теперь список показанных напоминаний
+// сохраняется в localStorage (на пользователя) и переживает перезагрузку страницы.
+let remindedEventIds = new Set();
+let remindedEventIdsLoadedFor = null;
+function remindedStorageKey(){ return state.user ? ('sozvezdie_reminded_' + state.user.uid) : null; }
+function loadRemindedEventIds(){
+  const key = remindedStorageKey();
+  if(!key) return new Set();
+  try{
+    const raw = localStorage.getItem(key);
+    if(!raw) return new Set();
+    const now = Date.now();
+    const arr = JSON.parse(raw).filter(k => {
+      const ts = Number(String(k).split('@')[1]);
+      return !isNaN(ts) && ts > now - 24*3600*1000; // подчищаем записи о давно прошедших событиях
+    });
+    return new Set(arr);
+  }catch(e){ return new Set(); }
+}
+function saveRemindedEventIds(){
+  const key = remindedStorageKey();
+  if(!key) return;
+  try{ localStorage.setItem(key, JSON.stringify([...remindedEventIds])); }catch(e){}
+}
+function formatTimeUntil(ms){
+  const min = Math.round(ms / 60000);
+  if(min <= 1) return 'через минуту';
+  if(min < 60) return 'через ' + min + ' мин';
+  const h = Math.round(min / 60);
+  if(h === 1) return 'через час';
+  if(h < 24) return 'через ' + h + ' ч';
+  const d = Math.round(h / 24);
+  return 'через ' + d + ' ' + (d === 1 ? 'день' : 'дн.');
+}
+
 function checkCalendarReminders(){
+  if(!state.user) return;
+  if(remindedEventIdsLoadedFor !== state.user.uid){
+    remindedEventIds = loadRemindedEventIds();
+    remindedEventIdsLoadedFor = state.user.uid;
+  }
   if(!state.calendarEvents || !state.calendarEvents.length) return;
   const now = Date.now();
   const horizon = now + 24*60*60*1000;
@@ -2909,7 +3125,8 @@ function checkCalendarReminders(){
       const key = ev.id + '@' + occ.start;
       if(remindAt <= now && occ.start > now && !remindedEventIds.has(key)){
         remindedEventIds.add(key);
-        pushCalendarNotification(`Скоро: «${ev.title}» в ${formatClockTime(occ.start)}`);
+        saveRemindedEventIds();
+        pushCalendarNotification(`«${ev.title}» ${formatTimeUntil(occ.start - now)} в ${formatClockTime(occ.start)}`);
       }
     });
   });
@@ -3725,13 +3942,17 @@ function renderGoalsScreen(){
   w.appendChild(headerRow);
 
   if(!state.goalsLoaded){
-    listMyGoals().then(goals => {
-      state.goals = goals;
-      state.goalsLoaded = true;
-      if(state.screen === 'goals') render();
-    }).catch(e => { console.error('load goals failed', e); state.goals = []; state.goalsLoaded = true; });
+    loadGoalsForScreen();
     const loadingCard = el('div','card card-translucent');
-    loadingCard.appendChild(el('div','footer-note','Загружаем цели…'));
+    if(state.goalsError){
+      loadingCard.appendChild(el('div','err', state.goalsError));
+      const retryBtn = el('button','btn ghost','Повторить');
+      retryBtn.style.marginTop = '8px';
+      retryBtn.onclick = () => { state.goalsError = ''; render(); };
+      loadingCard.appendChild(retryBtn);
+    } else {
+      loadingCard.appendChild(el('div','footer-note','Загружаем цели…'));
+    }
     w.appendChild(loadingCard);
     root.appendChild(w);
     return;
@@ -3773,6 +3994,35 @@ function renderGoalsScreen(){
   w.appendChild(quadrantWrap);
 
   root.appendChild(w);
+}
+
+let goalsLoadRetried = false;
+function loadGoalsForScreen(){
+  if(state.goalsLoadingInFlight) return;
+  state.goalsLoadingInFlight = true;
+  state.goalsError = '';
+  listMyGoals().then(goals => {
+    state.goals = goals;
+    state.goalsLoaded = true;
+    state.goalsLoadingInFlight = false;
+    goalsLoadRetried = false;
+    if(state.screen === 'goals') render();
+  }).catch(async e => {
+    console.error('load goals failed', e);
+    state.goalsLoadingInFlight = false;
+    if(!goalsLoadRetried){
+      // Та же причина, что и с переписками — Supabase-проект мог "просыпаться" из простоя;
+      // один автоматический повтор через секунду обычно чинит это без участия человека.
+      goalsLoadRetried = true;
+      await new Promise(r => setTimeout(r, 1200));
+      if(state.screen === 'goals' && !state.goalsLoaded) loadGoalsForScreen();
+      return;
+    }
+    goalsLoadRetried = false;
+    state.goalsError = e.message;
+    state.goalsLoaded = false;
+    if(state.screen === 'goals') render();
+  });
 }
 
 function buildGoalGridCard(goal){
@@ -4327,7 +4577,8 @@ function renderCalendarScreen(){
     cell.appendChild(el('div','calendar-cell-day', String(d)));
     const itemsWrap = el('div','calendar-cell-items');
     dayBuckets[d].slice(0,3).forEach(item => {
-      const chip = el('div','calendar-event-chip', item.title);
+      const chipLabel = (item.start && !item.isBirthday) ? formatClockTime(item.start) + ' ' + item.title : item.title;
+      const chip = el('div','calendar-event-chip', chipLabel);
       chip.style.setProperty('--chip-color', item.color);
       itemsWrap.appendChild(chip);
     });
@@ -4874,6 +5125,39 @@ function buildContactSearchPicker(opts){
   return wrap;
 }
 
+// ---------------- блокировка контактов ----------------
+// state.blockedUids — Set uid'ов, кого заблокировал текущий пользователь (загружается при входе).
+async function loadBlockedUsers(){
+  if(!supabaseReady || !state.user) return;
+  try{
+    const { data, error } = await sb.from('blocked_users').select('blocked_uid').eq('blocker_uid', state.user.uid);
+    if(error) throw error;
+    state.blockedUids = new Set((data||[]).map(r => r.blocked_uid));
+  }catch(e){ console.error('load blocked users failed', e); state.blockedUids = state.blockedUids || new Set(); }
+}
+
+function isUserBlocked(uid){
+  return !!(state.blockedUids && state.blockedUids.has(uid));
+}
+
+async function blockUser(uid, name){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('blocked_users').upsert(
+    { blocker_uid: state.user.uid, blocked_uid: uid, blocked_name: name, ts: Date.now() },
+    { onConflict: 'blocker_uid,blocked_uid' }
+  );
+  if(error) throw new Error(error.message);
+  if(!state.blockedUids) state.blockedUids = new Set();
+  state.blockedUids.add(uid);
+}
+
+async function unblockUser(uid){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('blocked_users').delete().eq('blocker_uid', state.user.uid).eq('blocked_uid', uid);
+  if(error) throw new Error(error.message);
+  if(state.blockedUids) state.blockedUids.delete(uid);
+}
+
 async function listFriends(){
   if(!supabaseReady) throw backendNotConfiguredError();
   const uid = state.user.uid;
@@ -4919,6 +5203,7 @@ function mapMessageRow(r){
     text: r.text, imageData: r.image_url, voiceData: r.voice_url, videoData: r.video_url,
     fileData: r.file_url, fileName: r.file_name, transcript: r.transcript, waveform: r.waveform,
     replyTo: r.reply_to, pinned: r.pinned, deletedFor: r.deleted_for || [], callSummary: r.call_summary, ts: r.ts, edited: r.edited || false,
+    reactions: r.reactions || {}, pollId: r.poll_id || null,
   };
 }
 
@@ -4938,6 +5223,114 @@ async function sendMessage(toUid, toName, text, imageData, voiceData, videoData,
   if(state.replyingTo){ row.reply_to = state.replyingTo; state.replyingTo = null; renderReplyBanner(); }
   const { error } = await sb.from('messages').insert(row);
   if(error) throw new Error(error.message);
+}
+
+// ---------------- отложенная отправка сообщений ----------------
+// Хранится в отдельной таблице scheduled_messages. Пока поддерживаем только текст —
+// медиа/голосовые можно добавить позже по той же схеме (см. заметку ниже).
+// ВАЖНО: отправка по расписанию сейчас работает, только пока открыто приложение — раз в 20 сек
+// проверяем свои просроченные отложенные сообщения и реально отправляем их. Если закрыть вкладку,
+// сообщение уйдёт при следующем открытии приложения (с опозданием), а не строго вовремя. Чтобы
+// сообщения уходили ровно по расписанию даже при закрытом приложении, нужна серверная часть —
+// см. заметку с Edge Function ниже, отдельно от этого кода.
+// ---------------- опросы в чате ----------------
+// polls: id, question, options (jsonb [{id,text}]), anonymous, multi_select, correct_option_ids (jsonb|null),
+//        created_by, created_by_name, ts
+// poll_votes: id, poll_id, uid, voter_name, option_ids (jsonb), voted_at — один голос на человека (upsert).
+// Сообщение с опросом — обычная строка в messages с заполненным polL_id вместо текста; пересылка
+// опроса просто отправляет новое сообщение с ТЕМ ЖЕ poll_id, так что голоса общие везде, где опрос
+// пересылался — это и даёт "при пересылке опроса другие тоже могут выбирать".
+async function createPoll({ question, options, anonymous, multiSelect, correctOptionIds }){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const opts = options.map((text, i) => ({ id: 'o' + i, text }));
+  const row = {
+    question, options: opts, anonymous: !!anonymous, multi_select: !!multiSelect,
+    correct_option_ids: (correctOptionIds && correctOptionIds.length) ? correctOptionIds : null,
+    created_by: state.user.uid, created_by_name: state.user.name, ts: Date.now(),
+  };
+  const { data, error } = await sb.from('polls').insert(row).select().single();
+  if(error) throw new Error(error.message);
+  return data.id;
+}
+
+async function sendPollMessage(toUid, toName, groupId, pollId){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const me = state.user;
+  const row = { from_uid: me.uid, from_name: me.name, poll_id: pollId, ts: Date.now() };
+  if(groupId){ row.chat_id = 'g_' + groupId; row.group_id = groupId; }
+  else { row.chat_id = pairId(me.uid, toUid); row.to_uid = toUid; row.to_name = toName; }
+  const { error } = await sb.from('messages').insert(row);
+  if(error) throw new Error(error.message);
+}
+
+async function getPollWithVotes(pollId){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const [{ data: poll, error: e1 }, { data: votes, error: e2 }] = await Promise.all([
+    sb.from('polls').select('*').eq('id', pollId).single(),
+    sb.from('poll_votes').select('*').eq('poll_id', pollId),
+  ]);
+  if(e1) throw new Error(e1.message);
+  if(e2) throw new Error(e2.message);
+  return { poll, votes: votes || [] };
+}
+
+async function voteOnPoll(pollId, optionIds){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('poll_votes').upsert(
+    { poll_id: pollId, uid: state.user.uid, voter_name: state.user.name, option_ids: optionIds, voted_at: Date.now() },
+    { onConflict: 'poll_id,uid' }
+  );
+  if(error) throw new Error(error.message);
+}
+
+async function scheduleMessage(toUid, toName, groupId, groupName, text, sendAt){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const me = state.user;
+  const row = {
+    from_uid: me.uid, from_name: me.name, text, send_at: sendAt, status: 'pending', created_at: Date.now(),
+  };
+  if(groupId){ row.group_id = groupId; row.to_name = groupName; row.chat_id = 'g_' + groupId; }
+  else { row.to_uid = toUid; row.to_name = toName; row.chat_id = pairId(me.uid, toUid); }
+  const { error } = await sb.from('scheduled_messages').insert(row);
+  if(error) throw new Error(error.message);
+}
+
+async function listMyScheduledMessages(chatId){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  let q = sb.from('scheduled_messages').select('*').eq('from_uid', state.user.uid).eq('status', 'pending').order('send_at', { ascending: true });
+  if(chatId) q = q.eq('chat_id', chatId);
+  const { data, error } = await q;
+  if(error) throw new Error(error.message);
+  return data || [];
+}
+
+async function cancelScheduledMessage(id){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.from('scheduled_messages').update({ status: 'canceled' }).eq('id', id);
+  if(error) throw new Error(error.message);
+}
+
+let scheduledDispatchRunning = false;
+async function dispatchDueScheduledMessages(){
+  if(!supabaseReady || !state.user || scheduledDispatchRunning) return;
+  scheduledDispatchRunning = true;
+  try{
+    const { data, error } = await sb.from('scheduled_messages').select('*')
+      .eq('from_uid', state.user.uid).eq('status', 'pending').lte('send_at', Date.now());
+    if(error) throw error;
+    for(const row of (data||[])){
+      try{
+        if(row.group_id) await sendGroupMessage(row.group_id, row.text);
+        else await sendMessage(row.to_uid, row.to_name, row.text);
+        await sb.from('scheduled_messages').update({ status: 'sent' }).eq('id', row.id);
+      }catch(e){ console.error('scheduled message dispatch failed', row.id, e); }
+    }
+  }catch(e){ console.error('dispatchDueScheduledMessages failed', e); }
+  scheduledDispatchRunning = false;
+}
+function startScheduledMessagesPolling(){
+  dispatchDueScheduledMessages();
+  setInterval(dispatchDueScheduledMessages, 20000);
 }
 
 async function sendGroupMessage(groupId, text, imageData, voiceData, videoData, transcript, waveform, fileData, fileName){
@@ -5181,6 +5574,7 @@ async function getUnreadChatsCount(){
   }
   let count = 0;
   Object.keys(latestByChat).forEach(chatId => {
+    if(isChatMuted(chatId)) return;
     if(latestByChat[chatId] > (lastRead[chatId] || 0)) count++;
   });
   return count;
@@ -5286,6 +5680,84 @@ async function deleteMessageForEveryone(msgId){
   await sb.from('messages').delete().eq('id', msgId);
 }
 
+// ---------------- реакции на сообщения ----------------
+// Модель "одна реакция от человека на сообщение": повторный клик по той же эмодзи снимает
+// реакцию, клик по другой — заменяет. reactions хранится как { emoji: [uid, uid, ...] }.
+const QUICK_REACTION_EMOJIS = ['👍','❤️','😂','😮','😢','🙏','🔥','🎉','👏','😍'];
+async function toggleMessageReaction(m, emoji){
+  const me = state.user.uid;
+  const reactions = {};
+  Object.keys(m.reactions||{}).forEach(k => { reactions[k] = [...m.reactions[k]]; });
+  const alreadyOnThis = (reactions[emoji]||[]).includes(me);
+  // убираем меня из всех эмодзи (модель "одна реакция на человека")
+  Object.keys(reactions).forEach(k => {
+    reactions[k] = reactions[k].filter(uid => uid !== me);
+    if(!reactions[k].length) delete reactions[k];
+  });
+  if(!alreadyOnThis){
+    reactions[emoji] = [...(reactions[emoji]||[]), me];
+  }
+  m.reactions = reactions;
+  renderChatMessages();
+  try{
+    const { error } = await sb.from('messages').update({ reactions }).eq('id', m.id);
+    if(error) throw new Error(error.message);
+  }catch(e){
+    console.error('save reaction failed', e);
+    showToast('Не удалось сохранить реакцию');
+  }
+}
+
+function openReactionPicker(anchorX, anchorY, m){
+  const existing = document.getElementById('reaction-picker-popup');
+  if(existing) existing.remove();
+  const popup = el('div','emoji-picker reaction-picker-popup');
+  popup.id = 'reaction-picker-popup';
+  popup.style.width = '260px'; popup.style.maxHeight = 'none';
+
+  const quickRow = el('div','emoji-picker-grid');
+  QUICK_REACTION_EMOJIS.forEach(emoji => {
+    const cell = el('button','emoji-picker-cell' + (((m.reactions||{})[emoji]||[]).includes(state.user.uid) ? ' active' : ''), emoji);
+    cell.type = 'button';
+    cell.onclick = (ev) => { ev.stopPropagation(); popup.remove(); toggleMessageReaction(m, emoji); };
+    quickRow.appendChild(cell);
+  });
+  popup.appendChild(quickRow);
+
+  const moreBtn = el('button','btn ghost','Ещё эмодзи…');
+  moreBtn.style.width = '100%'; moreBtn.style.marginTop = '8px';
+  moreBtn.onclick = (ev) => {
+    ev.stopPropagation();
+    popup.innerHTML = '';
+    const content = el('div','emoji-picker-content');
+    EMOJI_GROUPS.filter(g => g.key !== 'recent').forEach(group => {
+      const section = el('div','emoji-picker-section');
+      section.appendChild(el('div','emoji-picker-label', group.label));
+      const grid = el('div','emoji-picker-grid');
+      group.items.forEach(emoji => {
+        const cell = el('button','emoji-picker-cell', emoji);
+        cell.type = 'button';
+        cell.onclick = (e2) => { e2.stopPropagation(); popup.remove(); toggleMessageReaction(m, emoji); };
+        grid.appendChild(cell);
+      });
+      section.appendChild(grid);
+      content.appendChild(section);
+    });
+    popup.appendChild(content);
+  };
+  popup.appendChild(moreBtn);
+
+  document.body.appendChild(popup);
+  const popupW = 260;
+  popup.style.left = Math.min(anchorX, window.innerWidth - popupW - 12) + 'px';
+  popup.style.top = Math.max(12, anchorY - 260) + 'px';
+  setTimeout(() => {
+    document.addEventListener('click', function closeReact(ev){
+      if(!popup.contains(ev.target)){ popup.remove(); document.removeEventListener('click', closeReact); }
+    });
+  }, 0);
+}
+
 async function togglePinMessage(chatId, msgId, pin){
   if(pin){
     await sb.from('messages').update({ pinned: false }).eq('chat_id', chatId).eq('pinned', true);
@@ -5309,6 +5781,7 @@ function messagePreviewText(m){
 }
 
 async function forwardMessage(m, toUid, toName){
+  if(m.pollId){ await sendPollMessage(toUid, toName, null, m.pollId); return; }
   await sendMessage(toUid, toName, m.text || null, m.imageData || null, m.voiceData || null, m.videoData || null, m.transcript || null, null, m.fileData || null, m.fileName || null);
 }
 
@@ -5318,12 +5791,23 @@ function listenToChat(otherUid, callback){
 
 async function listChatThreads(){
   const me = state.user.uid;
-  const [{ data: sent }, { data: received }, { data: groupsData }, { data: reads }] = await Promise.all([
+  const [r1, r2, r3, r4] = await Promise.all([
     sb.from('messages').select('*').eq('from_uid', me),
     sb.from('messages').select('*').eq('to_uid', me),
     sb.from('groups').select('*').contains('members', [me]),
     sb.from('chat_reads').select('*').eq('user_id', me),
   ]);
+  // ВАЖНО: раньше здесь просто деструктурировали data и игнорировали error — если один из
+  // запросов транзиентно падал (сеть моргнула / проект Supabase "просыпался" из простоя),
+  // data приходил null, который (сент||[]) тихо превращал в "сообщений нет". Функция при этом
+  // успешно резолвилась с почти пустым списком, и он затирал корректный список диалогов на экране.
+  // Теперь при ошибке любого из запросов бросаем исключение — вызывающий код (и в openMessagesTab,
+  // и в фоновом опросе) уже правильно обрабатывает throw, не подменяя хороший список плохим.
+  if(r1.error) throw new Error('Не удалось загрузить отправленные сообщения: ' + r1.error.message);
+  if(r2.error) throw new Error('Не удалось загрузить полученные сообщения: ' + r2.error.message);
+  if(r3.error) throw new Error('Не удалось загрузить группы: ' + r3.error.message);
+  if(r4.error) throw new Error('Не удалось загрузить статусы прочтения: ' + r4.error.message);
+  const sent = r1.data, received = r2.data, groupsData = r3.data, reads = r4.data;
   const byChatId = {};
   function ingest(row){
     const m = mapMessageRow(row);
@@ -5345,7 +5829,8 @@ async function listChatThreads(){
   const groupIds = (groupsData||[]).map(g => g.id);
   let groupMsgsByGroup = {};
   if(groupIds.length){
-    const { data: groupMsgs } = await sb.from('messages').select('*').in('group_id', groupIds);
+    const { data: groupMsgs, error: groupMsgsErr } = await sb.from('messages').select('*').in('group_id', groupIds);
+    if(groupMsgsErr) throw new Error('Не удалось загрузить сообщения групп: ' + groupMsgsErr.message);
     (groupMsgs||[]).forEach(row => {
       const m = mapMessageRow(row);
       if(!groupMsgsByGroup[m.groupId]) groupMsgsByGroup[m.groupId] = [];
@@ -5372,7 +5857,8 @@ async function listChatThreads(){
   (reads||[]).forEach(r => { lastRead[r.chat_id] = r.last_read; });
   const threads = Object.values(byChatId).map(t => ({
     ...t,
-    unread: !!(t.latest && t.latest.fromUid !== me && (t.latest.ts||0) > (lastRead[t.chatId]||0))
+    unread: !!(t.latest && t.latest.fromUid !== me && (t.latest.ts||0) > (lastRead[t.chatId]||0) && !isChatMuted(t.chatId)),
+    muted: isChatMuted(t.chatId),
   }));
 
   // Имя собеседника в переписке раньше бралось из "снимка" на момент отправки сообщения —
@@ -5785,6 +6271,73 @@ function heroGraphSVG(){
 }
 
 // ---------------- screens ----------------
+// Долгое нажатие (или зажатие мышью) на пункте меню — начинает перетаскивание для смены
+// порядка пунктов; порядок сохраняется в профиле. На компьютере это как обычный drag,
+// но запускается тоже через удержание, а не сразу — чтобы не мешать обычным кликам.
+function makeNavSortable(container){
+  let dragEl = null;
+  let longPressTimer = null;
+  let startX = 0, startY = 0;
+  let justDragged = false;
+  const LONG_PRESS_MS = 450;
+
+  function siblings(){ return Array.from(container.children); }
+
+  function onPointerMove(e){
+    if(!dragEl) return;
+    e.preventDefault();
+    let target = null;
+    for(const sib of siblings()){
+      if(sib === dragEl) continue;
+      const rect = sib.getBoundingClientRect();
+      if(e.clientX < rect.left + rect.width/2){ target = sib; break; }
+    }
+    if(target){ if(target !== dragEl.nextSibling) container.insertBefore(dragEl, target); }
+    else { container.appendChild(dragEl); }
+  }
+
+  function endDrag(){
+    if(!dragEl) return;
+    dragEl.classList.remove('nav-dragging');
+    dragEl = null;
+    justDragged = true;
+    setTimeout(() => { justDragged = false; }, 80);
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', endDrag);
+    const newOrder = siblings().map(el2 => el2.dataset.navKey).filter(Boolean);
+    updateProfileFields({ navOrder: newOrder }).catch(e => console.error('save nav order failed', e));
+  }
+
+  container.addEventListener('click', (e) => {
+    if(justDragged){ e.stopPropagation(); e.preventDefault(); }
+  }, true);
+
+  siblings().forEach(btn => {
+    btn.addEventListener('pointerdown', (e) => {
+      startX = e.clientX; startY = e.clientY;
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        dragEl = btn;
+        btn.classList.add('nav-dragging');
+        if(navigator.vibrate) navigator.vibrate(30);
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', endDrag);
+      }, LONG_PRESS_MS);
+    });
+    btn.addEventListener('pointermove', (e) => {
+      if(longPressTimer && !dragEl){
+        if(Math.abs(e.clientX-startX) > 8 || Math.abs(e.clientY-startY) > 8){
+          clearTimeout(longPressTimer); longPressTimer = null;
+        }
+      }
+    });
+    const cancelPress = () => { if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; } };
+    btn.addEventListener('pointerup', cancelPress);
+    btn.addEventListener('pointercancel', cancelPress);
+    btn.addEventListener('pointerleave', () => { if(longPressTimer && !dragEl) cancelPress(); });
+  });
+}
+
 function renderNav(active){
   const wrapper = el('div','nav-wrapper');
   const brandRow = el('div','brand-row');
@@ -5843,15 +6396,21 @@ function renderNav(active){
     const goalsLink = el('button','nav-link' + (active==='goals' ? ' active' : ''), 'Планы');
     goalsLink.onclick = () => { state.goalsLoaded = false; state.screen = 'goals'; render(); };
 
-    links.appendChild(messagesLink);
-    links.appendChild(friendsLink);
-    links.appendChild(peopleLink);
-    links.appendChild(calendarLink);
-    links.appendChild(goalsLink);
-    links.appendChild(myLink);
-    links.appendChild(accountLink);
-    links.appendChild(installLink);
-    links.appendChild(supportLink);
+    // Пункты меню теперь именованные (nav-key), чтобы порядок можно было перетаскивать
+    // (долгое нажатие/зажатие мышью) и сохранять на пользователя.
+    const navButtonsByKey = {
+      messages: messagesLink, friends: friendsLink, people: peopleLink, calendar: calendarLink,
+      goals: goalsLink, mine: myLink, account: accountLink, install: installLink, support: supportLink,
+    };
+    const defaultOrder = ['messages','friends','people','calendar','goals','mine','account','install','support'];
+    const savedOrder = (state.profile?.navOrder || []).filter(k => navButtonsByKey[k]);
+    const finalOrder = [...savedOrder, ...defaultOrder.filter(k => !savedOrder.includes(k))];
+    finalOrder.forEach(key => {
+      const btn = navButtonsByKey[key];
+      btn.dataset.navKey = key;
+      links.appendChild(btn);
+    });
+    makeNavSortable(links);
   } else {
     const loginLink = el('button','nav-link','Войти');
     loginLink.onclick = () => { state.authMode = 'login'; state.error=''; state.screen='auth'; render(); };
@@ -6016,7 +6575,14 @@ function renderPeople(){
       const right = el('div','');
       right.style.display='flex'; right.style.alignItems='center'; right.style.gap='12px'; right.style.flexShrink='0';
       if(compat){
-        right.appendChild(el('div','compat-badge', compat.percent + '%'));
+        const badgeCol = el('div','');
+        badgeCol.style.textAlign = 'center';
+        badgeCol.appendChild(el('div','compat-badge', compat.percent + '%'));
+        if(state.profile?.city && p.profile?.city && state.profile.city !== p.profile.city){
+          const km = distanceKmBetweenCities(state.profile.city, p.profile.city);
+          if(km !== null) badgeCol.appendChild(el('div','meta','~' + km + ' км'));
+        }
+        right.appendChild(badgeCol);
       }
       const iconsBox = el('div','');
       iconsBox.style.display='flex'; iconsBox.style.gap='6px';
@@ -6051,9 +6617,19 @@ async function renderQuickIcons(container, p){
     msgIcon.onclick = (ev) => { ev.stopPropagation(); openChat(p.uid, p.name); };
     container.appendChild(msgIcon);
   } else if(req && req.status === 'pending' && req.fromUid === state.user.uid){
-    const pendingIcon = el('div','icon-btn disabled','⏳');
-    pendingIcon.title = 'Заявка отправлена';
+    const pendingIcon = el('button','icon-btn','⏳');
+    pendingIcon.title = 'Заявка отправлена — нажми, чтобы отменить';
+    pendingIcon.onclick = async (ev) => {
+      ev.stopPropagation();
+      pendingIcon.disabled = true;
+      try{ await respondFriendRequest(req.id, false); renderQuickIcons(container, p); }
+      catch(e){ pendingIcon.disabled = false; }
+    };
     container.appendChild(pendingIcon);
+    const msgIcon = el('button','icon-btn','✉️');
+    msgIcon.title = 'Написать';
+    msgIcon.onclick = (ev) => { ev.stopPropagation(); openChat(p.uid, p.name); };
+    container.appendChild(msgIcon);
   } else if(req && req.status === 'pending'){
     const acceptIcon = el('button','icon-btn','✔');
     acceptIcon.title = 'Принять заявку';
@@ -6063,6 +6639,10 @@ async function renderQuickIcons(container, p){
       renderQuickIcons(container, p);
     };
     container.appendChild(acceptIcon);
+    const msgIcon = el('button','icon-btn','✉️');
+    msgIcon.title = 'Написать';
+    msgIcon.onclick = (ev) => { ev.stopPropagation(); openChat(p.uid, p.name); };
+    container.appendChild(msgIcon);
   } else {
     const addIcon = el('button','icon-btn','➕');
     addIcon.title = 'Добавить в друзья';
@@ -6073,6 +6653,10 @@ async function renderQuickIcons(container, p){
       renderQuickIcons(container, p);
     };
     container.appendChild(addIcon);
+    const msgIcon = el('button','icon-btn','✉️');
+    msgIcon.title = 'Написать';
+    msgIcon.onclick = (ev) => { ev.stopPropagation(); openChat(p.uid, p.name); };
+    container.appendChild(msgIcon);
   }
 }
 
@@ -6099,6 +6683,10 @@ function renderPersonView(){
   }
   if(p.profile?.city) profileBits.push(p.profile.city);
   else if(p.profile?.country) profileBits.push(p.profile.country);
+  if(state.profile?.city && p.profile?.city && state.profile.city !== p.profile.city){
+    const km = distanceKmBetweenCities(state.profile.city, p.profile.city);
+    if(km !== null) profileBits.push('~' + km + ' км от тебя');
+  }
   if(profileBits.length){
     const profileLine = el('div','meta', profileBits.join(' · '));
     profileLine.style.marginBottom = '16px';
@@ -6193,6 +6781,9 @@ async function renderFriendActionInto(container, p){
       }catch(e){ container.appendChild(el('div','err', e.message)); }
     };
     row.appendChild(btn);
+    const msgBtn = el('button','btn ghost','Написать →');
+    msgBtn.onclick = () => { openChat(p.uid, p.name); };
+    row.appendChild(msgBtn);
   } else if(req.status === 'accepted'){
     row.appendChild(el('div','compat-badge','Вы друзья ✓'));
     const msgBtn = el('button','btn ghost','Написать →');
@@ -6202,6 +6793,18 @@ async function renderFriendActionInto(container, p){
     const btn = el('button','btn ghost','Заявка отправлена');
     btn.disabled = true;
     row.appendChild(btn);
+    const cancelBtn = el('button','btn ghost','Отменить заявку');
+    cancelBtn.onclick = async () => {
+      cancelBtn.disabled = true; cancelBtn.textContent = 'Отменяем…';
+      try{
+        await respondFriendRequest(req.id, false);
+        renderFriendActionInto(container, p);
+      }catch(e){ container.appendChild(el('div','err', e.message)); }
+    };
+    row.appendChild(cancelBtn);
+    const msgBtn = el('button','btn ghost','Написать →');
+    msgBtn.onclick = () => { openChat(p.uid, p.name); };
+    row.appendChild(msgBtn);
   } else {
     const acceptBtn = el('button','btn','Принять заявку в друзья');
     acceptBtn.onclick = async () => {
@@ -6212,6 +6815,9 @@ async function renderFriendActionInto(container, p){
       }catch(e){ container.appendChild(el('div','err', e.message)); }
     };
     row.appendChild(acceptBtn);
+    const msgBtn = el('button','btn ghost','Написать →');
+    msgBtn.onclick = () => { openChat(p.uid, p.name); };
+    row.appendChild(msgBtn);
   }
   container.appendChild(row);
 }
@@ -6356,6 +6962,35 @@ function avatarCircleEl(name, size){
   div.style.width = size+'px'; div.style.height = size+'px';
   div.style.fontSize = Math.round(size*0.42)+'px';
   return div;
+}
+
+// ---------------- аватары групп ----------------
+const groupAvatarCache = {};
+function invalidateGroupAvatarCache(groupId){ delete groupAvatarCache[groupId]; }
+async function getGroupAvatar(groupId){
+  if(!groupId) return null;
+  if(groupId in groupAvatarCache) return groupAvatarCache[groupId];
+  if(!supabaseReady) return null;
+  try{
+    const { data } = await sb.from('groups').select('avatar_url').eq('id', groupId).single();
+    const url = data?.avatar_url || null;
+    groupAvatarCache[groupId] = url;
+    return url;
+  }catch(e){
+    console.error('getGroupAvatar failed', e);
+    return null;
+  }
+}
+function fillGroupAvatarAsync(div, groupId){
+  if(!groupId) return;
+  getGroupAvatar(groupId).then(url => {
+    if(url){
+      div.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = url;
+      div.appendChild(img);
+    }
+  });
 }
 
 // Ставит аватар в готовый div (avatarCircleEl), как только он подгрузится — без блокировки отрисовки.
@@ -6546,9 +7181,21 @@ function buildVoicePlayer(voiceData, transcript, waveform){
   waveWrap.appendChild(seek);
 
   const durationEl = el('div','voice-duration','0:00');
+  const speedBtn = el('button','voice-speed-btn','1x');
+  speedBtn.type = 'button';
+  speedBtn.title = 'Скорость воспроизведения';
+  const SPEEDS = [1, 1.5, 2];
+  let speedIdx = 0;
+  speedBtn.onclick = (e) => {
+    e.stopPropagation();
+    speedIdx = (speedIdx + 1) % SPEEDS.length;
+    audio.playbackRate = SPEEDS[speedIdx];
+    speedBtn.textContent = SPEEDS[speedIdx] + 'x';
+  };
   row.appendChild(playBtn);
   row.appendChild(waveWrap);
   row.appendChild(durationEl);
+  row.appendChild(speedBtn);
   wrap.appendChild(row);
 
   function updateBars(fraction){
@@ -6677,6 +7324,7 @@ function showMessageContextMenu(x, y, m, chatId){
     menu.appendChild(it);
   }
 
+  item('😊 Реакция', () => { openReactionPicker(x, y, m); });
   item('Ответить', () => {
     state.replyingTo = { id: m.id, preview: messagePreviewText(m).slice(0,80), fromName: mine ? 'Себе' : (m.fromName || state.chatWith.name) };
     renderReplyBanner();
@@ -6989,6 +7637,11 @@ function renderChatMessages(){
       dl.onclick = (e) => { e.stopPropagation(); downloadDataUrl(m.videoData, 'video-' + m.ts + '.webm'); };
       bubble.appendChild(dl);
     }
+    if(m.pollId){
+      const pollSlot = el('div','poll-slot');
+      bubble.appendChild(pollSlot);
+      renderPollIntoBubble(pollSlot, m.pollId);
+    }
     if(m.text){
       const textEl = document.createElement('div');
       textEl.textContent = m.text;
@@ -6997,6 +7650,22 @@ function renderChatMessages(){
     }
     const timeEl = el('div','msg-time', (m.edited ? 'ред. · ' : '') + formatClockTime(m.ts));
     bubble.appendChild(timeEl);
+
+    const reactionKeys = Object.keys(m.reactions||{}).filter(k => (m.reactions[k]||[]).length);
+    if(reactionKeys.length){
+      const reactRow = el('div','msg-reactions' + (reactionKeys.length === 1 ? ' single' : ''));
+      reactionKeys.forEach(emoji => {
+        const uids = m.reactions[emoji];
+        const mineReaction = uids.includes(state.user.uid);
+        const chip = el('div','msg-reaction-chip' + (mineReaction ? ' mine' : ''));
+        chip.appendChild(el('span','msg-reaction-emoji', emoji));
+        if(uids.length > 1) chip.appendChild(el('span','msg-reaction-count', String(uids.length)));
+        chip.title = mineReaction && uids.length === 1 ? 'Вы' : (uids.length + ' ' + (uids.length === 1 ? 'человек' : 'чел.'));
+        chip.onclick = (e) => { e.stopPropagation(); toggleMessageReaction(m, emoji); };
+        reactRow.appendChild(chip);
+      });
+      bubble.appendChild(reactRow);
+    }
 
     box.appendChild(row);
     if(i === lastSeenMineIndex){
@@ -7189,6 +7858,73 @@ function buildEmojiButton(targetInput){
   return btn;
 }
 
+async function renderPollIntoBubble(container, pollId){
+  let data;
+  try{ data = await getPollWithVotes(pollId); }
+  catch(e){ container.appendChild(el('div','footer-note','Не удалось загрузить опрос')); return; }
+  const { poll, votes } = data;
+  if(!poll){ container.appendChild(el('div','footer-note','Опрос не найден')); return; }
+  const myVote = votes.find(v => v.uid === state.user.uid);
+  container.innerHTML = '';
+  container.appendChild(el('div','poll-question', '📊 ' + poll.question));
+  const metaBits = [];
+  if(poll.anonymous) metaBits.push('анонимный');
+  if(poll.multi_select) metaBits.push('несколько вариантов');
+  if(metaBits.length) container.appendChild(el('div','meta', metaBits.join(' · ')));
+
+  if(!myVote){
+    const optsWrap = el('div','poll-options-vote');
+    const selected = new Set();
+    (poll.options||[]).forEach(opt => {
+      const row = el('label','poll-vote-row');
+      const input = document.createElement('input');
+      input.type = poll.multi_select ? 'checkbox' : 'radio';
+      input.name = 'poll-' + pollId;
+      input.style.width = 'auto'; input.style.marginBottom = '0';
+      input.onchange = () => {
+        if(poll.multi_select){ if(input.checked) selected.add(opt.id); else selected.delete(opt.id); }
+        else { selected.clear(); selected.add(opt.id); }
+      };
+      row.appendChild(input); row.appendChild(document.createTextNode(opt.text));
+      optsWrap.appendChild(row);
+    });
+    container.appendChild(optsWrap);
+    const voteBtn = el('button','btn','Проголосовать');
+    voteBtn.onclick = async (e) => {
+      e.stopPropagation();
+      if(!selected.size){ showToast('Выберите вариант'); return; }
+      voteBtn.disabled = true;
+      try{ await voteOnPoll(pollId, [...selected]); renderPollIntoBubble(container, pollId); }
+      catch(err){ showToast('Не удалось проголосовать'); voteBtn.disabled = false; }
+    };
+    container.appendChild(voteBtn);
+  } else {
+    const total = votes.length || 1;
+    const counts = {};
+    votes.forEach(v => (v.option_ids||[]).forEach(oid => { counts[oid] = (counts[oid]||0) + 1; }));
+    const correctSet = new Set(poll.correct_option_ids || []);
+    const resultsWrap = el('div','poll-options-results');
+    (poll.options||[]).forEach(opt => {
+      const c = counts[opt.id] || 0;
+      const pct = Math.round(c / total * 100);
+      const mine = (myVote.option_ids||[]).includes(opt.id);
+      const row = el('div','poll-result-row' + (mine ? ' mine' : ''));
+      const labelRow = el('div','poll-result-label');
+      labelRow.appendChild(document.createTextNode(opt.text + (correctSet.has(opt.id) ? ' ✅' : '') + (mine ? ' (ваш выбор)' : '')));
+      labelRow.appendChild(document.createTextNode(pct + '%'));
+      row.appendChild(labelRow);
+      const barTrack = el('div','poll-result-bar-track');
+      const bar = el('div','poll-result-bar');
+      bar.style.width = pct + '%';
+      barTrack.appendChild(bar);
+      row.appendChild(barTrack);
+      resultsWrap.appendChild(row);
+    });
+    container.appendChild(resultsWrap);
+    container.appendChild(el('div','meta', 'Всего голосов: ' + votes.length));
+  }
+}
+
 function openContactInfoPanel(){
   const existing = document.getElementById('contact-info-overlay');
   if(existing){ existing.remove(); return; }
@@ -7249,10 +7985,13 @@ function openContactInfoPanel(){
             const url = await uploadMediaToStorage(dataUrl, 'group-avatars');
             await updateGroupInfo(groupId, { avatar_url: url });
             group.avatar_url = url;
+            groupAvatarCache[groupId] = url;
             bigAvatar.innerHTML = '';
             const img = document.createElement('img');
             img.src = url;
             bigAvatar.appendChild(img);
+            const headerAvatar = document.querySelector('.chat-header-clickable .avatar-circle');
+            if(headerAvatar){ headerAvatar.innerHTML = ''; const img2 = document.createElement('img'); img2.src = url; headerAvatar.appendChild(img2); }
             showToast('Аватар группы обновлён ✓');
           }catch(e){
             console.error('group avatar upload failed', e);
@@ -7305,6 +8044,25 @@ function openContactInfoPanel(){
         schemaSlot.appendChild(schemaBtn);
       }
     }).catch(e => console.error('profile graph load failed', e));
+
+    const blockRow = el('div','');
+    blockRow.style.marginBottom = '14px';
+    const blocked = isUserBlocked(state.chatWith.uid);
+    const blockBtn = el('button','btn ghost', blocked ? 'Разблокировать' : 'Заблокировать');
+    blockBtn.style.width = '100%';
+    blockBtn.style.color = blocked ? '' : '#e6453a';
+    blockBtn.onclick = async () => {
+      blockBtn.disabled = true;
+      try{
+        if(blocked) await unblockUser(state.chatWith.uid);
+        else await blockUser(state.chatWith.uid, state.chatWith.name);
+        showToast(blocked ? 'Разблокирован(а) ✓' : 'Заблокирован(а) ✓');
+        document.getElementById('contact-info-overlay')?.remove();
+        render();
+      }catch(e){ showToast('Не удалось сохранить: ' + (e.message||'ошибка')); blockBtn.disabled = false; }
+    };
+    blockRow.appendChild(blockBtn);
+    panel.appendChild(blockRow);
   }
 
   const card = el('div','card');
@@ -7468,6 +8226,8 @@ function buildChatPanel(container){
     chatAvatar.innerHTML = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.05V17h6v-.25c0-.8.4-1.55 1-2.05A7 7 0 0 0 12 2Z"/></svg>';
   } else if(!state.chatWith.isGroup){
     fillAvatarAsync(chatAvatar, state.chatWith.uid);
+  } else {
+    fillGroupAvatarAsync(chatAvatar, state.chatWith.groupId);
   }
   titleWrap.appendChild(chatAvatar);
   const titleCol = el('div','');
@@ -7595,13 +8355,35 @@ function buildChatPanel(container){
   replyBannerSlot.id = 'reply-banner-slot';
   card.appendChild(replyBannerSlot);
 
+  const scheduledBannerSlot = el('div','');
+  scheduledBannerSlot.id = 'scheduled-banner-slot';
+  card.appendChild(scheduledBannerSlot);
+  renderScheduledBanner();
+
   const inputRow = el('div','');
   inputRow.style.display='flex'; inputRow.style.gap='10px'; inputRow.style.marginTop='14px'; inputRow.style.alignItems='center'; inputRow.style.flexShrink='0';
   const fileInput = document.createElement('input');
   fileInput.type = 'file'; fileInput.accept = 'image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip'; fileInput.style.display = 'none';
   const attachBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.attach);
   attachBtn.style.flexShrink = '0';
-  attachBtn.onclick = () => fileInput.click();
+  attachBtn.onclick = (e) => {
+    e.stopPropagation();
+    closeContextMenu();
+    const menu = el('div','context-menu');
+    menu.id = 'msg-context-menu';
+    const docItem = el('div','context-menu-item','📄 Документ');
+    docItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); fileInput.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip'; fileInput.click(); };
+    const mediaItem = el('div','context-menu-item','🖼️ Фото или видео');
+    mediaItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); fileInput.accept = 'image/*,video/*'; fileInput.click(); };
+    const pollItem = el('div','context-menu-item','📊 Опрос');
+    pollItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); openCreatePollModal(); };
+    menu.appendChild(docItem); menu.appendChild(mediaItem); menu.appendChild(pollItem);
+    document.body.appendChild(menu);
+    const rect = attachBtn.getBoundingClientRect();
+    menu.style.left = rect.left + 'px';
+    menu.style.top = (rect.bottom + 6) + 'px';
+    setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+  };
   const doSendImage = (dataUrl, caption) => state.chatWith.isGroup
     ? sendGroupMessage(state.chatWith.groupId, caption || null, dataUrl)
     : sendMessage(state.chatWith.uid, state.chatWith.name, caption || null, dataUrl);
@@ -7666,11 +8448,21 @@ function buildChatPanel(container){
     opts = opts || {};
     const btn = el('button','btn ghost icon-only-btn', icon);
     btn.style.flexShrink = '0';
+    btn.style.position = 'relative';
     btn.title = opts.title || '';
     let active = null;
     let previewEl = null;
     let previewBackdrop = null;
     let maxTimer = null;
+    let cancelHint = null;
+    let startX = 0;
+    let cancelPending = false;
+    const CANCEL_THRESHOLD = 70;
+
+    function cleanupCancelHint(){
+      if(cancelHint){ cancelHint.remove(); cancelHint = null; }
+      cancelPending = false;
+    }
 
     async function begin(){
       if(active) return;
@@ -7678,7 +8470,7 @@ function buildChatPanel(container){
       document.querySelectorAll('.record-live-preview').forEach(p => p.remove());
       try{
         active = await recordMedia(constraints, maxSeconds, sec => {
-          btn.innerHTML = CHAT_ICONS.stop + '<span>' + formatDuration(sec) + '</span>';
+          if(!cancelPending) btn.innerHTML = CHAT_ICONS.stop + '<span>' + formatDuration(sec) + '</span>';
         }, opts.recorderOptions, stream => {
           if(opts.livePreview){
             previewBackdrop = document.createElement('div');
@@ -7693,11 +8485,34 @@ function buildChatPanel(container){
         });
         btn.classList.add('recording');
         if(opts.transcribe) startTranscription();
+        if(opts.cancelable){
+          cancelHint = el('div','record-cancel-hint','← смахни, чтобы отменить');
+          document.body.appendChild(cancelHint);
+          const rect = btn.getBoundingClientRect();
+          cancelHint.style.left = (rect.left - 160) + 'px';
+          cancelHint.style.top = (rect.top - 6) + 'px';
+        }
         maxTimer = setTimeout(() => { if(active) finish(); }, maxSeconds*1000 + 300);
       }catch(e){
         console.error('recording start failed', e);
         showToast('Микрофон/камера недоступны: ' + (e.name || e.message || 'нет доступа'));
       }
+    }
+
+    async function cancel(){
+      if(!active) return;
+      if(maxTimer){ clearTimeout(maxTimer); maxTimer = null; }
+      const rec = active; active = null;
+      rec.stop();
+      // отменяем — просто дожидаемся остановки записи и выбрасываем результат, не отправляя
+      rec.finished.catch(()=>{});
+      if(previewEl){ previewEl.remove(); previewEl = null; }
+      if(previewBackdrop){ previewBackdrop.remove(); previewBackdrop = null; }
+      if(opts.transcribe) stopTranscription();
+      cleanupCancelHint();
+      btn.classList.remove('recording');
+      btn.innerHTML = icon;
+      showToast('Запись отменена');
     }
 
     async function finish(){
@@ -7708,6 +8523,7 @@ function buildChatPanel(container){
       btn.disabled = true; btn.innerHTML = '…';
       if(previewEl){ previewEl.remove(); previewEl = null; }
       if(previewBackdrop){ previewBackdrop.remove(); previewBackdrop = null; }
+      cleanupCancelHint();
       const transcript = opts.transcribe ? stopTranscription() : '';
       try{
         const result = await rec.finished;
@@ -7741,24 +8557,57 @@ function buildChatPanel(container){
       btn.innerHTML = icon;
     }
 
+    let cancelBtnEl = null;
+    if(opts.cancelable){
+      cancelBtnEl = el('button','btn ghost icon-only-btn record-cancel-btn','✕');
+      cancelBtnEl.type = 'button';
+      cancelBtnEl.title = 'Отменить запись';
+      cancelBtnEl.style.display = 'none';
+      cancelBtnEl.onclick = (e) => { e.stopPropagation(); e.preventDefault(); cancel(); };
+    }
+
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      startX = e.clientX;
       if(e.pointerType === 'mouse'){
-        if(active) finish(); else begin();
+        if(active) finish(); else { begin().then(() => { if(active && cancelBtnEl) cancelBtnEl.style.display = ''; }); }
       } else {
         begin();
       }
     });
-    btn.addEventListener('pointerup', (e) => { if(e.pointerType !== 'mouse') finish(); });
-    btn.addEventListener('pointerleave', (e) => { if(active && e.pointerType !== 'mouse') finish(); });
-    btn.addEventListener('pointercancel', (e) => { if(active && e.pointerType !== 'mouse') finish(); });
-    return btn;
+    btn.addEventListener('pointermove', (e) => {
+      if(!active || e.pointerType === 'mouse' || !opts.cancelable) return;
+      const dx = e.clientX - startX;
+      if(dx < -CANCEL_THRESHOLD && !cancelPending){
+        cancelPending = true;
+        if(cancelHint){ cancelHint.textContent = 'Отпусти, чтобы отменить'; cancelHint.classList.add('armed'); }
+        btn.innerHTML = CHAT_ICONS.stop;
+      } else if(dx >= -CANCEL_THRESHOLD && cancelPending){
+        cancelPending = false;
+        if(cancelHint){ cancelHint.textContent = '← смахни, чтобы отменить'; cancelHint.classList.remove('armed'); }
+      }
+    });
+    btn.addEventListener('pointerup', (e) => {
+      if(e.pointerType !== 'mouse'){ if(cancelPending) cancel(); else finish(); }
+    });
+    btn.addEventListener('pointerleave', (e) => { if(active && e.pointerType !== 'mouse'){ if(cancelPending) cancel(); else finish(); } });
+    btn.addEventListener('pointercancel', (e) => { if(active && e.pointerType !== 'mouse') cancel(); });
+    if(!cancelBtnEl) return btn;
+    const wrap = el('span','record-btn-wrap');
+    wrap.style.cssText = 'position:relative; display:inline-flex; flex-shrink:0;';
+    wrap.appendChild(btn);
+    wrap.appendChild(cancelBtnEl);
+    const origFinish = finish, origCancel = cancel;
+    finish = async (...args) => { if(cancelBtnEl) cancelBtnEl.style.display = 'none'; return origFinish(...args); };
+    cancel = async (...args) => { if(cancelBtnEl) cancelBtnEl.style.display = 'none'; return origCancel(...args); };
+    return wrap;
   }
 
   const videoMime = pickSupportedMimeType(['video/webm;codecs=vp8,opus','video/webm','video/mp4']);
   const voiceBtn = makeRecordButton(CHAT_ICONS.mic, { audio: true }, 300, doSendVoice, {
     title: 'На телефоне — зажми; на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 5 минут)',
     transcribe: true,
+    cancelable: true,
     recorderOptions: { audioBitsPerSecond: 12000 },
   });
   const videoCircleBtn = makeRecordButton(CHAT_ICONS.video, { video: { width: {ideal: 240}, height: {ideal: 240}, facingMode: 'user' }, audio: true }, 20, doSendVideo, {
@@ -7781,6 +8630,7 @@ function buildChatPanel(container){
     }catch(e){ console.error('send failed', e); }
   };
   sendBtn.onclick = doSend;
+  attachLongPressAndRightClick(sendBtn, () => openScheduleSendModal(input));
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') doSend(); });
   input.addEventListener('paste', async (e) => {
     const items = e.clipboardData?.items;
@@ -7809,7 +8659,20 @@ function buildChatPanel(container){
   inputRow.appendChild(emojiBtn);
   inputRow.appendChild(input);
   inputRow.appendChild(sendBtn);
-  card.appendChild(inputRow);
+
+  if(!state.chatWith.isGroup && isUserBlocked(state.chatWith.uid)){
+    const blockedBar = el('div','blocked-chat-bar');
+    blockedBar.appendChild(el('div','', 'Вы заблокировали этого человека — сообщения не отправляются.'));
+    const unblockBtn = el('button','btn ghost','Разблокировать');
+    unblockBtn.onclick = async () => {
+      try{ await unblockUser(state.chatWith.uid); showToast('Разблокирован(а) ✓'); render(); }
+      catch(e){ showToast('Не удалось: ' + (e.message||'ошибка')); }
+    };
+    blockedBar.appendChild(unblockBtn);
+    card.appendChild(blockedBar);
+  } else {
+    card.appendChild(inputRow);
+  }
 
   container.appendChild(card);
   renderChatMessages();
@@ -7830,7 +8693,7 @@ function applyChatWallpaper(){
   }
 }
 
-async function openMessagesTab(){
+async function openMessagesTab(retryCount){
   state.screen = 'messages';
   state.threadsLoading = true;
   state.threadsError = '';
@@ -7839,6 +8702,16 @@ async function openMessagesTab(){
     state.threads = await listChatThreads();
   }catch(e){
     console.error('threads load failed', e);
+    // Частая причина — проект Supabase на бесплатном тарифе "просыпается" из простоя и первый
+    // запрос после паузы падает; один автоматический повтор через секунду чинит это без участия
+    // человека (раньше приходилось вручную переключаться на другую вкладку и обратно).
+    if(!retryCount){
+      state.threadsLoading = false;
+      render();
+      await new Promise(r => setTimeout(r, 1200));
+      if(state.screen === 'messages') return openMessagesTab(1);
+      return;
+    }
     state.threadsError = e.message;
   }
   state.threadsLoading = false;
@@ -7853,6 +8726,193 @@ function timeAgoShort(ts){
   const diffH = diffMin / 60;
   if(diffH < 24) return Math.round(diffH) + ' ч';
   return Math.round(diffH / 24) + ' дн';
+}
+
+function openCreatePollModal(){
+  const ov = document.createElement('div');
+  ov.className = 'confirm-modal-overlay';
+  const box = document.createElement('div');
+  box.className = 'confirm-modal-box';
+  box.style.maxWidth = '420px';
+  box.appendChild(el('div','confirm-modal-text','Новый опрос'));
+
+  const qInput = document.createElement('textarea');
+  qInput.placeholder = 'Вопрос'; qInput.rows = 2;
+  qInput.style.width = '100%'; qInput.style.marginBottom = '10px'; qInput.style.boxSizing = 'border-box'; qInput.style.fontFamily = 'inherit';
+  box.appendChild(qInput);
+
+  const optionsWrap = el('div','');
+  box.appendChild(optionsWrap);
+  const optionRows = [];
+  function addOptionRow(value){
+    const row = el('div','poll-option-edit-row');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.className = 'poll-correct-cb'; cb.style.width = 'auto'; cb.style.marginBottom = '0';
+    cb.title = 'Правильный вариант';
+    cb.style.display = correctToggle.checked ? '' : 'none';
+    const input = document.createElement('input');
+    input.type = 'text'; input.placeholder = 'Вариант ответа'; input.value = value || ''; input.style.flex = '1'; input.style.marginBottom = '0';
+    const rmBtn = el('button','icon-btn','✕');
+    rmBtn.onclick = () => { row.remove(); const idx = optionRows.indexOf(row); if(idx>-1) optionRows.splice(idx,1); };
+    row.appendChild(cb); row.appendChild(input); row.appendChild(rmBtn);
+    optionsWrap.appendChild(row);
+    optionRows.push(row);
+  }
+
+  const addOptBtn = el('button','btn ghost','+ Вариант');
+  addOptBtn.style.marginBottom = '12px';
+  addOptBtn.onclick = () => addOptionRow('');
+  box.appendChild(addOptBtn);
+
+  const toggleRow = (labelText) => {
+    const row = el('label','poll-toggle-row');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.style.width = 'auto'; cb.style.marginBottom = '0';
+    row.appendChild(cb); row.appendChild(document.createTextNode(labelText));
+    box.appendChild(row);
+    return cb;
+  };
+
+  const correctToggle = toggleRow('Добавить правильный вариант ответа');
+  correctToggle.onchange = () => {
+    optionRows.forEach(row => { row.querySelector('.poll-correct-cb').style.display = correctToggle.checked ? '' : 'none'; });
+  };
+  const anonToggle = toggleRow('Анонимный опрос');
+  const multiToggle = toggleRow('Несколько вариантов ответа');
+
+  addOptionRow(''); addOptionRow('');
+
+  const row = document.createElement('div');
+  row.className = 'confirm-modal-actions';
+  row.style.marginTop = '12px';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn ghost'; cancelBtn.textContent = 'Отмена';
+  cancelBtn.onclick = () => ov.remove();
+  const okBtn = document.createElement('button');
+  okBtn.className = 'btn'; okBtn.textContent = 'Опубликовать';
+  okBtn.onclick = async () => {
+    const question = qInput.value.trim();
+    const optTexts = optionRows.map(r => r.querySelector('input[type=text]').value.trim()).filter(Boolean);
+    if(!question){ showToast('Введите вопрос'); return; }
+    if(optTexts.length < 2){ showToast('Нужно минимум 2 варианта'); return; }
+    const correctIds = correctToggle.checked
+      ? optionRows.map((r,i) => r.querySelector('.poll-correct-cb').checked ? 'o'+i : null).filter(Boolean)
+      : null;
+    okBtn.disabled = true;
+    try{
+      const pollId = await createPoll({ question, options: optTexts, anonymous: anonToggle.checked, multiSelect: multiToggle.checked, correctOptionIds: correctIds });
+      if(state.chatWith.isGroup) await sendPollMessage(null, null, state.chatWith.groupId, pollId);
+      else await sendPollMessage(state.chatWith.uid, state.chatWith.name, null, pollId);
+      ov.remove();
+    }catch(e){ showToast('Не удалось создать опрос: ' + (e.message||'ошибка')); okBtn.disabled = false; }
+  };
+  row.appendChild(cancelBtn); row.appendChild(okBtn);
+  box.appendChild(row);
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
+function openScheduleSendModal(input){
+  const ov = document.createElement('div');
+  ov.className = 'confirm-modal-overlay';
+  const box = document.createElement('div');
+  box.className = 'confirm-modal-box';
+  box.appendChild(el('div','confirm-modal-text','Отправить позже'));
+
+  const textArea = document.createElement('textarea');
+  textArea.value = input.value || '';
+  textArea.placeholder = 'Текст сообщения…';
+  textArea.rows = 3;
+  textArea.style.width = '100%'; textArea.style.marginBottom = '10px'; textArea.style.boxSizing = 'border-box';
+  textArea.style.fontFamily = 'inherit'; textArea.style.fontSize = '14px';
+  box.appendChild(textArea);
+
+  const timeInput = document.createElement('input');
+  timeInput.type = 'datetime-local';
+  timeInput.style.width = '100%'; timeInput.style.marginBottom = '10px'; timeInput.style.boxSizing = 'border-box';
+  const soon = new Date(Date.now() + 15*60000);
+  soon.setSeconds(0,0);
+  const pad = n => String(n).padStart(2,'0');
+  timeInput.value = `${soon.getFullYear()}-${pad(soon.getMonth()+1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`;
+  box.appendChild(timeInput);
+
+  const row = document.createElement('div');
+  row.className = 'confirm-modal-actions';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn ghost'; cancelBtn.textContent = 'Отмена';
+  cancelBtn.onclick = () => ov.remove();
+  const okBtn = document.createElement('button');
+  okBtn.className = 'btn'; okBtn.textContent = 'Запланировать';
+  okBtn.onclick = async () => {
+    const text = textArea.value.trim();
+    if(!text){ showToast('Введите текст сообщения'); return; }
+    const sendAt = new Date(timeInput.value).getTime();
+    if(!sendAt || sendAt <= Date.now()){ showToast('Выберите время в будущем'); return; }
+    okBtn.disabled = true;
+    try{
+      if(state.chatWith.isGroup){
+        await scheduleMessage(null, null, state.chatWith.groupId, state.chatWith.name, text, sendAt);
+      } else {
+        await scheduleMessage(state.chatWith.uid, state.chatWith.name, null, null, text, sendAt);
+      }
+      ov.remove();
+      input.value = '';
+      showToast('Сообщение запланировано ✓');
+      renderScheduledBanner();
+    }catch(e){ showToast('Не удалось запланировать: ' + (e.message||'ошибка')); okBtn.disabled = false; }
+  };
+  row.appendChild(cancelBtn); row.appendChild(okBtn);
+  box.appendChild(row);
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
+async function renderScheduledBanner(){
+  const slot = document.getElementById('scheduled-banner-slot');
+  if(!slot || !state.chatWith) return;
+  const chatId = state.chatWith.isGroup ? ('g_' + state.chatWith.groupId) : pairId(state.user.uid, state.chatWith.uid);
+  let items = [];
+  try{ items = await listMyScheduledMessages(chatId); }catch(e){ console.error('load scheduled failed', e); return; }
+  slot.innerHTML = '';
+  if(!items.length) return;
+  const banner = el('div','scheduled-banner');
+  banner.appendChild(el('div','','🕐 Отложенных сообщений: ' + items.length));
+  const viewBtn = el('button','btn ghost','Показать');
+  viewBtn.onclick = () => openScheduledListModal(items);
+  banner.appendChild(viewBtn);
+  slot.appendChild(banner);
+}
+
+function openScheduledListModal(items){
+  const ov = document.createElement('div');
+  ov.className = 'confirm-modal-overlay';
+  const box = document.createElement('div');
+  box.className = 'confirm-modal-box';
+  box.appendChild(el('div','confirm-modal-text','Отложенные сообщения'));
+  items.forEach(row => {
+    const item = el('div','scheduled-item');
+    const info = el('div','');
+    info.appendChild(el('div','', row.text));
+    info.appendChild(el('div','meta', formatClockTime(row.send_at) + ' · ' + new Date(row.send_at).toLocaleDateString('ru-RU')));
+    item.appendChild(info);
+    const cancelItemBtn = el('button','icon-btn','✕');
+    cancelItemBtn.title = 'Отменить';
+    cancelItemBtn.onclick = async () => {
+      try{ await cancelScheduledMessage(row.id); item.remove(); renderScheduledBanner(); }
+      catch(e){ showToast('Не удалось отменить'); }
+    };
+    item.appendChild(cancelItemBtn);
+    box.appendChild(item);
+  });
+  const closeBtn = el('button','btn ghost','Закрыть');
+  closeBtn.style.marginTop = '10px';
+  closeBtn.onclick = () => ov.remove();
+  box.appendChild(closeBtn);
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
 }
 
 function showConfirmModal(message, onConfirm, confirmLabel){
@@ -7884,6 +8944,40 @@ async function updateProfileFields(patch){
   const { error } = await sb.from('profiles').update({ profile }).eq('id', state.user.uid);
   if(error) throw new Error(error.message);
   state.profile = profile;
+}
+
+// ---------------- отключение уведомлений по чату ----------------
+// По умолчанию уведомления включены для всех чатов (mutedChats пуст). "Навсегда" храним
+// как условно бесконечную дату — Infinity не переживает JSON, поэтому берём большое число.
+const MUTE_FOREVER_TS = 9999999999999;
+function isChatMuted(chatId){
+  const until = state.profile?.mutedChats?.[chatId];
+  return !!until && until > Date.now();
+}
+async function setChatMute(chatId, durationMs){
+  const until = durationMs === 'forever' ? MUTE_FOREVER_TS : (Date.now() + durationMs);
+  const muted = { ...(state.profile?.mutedChats||{}), [chatId]: until };
+  await updateProfileFields({ mutedChats: muted });
+}
+async function clearChatMute(chatId){
+  const muted = { ...(state.profile?.mutedChats||{}) };
+  delete muted[chatId];
+  await updateProfileFields({ mutedChats: muted });
+}
+function buildMuteMenuItems(menu, chatId, onDone){
+  const muted = isChatMuted(chatId);
+  if(muted){
+    const item = el('div','context-menu-item','🔔 Включить уведомления');
+    item.onclick = async (ev) => { ev.stopPropagation(); closeContextMenu(); await clearChatMute(chatId); onDone(); };
+    menu.appendChild(item);
+  } else {
+    menu.appendChild(el('div','context-menu-title','🔕 Отключить уведомления'));
+    [['на 1 час', 60*60*1000], ['на 3 часа', 3*60*60*1000], ['на день', 24*60*60*1000], ['навсегда', 'forever']].forEach(([label, ms]) => {
+      const item = el('div','context-menu-item', label);
+      item.onclick = async (ev) => { ev.stopPropagation(); closeContextMenu(); await setChatMute(chatId, ms); onDone(); };
+      menu.appendChild(item);
+    });
+  }
 }
 
 async function toggleChatPin(chatId){
@@ -7921,7 +9015,7 @@ async function deleteChatFolder(folderId){
   const folders = (state.profile?.chatFolders || []).filter(f => f.id !== folderId);
   try{
     await updateProfileFields({ chatFolders: folders });
-    if(state.activeChatFolder === folderId) state.activeChatFolder = null;
+    if(state.activeChatFolder === folderId) state.activeChatFolder = 'all';
     render();
   }catch(e){ console.error('folder delete failed', e); showToast('Не удалось удалить вкладку'); }
 }
@@ -7940,20 +9034,28 @@ function renderMessagesTab(){
   sidebarHeader.appendChild(createGroupBtn);
   sidebar.appendChild(sidebarHeader);
 
-  // --- вкладки папок: "Все" + пользовательские папки, чат остаётся и там, и там ---
+  // --- вкладки: встроенные (Все/Непрочитанные/Избранное/Группы) + пользовательские папки.
+  // На компьютере — иконка и подпись, на телефоне — только иконка (см. CSS .folder-tab-label).
   const folders = state.profile?.chatFolders || [];
   const folderTabsRow = el('div','folder-tabs-row');
-  const allTab = el('button','folder-tab' + (!state.activeChatFolder ? ' active' : ''), 'Все');
-  allTab.onclick = () => { state.activeChatFolder = null; render(); };
-  folderTabsRow.appendChild(allTab);
+  if(!state.activeChatFolder) state.activeChatFolder = 'all';
+  function makeBuiltinTab(key, label){
+    const tab = el('button','folder-tab' + (state.activeChatFolder === key ? ' active' : ''));
+    tab.innerHTML = FOLDER_TAB_ICONS[key];
+    tab.appendChild(el('span','folder-tab-label', label));
+    tab.onclick = () => { state.activeChatFolder = key; render(); };
+    return tab;
+  }
+  folderTabsRow.appendChild(makeBuiltinTab('all','Все'));
+  folderTabsRow.appendChild(makeBuiltinTab('unread','Непрочитанные'));
+  folderTabsRow.appendChild(makeBuiltinTab('favorites','Избранное'));
+  folderTabsRow.appendChild(makeBuiltinTab('groups','Группы'));
   folders.forEach(f => {
     const tab = el('button','folder-tab' + (state.activeChatFolder === f.id ? ' active' : ''), f.name);
     tab.onclick = () => { state.activeChatFolder = f.id; render(); };
-    tab.oncontextmenu = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    attachLongPressAndRightClick(tab, () => {
       showConfirmModal(`Удалить вкладку «${f.name}»? Диалоги останутся во «Все».`, () => deleteChatFolder(f.id));
-    };
+    });
     folderTabsRow.appendChild(tab);
   });
   const addFolderBtn = el('button','folder-tab folder-tab-add','+');
@@ -7972,10 +9074,30 @@ function renderMessagesTab(){
   folderTabsRow.appendChild(addFolderBtn);
   sidebar.appendChild(folderTabsRow);
 
+  // --- строка поиска чатов (по имени контакта/группы) ---
+  const searchRow = el('div','chat-search-row');
+  searchRow.innerHTML = FOLDER_TAB_ICONS.search;
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text'; searchInput.placeholder = 'Поиск чата…'; searchInput.className = 'chat-search-input';
+  searchInput.value = state.chatSearchQuery || '';
+  searchInput.oninput = () => {
+    state.chatSearchQuery = searchInput.value;
+    const cursorPos = searchInput.selectionStart;
+    render();
+    const freshInput = document.querySelector('.chat-search-input');
+    if(freshInput){ freshInput.focus(); freshInput.setSelectionRange(cursorPos, cursorPos); }
+  };
+  searchRow.appendChild(searchInput);
+  sidebar.appendChild(searchRow);
+
   if(state.threadsLoading){
     sidebar.appendChild(el('div','footer-note','Загружаем…'));
   } else if(state.threadsError){
     sidebar.appendChild(el('div','err', state.threadsError));
+    const retryBtn = el('button','btn ghost','Повторить');
+    retryBtn.style.marginTop = '8px';
+    retryBtn.onclick = () => openMessagesTab();
+    sidebar.appendChild(retryBtn);
   } else {
     const grid = el('div','people-grid');
 
@@ -7983,7 +9105,7 @@ function renderMessagesTab(){
     const notesChatId = pairId(state.user.uid, state.user.uid);
     const notesOpen = !!(state.chatWith && !state.chatWith.isGroup && state.chatWith.uid === state.user.uid);
     const notesThread = (state.threads||[]).find(t => t.chatId === notesChatId);
-    if(!state.activeChatFolder){
+    if(state.activeChatFolder === 'all' && !state.chatSearchQuery){
       const notesRow = el('div','person-row notes-row' + (notesOpen ? ' thread-open' : ''));
       const left = el('div','');
       left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
@@ -8003,10 +9125,24 @@ function renderMessagesTab(){
     }
 
     let visibleThreads = (state.threads||[]).filter(t => t.chatId !== notesChatId);
-    if(state.activeChatFolder){
+    if(state.activeChatFolder === 'unread'){
+      visibleThreads = visibleThreads.filter(t => t.unread);
+    } else if(state.activeChatFolder === 'favorites'){
+      const pinnedIds = new Set(state.profile?.pinnedChats || []);
+      visibleThreads = visibleThreads.filter(t => pinnedIds.has(t.chatId));
+    } else if(state.activeChatFolder === 'groups'){
+      visibleThreads = visibleThreads.filter(t => t.isGroup);
+    } else if(state.activeChatFolder && state.activeChatFolder !== 'all'){
       const folder = folders.find(f => f.id === state.activeChatFolder);
       const ids = new Set(folder?.chatIds || []);
       visibleThreads = visibleThreads.filter(t => ids.has(t.chatId));
+    }
+    if(state.chatSearchQuery && state.chatSearchQuery.trim()){
+      const q = state.chatSearchQuery.trim().toLowerCase();
+      visibleThreads = visibleThreads.filter(t => {
+        const name = t.isGroup ? (t.groupName || 'Группа') : (t.otherName || '');
+        return name.toLowerCase().includes(q);
+      });
     }
     const pinnedSet = new Set(state.profile?.pinnedChats || []);
     visibleThreads.sort((a,b) => {
@@ -8015,9 +9151,11 @@ function renderMessagesTab(){
       return (b.latest?.ts||0) - (a.latest?.ts||0);
     });
 
-    if(visibleThreads.length === 0 && !notesThread && !state.activeChatFolder){
+    if(visibleThreads.length === 0 && !notesThread && (!state.activeChatFolder || state.activeChatFolder === 'all') && !state.chatSearchQuery){
       sidebar.appendChild(el('div','empty','Пока нет переписок — напиши кому-нибудь из «Друзей».'));
-    } else if(visibleThreads.length === 0 && state.activeChatFolder){
+    } else if(visibleThreads.length === 0 && state.chatSearchQuery){
+      grid.appendChild(el('div','empty','Ничего не найдено.'));
+    } else if(visibleThreads.length === 0 && state.activeChatFolder && state.activeChatFolder !== 'all'){
       grid.appendChild(el('div','empty','В этой вкладке пока нет диалогов. Добавь их через меню « ⋯ » на переписке.'));
     }
     visibleThreads.forEach(t => {
@@ -8033,6 +9171,7 @@ function renderMessagesTab(){
       const displayName = t.isGroup ? (t.groupName || 'Группа') : t.otherName;
       const threadAvatar = avatarCircleEl(displayName, 40);
       if(!t.isGroup) fillAvatarAsync(threadAvatar, t.otherUid);
+      else fillGroupAvatarAsync(threadAvatar, t.groupId);
       left.appendChild(threadAvatar);
       if(t.unread) left.appendChild(el('span','unread-dot'));
       const nameCol = el('div','');
@@ -8041,6 +9180,7 @@ function renderMessagesTab(){
       nameRow.style.display='flex'; nameRow.style.alignItems='center'; nameRow.style.gap='5px';
       nameRow.appendChild(el('span', t.unread ? 'name unread-name' : 'name', displayName));
       if(isPinned) nameRow.appendChild(el('span','pin-badge','📌'));
+      if(t.muted) nameRow.appendChild(el('span','mute-badge','🔕'));
       nameCol.appendChild(nameRow);
       const preview = t.latest ? messagePreviewText(t.latest) : 'Пока нет сообщений';
       nameCol.appendChild(el('div','meta', preview + (t.latest ? ' · ' + timeAgoShort(t.latest.ts) : '')));
@@ -8056,6 +9196,19 @@ function renderMessagesTab(){
         const pinItem = el('div','context-menu-item', isPinned ? '📌 Открепить' : '📌 Закрепить');
         pinItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); toggleChatPin(t.chatId); };
         menu.appendChild(pinItem);
+        buildMuteMenuItems(menu, t.chatId, () => render());
+        if(!t.isGroup && t.otherUid){
+          const blocked = isUserBlocked(t.otherUid);
+          const blockItem = el('div','context-menu-item', blocked ? '✅ Разблокировать' : '🚫 Заблокировать');
+          blockItem.onclick = async (ev) => {
+            ev.stopPropagation(); closeContextMenu();
+            try{
+              if(blocked) await unblockUser(t.otherUid); else await blockUser(t.otherUid, t.otherName);
+              render();
+            }catch(err){ showToast('Не удалось сохранить: ' + (err.message||'ошибка')); }
+          };
+          menu.appendChild(blockItem);
+        }
         if(folders.length){
           menu.appendChild(el('div','context-menu-title','Добавить во вкладку'));
           folders.forEach(f => {
@@ -8300,6 +9453,79 @@ function demoGraphData(){
 
 // ---------------- страны и города ----------------
 const COUNTRIES = ['Россия','Украина','Беларусь','Казахстан','Армения','Грузия','Азербайджан','Узбекистан','Киргизия','Таджикистан','Туркменистан','Молдова','Латвия','Литва','Эстония','США','Канада','Великобритания','Германия','Франция','Испания','Италия','Польша','Нидерланды','Швеция','Норвегия','Финляндия','Турция','ОАЭ','Израиль','Китай','Япония','Южная Корея','Индия','Таиланд','Индонезия','Бразилия','Аргентина','Мексика','Австралия','Другое'];
+
+// Приблизительные координаты городов из списка выше — для подсчёта примерного расстояния
+// между людьми (в км), если у обоих указан город. Точность на уровне города, не адреса.
+const CITY_COORDS = {
+  'Абакан':[53.72,91.44],'Ангарск':[52.54,103.89],'Апрелевка':[55.58,37.07],'Армавир':[44.99,41.13],
+  'Архангельск':[64.54,40.54],'Астрахань':[46.35,48.04],'Ачинск':[56.27,90.50],'Балаково':[52.03,47.78],
+  'Балашиха':[55.80,37.94],'Барнаул':[53.35,83.78],'Батайск':[47.13,39.75],'Белгород':[50.60,36.59],
+  'Березники':[59.41,56.82],'Бийск':[52.54,85.15],'Бронницы':[55.43,38.27],'Брянск':[53.24,34.36],
+  'Великий Новгород':[58.52,31.28],'Верея':[55.34,36.18],'Видное':[55.55,37.70],'Владивосток':[43.12,131.89],
+  'Владикавказ':[43.02,44.68],'Владимир':[56.13,40.41],'Волгоград':[48.71,44.51],'Волгодонск':[47.51,42.15],
+  'Волжский':[48.79,44.75],'Вологда':[59.22,39.89],'Волоколамск':[56.03,35.96],'Воронеж':[51.66,39.20],
+  'Голицыно':[55.62,36.98],'Грозный':[43.32,45.70],'Джанкой':[45.71,34.39],'Дзержинск':[56.24,43.46],
+  'Дмитров':[56.35,37.53],'Долгопрудный':[55.94,37.51],'Домодедово':[55.44,37.77],'Евпатория':[45.19,33.37],
+  'Егорьевск':[55.38,39.06],'Екатеринбург':[56.84,60.65],'Жуковский':[55.60,38.12],'Зарайск':[54.76,38.87],
+  'Иваново':[57.00,40.97],'Ижевск':[56.85,53.21],'Иркутск':[52.29,104.30],'Истра':[55.91,36.86],
+  'Йошкар-Ола':[56.63,47.87],'Казань':[55.80,49.11],'Калининград':[54.71,20.51],'Калуга':[54.51,36.26],
+  'Каменск-Уральский':[56.41,61.92],'Каспийск':[42.87,47.63],'Кашира':[54.84,38.16],'Кемерово':[55.35,86.09],
+  'Керчь':[45.35,36.47],'Киров':[58.60,49.65],'Клин':[56.33,36.73],'Ковров':[56.36,41.32],
+  'Коломна':[55.09,38.78],'Комсомольск-на-Амуре':[50.55,137.02],'Копейск':[55.08,61.62],'Королёв':[55.92,37.83],
+  'Кострома':[57.77,40.93],'Красногорск':[55.83,37.33],'Краснодар':[45.04,38.98],'Краснознаменск':[55.65,37.13],
+  'Красноярск':[56.01,92.85],'Кубинка':[55.58,36.70],'Курган':[55.44,65.32],'Курск':[51.73,36.19],
+  'Липецк':[52.61,39.60],'Лобня':[56.02,37.47],'Луховицы':[54.96,39.03],'Люберцы':[55.68,37.89],
+  'Магнитогорск':[53.41,58.98],'Махачкала':[42.98,47.50],'Можайск':[55.51,36.02],'Москва':[55.75,37.62],
+  'Мурманск':[68.97,33.08],'Мытищи':[55.91,37.73],'Нальчик':[43.50,43.61],'Наро-Фоминск':[55.38,36.72],
+  'Нефтекамск':[56.09,54.27],'Нефтеюганск':[61.09,72.60],'Нижнекамск':[55.63,51.82],'Нижний Новгород':[56.33,44.00],
+  'Нижний Тагил':[57.91,59.98],'Новокузнецк':[53.75,87.10],'Новомосковск':[54.02,38.22],'Новороссийск':[44.72,37.77],
+  'Новосибирск':[55.03,82.92],'Новочеркасск':[47.41,40.09],'Ногинск':[55.85,38.44],'Норильск':[69.35,88.20],
+  'Обнинск':[55.10,36.61],'Одинцово':[55.68,37.28],'Озёры':[54.86,38.55],'Омск':[54.99,73.37],
+  'Орёл':[52.97,36.06],'Оренбург':[51.77,55.10],'Орехово-Зуево':[55.80,38.99],'Орск':[51.20,58.57],
+  'Павловский Посад':[55.78,38.99],'Пенза':[53.20,45.00],'Первоуральск':[56.91,59.94],'Пермь':[58.01,56.25],
+  'Подольск':[55.43,37.55],'Прокопьевск':[53.88,86.72],'Протвино':[54.87,37.22],'Псков':[57.82,28.33],
+  'Пушкино':[56.01,37.85],'Пущино':[54.84,37.62],'Пятигорск':[44.04,43.06],'Раменское':[55.57,38.22],
+  'Реутов':[55.76,37.86],'Ростов-на-Дону':[47.24,39.71],'Руза':[55.70,36.20],'Рыбинск':[58.05,38.86],
+  'Рязань':[54.63,39.73],'Самара':[53.20,50.15],'Санкт-Петербург':[59.94,30.31],'Саранск':[54.19,45.18],
+  'Саратов':[51.53,46.03],'Севастополь':[44.62,33.53],'Северодвинск':[64.56,39.83],'Северск':[56.60,84.87],
+  'Сергиев Посад':[56.31,38.13],'Серпухов':[54.92,37.42],'Симферополь':[44.95,34.10],'Смоленск':[54.78,32.05],
+  'Сочи':[43.59,39.72],'Ставрополь':[45.04,41.97],'Старый Оскол':[51.30,37.83],'Стерлитамак':[53.63,55.94],
+  'Ступино':[54.89,38.07],'Сургут':[61.25,73.42],'Сызрань':[53.16,48.47],'Сыктывкар':[61.67,50.84],
+  'Таганрог':[47.24,38.92],'Талдом':[56.73,37.53],'Тверь':[56.86,35.90],'Тольятти':[53.51,49.42],
+  'Томск':[56.48,84.97],'Троицк':[55.48,37.30],'Тула':[54.19,37.62],'Тюмень':[57.15,65.53],
+  'Улан-Удэ':[51.83,107.60],'Ульяновск':[54.31,48.36],'Уссурийск':[43.80,131.95],'Уфа':[54.74,55.97],
+  'Феодосия':[45.03,35.38],'Хабаровск':[48.48,135.08],'Химки':[55.89,37.43],'Чебоксары':[56.13,47.25],
+  'Челябинск':[55.16,61.44],'Череповец':[59.13,37.90],'Черкесск':[44.23,42.05],'Чехов':[55.15,37.46],
+  'Чита':[52.03,113.50],'Шатура':[55.57,39.53],'Шахты':[47.71,40.22],'Щёлково':[55.92,37.99],
+  'Электрогорск':[55.87,38.78],'Электросталь':[55.79,38.46],'Энгельс':[51.48,46.11],'Южно-Сахалинск':[46.96,142.74],
+  'Якутск':[62.03,129.73],'Ялта':[44.50,34.17],'Ярославль':[57.63,39.87],
+  'Днепр':[48.46,35.05],'Запорожье':[47.84,35.14],'Киев':[50.45,30.52],'Львов':[49.84,24.03],'Одесса':[46.48,30.72],'Харьков':[49.99,36.23],
+  'Брест':[52.10,23.73],'Витебск':[55.19,30.21],'Гомель':[52.44,30.98],'Гродно':[53.68,23.83],'Минск':[53.90,27.57],'Могилёв':[53.90,30.33],
+  'Актобе':[50.28,57.21],'Алматы':[43.24,76.95],'Астана':[51.18,71.45],'Караганда':[49.80,73.10],'Шымкент':[42.32,69.60],
+  'Ванадзор':[40.81,44.49],'Гюмри':[40.79,43.85],'Ереван':[40.18,44.51],
+  'Батуми':[41.65,41.64],'Кутаиси':[42.27,42.70],'Тбилиси':[41.72,44.79],
+  'Баку':[40.41,49.87],'Гянджа':[40.68,46.36],
+  'Бухара':[39.77,64.42],'Самарканд':[39.65,66.98],'Ташкент':[41.30,69.24],
+  'Бостон':[42.36,-71.06],'Лос-Анджелес':[34.05,-118.24],'Майами':[25.76,-80.19],'Нью-Йорк':[40.71,-74.01],'Сан-Франциско':[37.77,-122.42],'Сиэтл':[47.61,-122.33],'Хьюстон':[29.76,-95.37],'Чикаго':[41.88,-87.63],
+  'Ванкувер':[49.28,-123.12],'Монреаль':[45.50,-73.57],'Торонто':[43.65,-79.38],
+  'Лондон':[51.51,-0.13],'Манчестер':[53.48,-2.24],'Эдинбург':[55.95,-3.19],
+  'Берлин':[52.52,13.40],'Гамбург':[53.55,9.99],'Кёльн':[50.94,6.96],'Мюнхен':[48.14,11.58],'Франкфурт':[50.11,8.68],
+  'Лион':[45.76,4.84],'Марсель':[43.30,5.37],'Париж':[48.86,2.35],
+  'Барселона':[41.39,2.17],'Валенсия':[39.47,-0.38],'Мадрид':[40.42,-3.70],
+  'Милан':[45.46,9.19],'Неаполь':[40.85,14.27],'Рим':[41.90,12.50],
+  'Варшава':[52.23,21.01],'Вроцлав':[51.11,17.04],'Краков':[50.06,19.94],
+  'Анкара':[39.93,32.86],'Анталия':[36.90,30.71],'Стамбул':[41.01,28.98],
+  'Абу-Даби':[24.45,54.38],'Дубай':[25.20,55.27],
+  'Иерусалим':[31.78,35.21],'Тель-Авив':[32.08,34.78],'Хайфа':[32.79,34.99],
+};
+function distanceKmBetweenCities(cityA, cityB){
+  const a = CITY_COORDS[cityA], b = CITY_COORDS[cityB];
+  if(!a || !b) return null;
+  const R = 6371;
+  const dLat = (b[0]-a[0]) * Math.PI/180, dLng = (b[1]-a[1]) * Math.PI/180;
+  const s = Math.sin(dLat/2)**2 + Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLng/2)**2;
+  return Math.round(R * 2*Math.atan2(Math.sqrt(s), Math.sqrt(1-s)));
+}
 
 const CITIES_BY_COUNTRY = {
   'Россия': ['Абакан','Ангарск','Апрелевка','Армавир','Архангельск','Астрахань','Ачинск','Балаково','Балашиха','Барнаул','Батайск','Белгород','Березники','Бийск','Бронницы','Брянск','Великий Новгород','Верея','Видное','Владивосток','Владикавказ','Владимир','Волгоград','Волгодонск','Волжский','Вологда','Волоколамск','Воронеж','Голицыно','Грозный','Джанкой','Дзержинск','Дмитров','Долгопрудный','Домодедово','Евпатория','Егорьевск','Екатеринбург','Жуковский','Зарайск','Иваново','Ижевск','Иркутск','Истра','Йошкар-Ола','Казань','Калининград','Калуга','Каменск-Уральский','Каспийск','Кашира','Кемерово','Керчь','Киров','Клин','Ковров','Коломна','Комсомольск-на-Амуре','Копейск','Королёв','Кострома','Красногорск','Краснодар','Краснознаменск','Красноярск','Кубинка','Курган','Курск','Липецк','Лобня','Луховицы','Люберцы','Магнитогорск','Махачкала','Можайск','Москва','Мурманск','Мытищи','Нальчик','Наро-Фоминск','Нефтекамск','Нефтеюганск','Нижнекамск','Нижний Новгород','Нижний Тагил','Новокузнецк','Новомосковск','Новороссийск','Новосибирск','Новочеркасск','Ногинск','Норильск','Обнинск','Одинцово','Озёры','Омск','Орёл','Оренбург','Орехово-Зуево','Орск','Павловский Посад','Пенза','Первоуральск','Пермь','Подольск','Прокопьевск','Протвино','Псков','Пушкино','Пущино','Пятигорск','Раменское','Реутов','Ростов-на-Дону','Руза','Рыбинск','Рязань','Самара','Санкт-Петербург','Саранск','Саратов','Севастополь','Северодвинск','Северск','Сергиев Посад','Серпухов','Симферополь','Смоленск','Сочи','Ставрополь','Старый Оскол','Стерлитамак','Ступино','Сургут','Сызрань','Сыктывкар','Таганрог','Талдом','Тверь','Тольятти','Томск','Троицк','Тула','Тюмень','Улан-Удэ','Ульяновск','Уссурийск','Уфа','Феодосия','Хабаровск','Химки','Чебоксары','Челябинск','Череповец','Черкесск','Чехов','Чита','Шатура','Шахты','Щёлково','Электрогорск','Электросталь','Энгельс','Южно-Сахалинск','Якутск','Ялта','Ярославль','Другое'],
@@ -8729,6 +9955,7 @@ function renderAccountScreen(){
     stopCalendarRealtime();
     calendarNotifications = [];
     remindedEventIds.clear();
+    remindedEventIdsLoadedFor = null;
     stopListeningForIncomingCalls();
     if(currentCall) endCall(true);
     if(currentGroupCall) endGroupCall();
@@ -9096,6 +10323,8 @@ function renderAuth(){
       startCalendarRealtime();
       loadCalendarNotifications();
       listenForIncomingCalls();
+      loadBlockedUsers();
+      startScheduledMessagesPolling();
     }catch(e){
       state.error = e.message;
       render();
@@ -10011,14 +11240,23 @@ function cssVar(name){
 }
 
 function drawGraph(container, graph){
-  const width = container.clientWidth || 960;
-  const height = container.clientHeight || 460;
+  const displayWidth = container.clientWidth || 960;
+  const displayHeight = container.clientHeight || 460;
+  // На телефоне контейнер узкий, и раскладка внутри физической ширины экрана приводила к тому,
+  // что кружки не помещались и наезжали друг на друга. Раскладываем узлы в отдельном "виртуальном"
+  // пространстве, размер которого растёт вместе с числом узлов, а не с шириной экрана — сам SVG
+  // затем просто масштабируется под реальный размер контейнера через viewBox.
+  const nodeCount = graph.nodes.length;
+  const virtualScale = Math.max(1, Math.sqrt(nodeCount / 9));
+  const width = Math.max(displayWidth, Math.round(640 * virtualScale));
+  const height = Math.max(displayHeight, Math.round(380 * virtualScale));
   const padding = 24;
   const nodeFillColor = cssVar('--bg-soft');
   const labelColor = cssVar('--ink');
   const svg = d3.select(container).append('svg')
-    .attr('width', '100%').attr('height', height)
-    .attr('viewBox', `0 0 ${width} ${height}`);
+    .attr('width', '100%').attr('height', displayHeight)
+    .attr('viewBox', `0 0 ${width} ${height}`)
+    .attr('preserveAspectRatio', 'xMidYMid meet');
 
   const nodes = graph.nodes.map(n => ({ ...n, r: n.isHub ? 28 : (7 + (n.weight||1)*5) }));
   const nodeIds = new Set(nodes.map(n=>n.id));
@@ -10036,6 +11274,18 @@ function drawGraph(container, graph){
     .attr('stroke-width', 1)
     .attr('opacity', 0.6);
 
+  function confirmDeleteNode(d){
+    showConfirmModal(`Удалить «${d.label}» из схемы?`, async () => {
+      state.graph.nodes = state.graph.nodes.filter(n => n.id !== d.id);
+      state.graph.edges = (state.graph.edges || []).filter(e => e.source !== d.id && e.target !== d.id && e.source?.id !== d.id && e.target?.id !== d.id);
+      try{
+        await saveUserGraph(state.user.uid, state.text, state.graph);
+      }catch(e){ console.error('save after delete failed', e); showToast('Не удалось сохранить удаление'); }
+      render();
+    });
+  }
+
+  let nodeTouchTimer = null;
   const node = svg.append('g').selectAll('circle')
     .data(nodes).enter().append('circle')
     .attr('r', d => d.r)
@@ -10044,20 +11294,22 @@ function drawGraph(container, graph){
     .attr('stroke-width', d => d.isHub ? 3 : 2.5)
     .style('cursor', 'pointer')
     .call(d3.drag()
-      .on('start', (event,d)=>{ if(!event.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on('start', (event,d)=>{ if(!event.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; if(nodeTouchTimer){ clearTimeout(nodeTouchTimer); nodeTouchTimer = null; } })
       .on('drag', (event,d)=>{ d.fx=event.x; d.fy=event.y; })
       .on('end', (event,d)=>{ if(!event.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }))
     .on('contextmenu', (event, d) => {
       event.preventDefault();
-      showConfirmModal(`Удалить «${d.label}» из схемы?`, async () => {
-        state.graph.nodes = state.graph.nodes.filter(n => n.id !== d.id);
-        state.graph.edges = (state.graph.edges || []).filter(e => e.source !== d.id && e.target !== d.id && e.source?.id !== d.id && e.target?.id !== d.id);
-        try{
-          await saveUserGraph(state.user.uid, state.text, state.graph);
-        }catch(e){ console.error('save after delete failed', e); showToast('Не удалось сохранить удаление'); }
-        render();
-      });
-    });
+      confirmDeleteNode(d);
+    })
+    // Долгое нажатие на телефоне — аналог правого клика на компьютере, для удаления узла.
+    .on('touchstart', (event, d) => {
+      nodeTouchTimer = setTimeout(() => {
+        nodeTouchTimer = null;
+        if(navigator.vibrate) navigator.vibrate(30);
+        confirmDeleteNode(d);
+      }, 550);
+    })
+    .on('touchend touchmove', () => { if(nodeTouchTimer){ clearTimeout(nodeTouchTimer); nodeTouchTimer = null; } });
 
   const label = svg.append('g').selectAll('text')
     .data(nodes).enter().append('text')
@@ -10105,6 +11357,8 @@ if(supabaseReady){
         startCalendarRealtime();
         loadCalendarNotifications();
         listenForIncomingCalls();
+        loadBlockedUsers();
+        startScheduledMessagesPolling();
       }catch(e){ console.error('session restore failed', e); }
     }
     render();
