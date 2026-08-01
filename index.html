@@ -352,6 +352,20 @@
     position: sticky; top: 16px; z-index: 50; margin-bottom: 40px;
   }
   .brand-row{ margin-bottom: 10px; display:flex; align-items:center; justify-content:space-between; gap: 12px; }
+  .nav-corner-actions{ display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+  .nav-corner-btn{
+    display: flex; align-items: center; gap: 5px; background: transparent; border: none; color: var(--ink-dim);
+    font-family: 'Inter', sans-serif; font-size: 12.5px; cursor: pointer; padding: 4px;
+  }
+  .nav-corner-btn:hover{ color: var(--ink); }
+  .nav-corner-btn.active{ color: var(--gold); }
+  .nav-corner-support{ font-weight: 600; }
+  .contacts-view-toggle{ display: flex; gap: 6px; margin-bottom: 14px; }
+  .contacts-view-tab{
+    font-family: 'Space Grotesk', sans-serif; font-size: 13px; padding: 8px 16px; border-radius: 20px;
+    border: 1px solid var(--line); background: var(--bg-soft); color: var(--ink-dim); cursor: pointer;
+  }
+  .contacts-view-tab.active{ color: var(--gold); border-color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, transparent); }
   .notif-bell-btn{
     position: relative;
     background: color-mix(in srgb, var(--panel) 55%, transparent);
@@ -420,12 +434,18 @@
     padding: 8px 11px;
     white-space: nowrap;
     flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 6px;
     transition: color .15s ease, background .15s ease, border-color .15s ease;
     border-radius: 10px;
   }
   .nav-link:hover{ color: var(--gold); border-color: var(--gold); }
   .nav-link.active{ color: var(--gold); border-color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, transparent); }
   .nav-link.nav-dragging{ opacity: 0.5; border-color: var(--gold); cursor: grabbing; }
+  @media (max-width: 640px){
+    .nav-link-label{ display: none; }
+    .nav-link{ padding: 9px 10px; }
+    .nav-corner-btn span{ display: none; }
+  }
   .nav-link.alert{
     color: #1a1406;
     background: var(--gold);
@@ -1128,6 +1148,17 @@
     color: var(--ink); border-left: 2px solid var(--chip-color, var(--gold));
   }
   .calendar-event-more{ font-size: 10px; color: var(--ink-dim); padding-left: 4px; }
+  @media (max-width: 640px){
+    /* На узком экране время+название не помещаются в клетку дня и вылезают наружу —
+       сворачиваем событие в цветную точку, подробности остаются доступны по тапу на день. */
+    .calendar-event-chip{
+      width: 7px; height: 7px; padding: 0; border-radius: 50%; border-left: none;
+      background: var(--chip-color, var(--gold)); text-indent: -9999px; overflow: hidden;
+      display: inline-block; margin: 1px 2px 1px 0;
+    }
+    .calendar-cell-items{ display: flex; flex-wrap: wrap; gap: 0; }
+    .calendar-event-more{ display: none; }
+  }
 
   .event-modal-box{ max-width: 420px; }
   .event-modal-row{ display:flex; gap: 8px; }
@@ -1591,6 +1622,11 @@ async function fetchAllUsers(){
 // (жёсткий NAT/корпоративная сеть) соединение может не установиться напрямую.
 const RTC_CONFIG = { iceServers: [
   { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  // freestun.net — по недавним данным более надёжный бесплатный TURN, чем старые
+  // статические учётки metered.ca "openrelayproject", которые перестали стабильно работать.
+  { urls: 'stun:freestun.net:3478' },
+  { urls: 'turn:freestun.net:3478', username: 'free', credential: 'free' },
   { urls: 'stun:stun.relay.metered.ca:80' },
   { urls: 'turn:global.relay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
@@ -2031,6 +2067,7 @@ const CHAT_ICONS = {
   calendar: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   trash: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/><path d="M18.5 7l-.8 12.1a2 2 0 0 1-2 1.9H8.3a2 2 0 0 1-2-1.9L5.5 7"/><line x1="10" y1="11" x2="10" y2="16"/><line x1="14" y1="11" x2="14" y2="16"/></svg>',
   edit: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>',
+  send: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
 };
 
 const CALL_ICONS = {
@@ -5493,13 +5530,7 @@ function renderGroupMembersSection(container, group, canAddMembers){
         };
         menu.appendChild(removeItem);
         document.body.appendChild(menu);
-        const rect = moreBtn.getBoundingClientRect();
-        const menuWidth = menu.offsetWidth || 200;
-        let left = rect.left;
-        if(left + menuWidth > window.innerWidth - 8){ left = window.innerWidth - menuWidth - 8; }
-        if(left < 8) left = 8;
-        menu.style.left = left + 'px';
-        menu.style.top = (rect.bottom + 6) + 'px';
+        positionFloatingMenu(menu, moreBtn.getBoundingClientRect());
         setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
       };
       row.appendChild(moreBtn);
@@ -6196,7 +6227,7 @@ function restoreScreenState(){
     const raw = localStorage.getItem('sozvezdie_last_screen');
     if(!raw) return false;
     const saved = JSON.parse(raw);
-    const restorable = ['messages','friends','people','calendar','goals','account','result','support'];
+    const restorable = ['messages','contacts','friends','people','calendar','goals','account','result','support'];
     if(!restorable.includes(saved.screen)) return false;
     if(saved.screen === 'messages' && saved.chatWith){
       if(saved.chatWith.isGroup) openGroupChat(saved.chatWith.groupId, saved.chatWith.name);
@@ -6219,9 +6250,8 @@ function render(){
   else if(state.screen === 'story') renderStory();
   else if(state.screen === 'loading') renderLoading();
   else if(state.screen === 'result') renderResult();
-  else if(state.screen === 'people') renderPeople();
+  else if(state.screen === 'contacts') renderContacts();
   else if(state.screen === 'personView') renderPersonView();
-  else if(state.screen === 'friends') renderFriends();
   else if(state.screen === 'messages') renderMessagesTab();
   else if(state.screen === 'createGroup') renderCreateGroup();
   else if(state.screen === 'support') renderSupport();
@@ -6338,6 +6368,22 @@ function makeNavSortable(container){
   });
 }
 
+const NAV_ICONS = {
+  messages: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  friends: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  people: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  goals: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  mine: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/></svg>',
+  account: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  install: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  support: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 2-3 4"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+};
+
+function isAppInstalled(){
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+}
+
 function renderNav(active){
   const wrapper = el('div','nav-wrapper');
   const brandRow = el('div','brand-row');
@@ -6359,50 +6405,64 @@ function renderNav(active){
   brand.onclick = () => { state.screen='landing'; render(); };
   brandRow.appendChild(brand);
 
+  if(state.user){
+    const cornerActions = el('div','nav-corner-actions');
+    if(!isAppInstalled()){
+      const installCorner = el('button','nav-corner-btn');
+      installCorner.innerHTML = NAV_ICONS.install + '<span>Установить приложение</span>';
+      installCorner.title = 'Установить приложение';
+      installCorner.onclick = () => { triggerInstallPrompt(); };
+      cornerActions.appendChild(installCorner);
+    }
+    const supportCorner = el('button','nav-corner-btn nav-corner-support' + (active==='support' ? ' active' : ''), 'Поддержка');
+    supportCorner.onclick = () => { openSupport(); };
+    cornerActions.appendChild(supportCorner);
+    brandRow.appendChild(cornerActions);
+  }
+
   const nav = el('div','nav');
   const links = el('div','nav-links');
 
   if(state.user){
     const hasUnread = (state.unreadChatsCount||0) > 0;
-    const messagesLink = el('button','nav-link' + (active==='messages' ? ' active' : '') + (hasUnread ? ' alert' : ''),
-      'Сообщения' + (hasUnread ? ' •' + state.unreadChatsCount : ''));
+    const messagesLink = el('button','nav-link' + (active==='messages' ? ' active' : '') + (hasUnread ? ' alert' : ''));
+    messagesLink.innerHTML = NAV_ICONS.messages + '<span class="nav-link-label">Сообщения' + (hasUnread ? ' •' + state.unreadChatsCount : '') + '</span>';
     messagesLink.onclick = () => { openMessagesTab(); };
 
     const hasPending = (state.pendingRequestCount||0) > 0;
-    const friendsLink = el('button','nav-link' + (active==='friends' ? ' active' : '') + (hasPending ? ' alert' : ''),
-      'Контакты' + (hasPending ? ' •' + state.pendingRequestCount : ''));
+    const friendsLink = el('button','nav-link' + (active==='friends' ? ' active' : '') + (hasPending ? ' alert' : ''));
+    friendsLink.innerHTML = NAV_ICONS.friends + '<span class="nav-link-label">Контакты' + (hasPending ? ' •' + state.pendingRequestCount : '') + '</span>';
     friendsLink.onclick = () => { openFriends(); };
 
-    const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''), 'Пользователи');
+    const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''));
+    peopleLink.innerHTML = NAV_ICONS.people + '<span class="nav-link-label">Пользователи</span>';
     peopleLink.onclick = () => { openPeople(); };
 
     const hasCalendarNotif = unreadCalendarNotifCount() > 0;
-    const calendarLink = el('button','nav-link' + (active==='calendar' ? ' active' : '') + (hasCalendarNotif ? ' alert' : ''),
-      'Календарь' + (hasCalendarNotif ? ' •'+unreadCalendarNotifCount() : ''));
+    const calendarLink = el('button','nav-link' + (active==='calendar' ? ' active' : '') + (hasCalendarNotif ? ' alert' : ''));
+    calendarLink.innerHTML = NAV_ICONS.calendar + '<span class="nav-link-label">Календарь' + (hasCalendarNotif ? ' •'+unreadCalendarNotifCount() : '') + '</span>';
     calendarLink.onclick = () => { invalidateCalendarCache(); state.screen = 'calendar'; render(); };
 
-    const myLink = el('button','nav-link' + (active==='mine' ? ' active' : ''), state.graph ? 'Моя схема' : 'Написать о себе');
+    const myLink = el('button','nav-link' + (active==='mine' ? ' active' : ''));
+    myLink.innerHTML = NAV_ICONS.mine + '<span class="nav-link-label">' + (state.graph ? 'Моя схема' : 'Написать о себе') + '</span>';
     myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
 
-    const accountLink = el('button','nav-link' + (active==='account' ? ' active' : ''), 'Аккаунт');
+    const accountLink = el('button','nav-link' + (active==='account' ? ' active' : ''));
+    accountLink.innerHTML = NAV_ICONS.account + '<span class="nav-link-label">Аккаунт</span>';
     accountLink.onclick = () => { state.screen = 'account'; render(); };
 
-    const installLink = el('button','nav-link','Установить приложение');
-    installLink.onclick = () => { triggerInstallPrompt(); };
-
-    const supportLink = el('button','nav-link' + (active==='support' ? ' active' : ''), 'Поддержка');
-    supportLink.onclick = () => { openSupport(); };
-
-    const goalsLink = el('button','nav-link' + (active==='goals' ? ' active' : ''), 'Планы');
+    const goalsLink = el('button','nav-link' + (active==='goals' ? ' active' : ''));
+    goalsLink.innerHTML = NAV_ICONS.goals + '<span class="nav-link-label">Планы</span>';
     goalsLink.onclick = () => { state.goalsLoaded = false; state.screen = 'goals'; render(); };
 
     // Пункты меню теперь именованные (nav-key), чтобы порядок можно было перетаскивать
-    // (долгое нажатие/зажатие мышью) и сохранять на пользователя.
+    // (долгое нажатие/зажатие мышью) и сохранять на пользователя. "Установить приложение" и
+    // "Поддержка" переехали в угол рядом с лого — из общего перетаскиваемого списка убраны.
     const navButtonsByKey = {
       messages: messagesLink, friends: friendsLink, people: peopleLink, calendar: calendarLink,
-      goals: goalsLink, mine: myLink, account: accountLink, install: installLink, support: supportLink,
+      goals: goalsLink, mine: myLink, account: accountLink,
     };
-    const defaultOrder = ['messages','friends','people','calendar','goals','mine','account','install','support'];
+    const defaultOrder = ['messages','friends','people','calendar','goals','mine','account'];
     const savedOrder = (state.profile?.navOrder || []).filter(k => navButtonsByKey[k]);
     const finalOrder = [...savedOrder, ...defaultOrder.filter(k => !savedOrder.includes(k))];
     finalOrder.forEach(key => {
@@ -6427,7 +6487,8 @@ function renderNav(active){
 }
 
 async function openPeople(){
-  state.screen = 'people';
+  state.screen = 'contacts';
+  state.contactsView = 'people';
   state.peopleLoading = true;
   state.peopleError = '';
   render();
@@ -6442,9 +6503,25 @@ async function openPeople(){
   render();
 }
 
+function buildContactsViewToggle(){
+  const row = el('div','contacts-view-toggle');
+  const friendsTab = el('button','contacts-view-tab' + (state.contactsView !== 'people' ? ' active' : ''), 'Контакты');
+  friendsTab.onclick = () => openFriends();
+  const peopleTab = el('button','contacts-view-tab' + (state.contactsView === 'people' ? ' active' : ''), 'Пользователи');
+  peopleTab.onclick = () => openPeople();
+  row.appendChild(friendsTab); row.appendChild(peopleTab);
+  return row;
+}
+
+function renderContacts(){
+  if(state.contactsView === 'people') renderPeople();
+  else renderFriends();
+}
+
 function renderPeople(){
   const w = el('div','wrap wide');
-  w.appendChild(renderNav('people'));
+  w.appendChild(renderNav('friends'));
+  w.appendChild(buildContactsViewToggle());
   w.appendChild(el('h1','', 'Пользователи'));
   w.appendChild(el('p','lead', state.graph
     ? 'Отсортировано по тому, насколько ваши схемы похожи — сверху те, с кем совпадений больше.'
@@ -6663,10 +6740,10 @@ async function renderQuickIcons(container, p){
 function renderPersonView(){
   const p = state.selectedPerson;
   const w = el('div','wrap wide');
-  w.appendChild(renderNav('people'));
-  const back = el('button','btn ghost','← Ко всем пользователям');
+  w.appendChild(renderNav('friends'));
+  const back = el('button','btn ghost','← Назад');
   back.style.marginBottom = '20px';
-  back.onclick = () => { state.screen = 'people'; render(); };
+  back.onclick = () => { state.screen = 'contacts'; render(); };
   w.appendChild(back);
   w.appendChild(el('div','eyebrow', 'Схема — ' + p.name));
   w.appendChild(el('h1','', p.name));
@@ -6823,7 +6900,8 @@ async function renderFriendActionInto(container, p){
 }
 
 async function openFriends(){
-  state.screen = 'friends';
+  state.screen = 'contacts';
+  state.contactsView = 'friends';
   state.friendsLoading = true;
   state.friendsError = '';
   render();
@@ -6852,6 +6930,7 @@ async function openFriends(){
 function renderFriends(){
   const w = el('div','wrap wide');
   w.appendChild(renderNav('friends'));
+  w.appendChild(buildContactsViewToggle());
   w.appendChild(el('h1','', 'Контакты'));
 
   if(state.friendsLoading){
@@ -7036,6 +7115,29 @@ let notifInterval = null;
 // подгружаются в фоне и подменяют кэш, когда придут.
 let chatMessagesCache = {};
 
+// Раньше фоновый опрос списка чатов запускал listChatThreads() пока человек сидел на списке,
+// но если за время сетевого запроса он успевал открыть конкретный чат, ответ всё равно тихо
+// перезаписывал state.threads (просто не перерисовывал экран сразу) — и при возврате назад
+// список оказывался пустым/испорченным. Теперь: (1) не перезаписываем, если пользователь уже
+// не на списке чатов; (2) если новый результат внезапно пуст при том, что до этого список был
+// непустым — это почти наверняка разовый сбой (RLS/токен), а не то, что все переписки исчезли,
+// поэтому игнорируем один-два таких случая подряд, а не затираем данные сразу.
+let threadsEmptyStreak = 0;
+function applyThreadsUpdate(newThreads){
+  if(state.chatWith) return; // пользователь уже открыл конкретный чат — не трогаем
+  if((!newThreads || newThreads.length === 0) && state.threads && state.threads.length > 0){
+    threadsEmptyStreak++;
+    if(threadsEmptyStreak < 3){
+      console.warn('threads poll returned empty after having data — ignoring as likely transient (streak ' + threadsEmptyStreak + ')');
+      return;
+    }
+  } else {
+    threadsEmptyStreak = 0;
+  }
+  state.threads = newThreads;
+  if(state.screen === 'messages' && !state.chatWith) render();
+}
+
 function startNotificationPolling(){
   if(notifInterval) return;
   updateLastActive();
@@ -7045,7 +7147,7 @@ function startNotificationPolling(){
     checkCalendarReminders();
     pollCalendarForChanges();
     if(state.screen === 'messages' && !state.chatWith){
-      listChatThreads().then(threads => { state.threads = threads; if(state.screen === 'messages' && !state.chatWith) render(); }).catch(()=>{});
+      listChatThreads().then(applyThreadsUpdate).catch(()=>{});
     }
   }, 8000);
   // Браузеры замедляют/приостанавливают setInterval в фоновой вкладке — список диалогов
@@ -7057,7 +7159,7 @@ function startNotificationPolling(){
       if(document.visibilityState !== 'visible' || !state.user) return;
       refreshNotificationCounts().then(refreshGlobalNav);
       if(state.screen === 'messages' && !state.chatWith){
-        listChatThreads().then(threads => { state.threads = threads; if(state.screen === 'messages' && !state.chatWith) render(); }).catch(()=>{});
+        listChatThreads().then(applyThreadsUpdate).catch(()=>{});
       }
     });
   }
@@ -7139,8 +7241,8 @@ function openGroupChat(groupId, groupName){
 
 function refreshGlobalNav(){
   const navActiveMap = {
-    landing: 'landing', story: 'mine', result: 'mine', people: 'people',
-    personView: 'people', friends: 'friends', messages: 'messages',
+    landing: 'landing', story: 'mine', result: 'mine', contacts: 'friends',
+    personView: 'friends', messages: 'messages',
     createGroup: 'messages', support: 'support', account: 'account', chat: 'messages',
     calendar: 'calendar', goals: 'goals',
   };
@@ -7259,6 +7361,21 @@ function formatClockTime(ts){
   if(!ts) return '';
   const d = new Date(ts);
   return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+function positionFloatingMenu(menu, rect){
+  const menuHeight = menu.offsetHeight || 160;
+  const menuWidth = menu.offsetWidth || 200;
+  let top = rect.bottom + 6;
+  if(top + menuHeight > window.innerHeight - 8){
+    top = rect.top - menuHeight - 6;
+    if(top < 8) top = 8;
+  }
+  let left = rect.left;
+  if(left + menuWidth > window.innerWidth - 8) left = window.innerWidth - menuWidth - 8;
+  if(left < 8) left = 8;
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
 }
 
 function closeContextMenu(){
@@ -8258,13 +8375,7 @@ function buildChatPanel(container){
       opt2.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); startCall(state.chatWith.uid, state.chatWith.name, 'video'); };
       menu.appendChild(opt1); menu.appendChild(opt2);
       document.body.appendChild(menu);
-      const rect = callBtn.getBoundingClientRect();
-      const menuWidth = menu.offsetWidth || 170;
-      let left = rect.left;
-      if(left + menuWidth > window.innerWidth - 8){ left = window.innerWidth - menuWidth - 8; }
-      if(left < 8) left = 8;
-      menu.style.left = left + 'px';
-      menu.style.top = (rect.bottom + 6) + 'px';
+      positionFloatingMenu(menu, callBtn.getBoundingClientRect());
       setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
     };
     headerActionsWrap.appendChild(callBtn);
@@ -8303,13 +8414,7 @@ function buildChatPanel(container){
       opt2.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); startGroupCall(groupId, groupName, 'video'); };
       menu.appendChild(opt1); menu.appendChild(opt2);
       document.body.appendChild(menu);
-      const rect = groupCallBtn.getBoundingClientRect();
-      const menuWidth = menu.offsetWidth || 170;
-      let left = rect.left;
-      if(left + menuWidth > window.innerWidth - 8){ left = window.innerWidth - menuWidth - 8; }
-      if(left < 8) left = 8;
-      menu.style.left = left + 'px';
-      menu.style.top = (rect.bottom + 6) + 'px';
+      positionFloatingMenu(menu, groupCallBtn.getBoundingClientRect());
       setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
     };
     headerActionsWrap.appendChild(groupCallBtn);
@@ -8379,9 +8484,7 @@ function buildChatPanel(container){
     pollItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); openCreatePollModal(); };
     menu.appendChild(docItem); menu.appendChild(mediaItem); menu.appendChild(pollItem);
     document.body.appendChild(menu);
-    const rect = attachBtn.getBoundingClientRect();
-    menu.style.left = rect.left + 'px';
-    menu.style.top = (rect.bottom + 6) + 'px';
+    positionFloatingMenu(menu, attachBtn.getBoundingClientRect());
     setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
   };
   const doSendImage = (dataUrl, caption) => state.chatWith.isGroup
@@ -8566,11 +8669,16 @@ function buildChatPanel(container){
       cancelBtnEl.onclick = (e) => { e.stopPropagation(); e.preventDefault(); cancel(); };
     }
 
+    let touchPendingStart = null;
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       startX = e.clientX;
       if(e.pointerType === 'mouse'){
         if(active) finish(); else { begin().then(() => { if(active && cancelBtnEl) cancelBtnEl.style.display = ''; }); }
+      } else if(opts.onQuickTap){
+        // На телефоне: ждём чуть-чуть, чтобы отличить короткий тап (переключить режим
+        // голосовое/видео-кружок) от удержания (начать запись).
+        touchPendingStart = setTimeout(() => { touchPendingStart = null; begin(); }, 180);
       } else {
         begin();
       }
@@ -8588,10 +8696,24 @@ function buildChatPanel(container){
       }
     });
     btn.addEventListener('pointerup', (e) => {
-      if(e.pointerType !== 'mouse'){ if(cancelPending) cancel(); else finish(); }
+      if(e.pointerType === 'mouse') return;
+      if(touchPendingStart){
+        clearTimeout(touchPendingStart); touchPendingStart = null;
+        if(opts.onQuickTap) opts.onQuickTap();
+        return;
+      }
+      if(cancelPending) cancel(); else finish();
     });
-    btn.addEventListener('pointerleave', (e) => { if(active && e.pointerType !== 'mouse'){ if(cancelPending) cancel(); else finish(); } });
-    btn.addEventListener('pointercancel', (e) => { if(active && e.pointerType !== 'mouse') cancel(); });
+    btn.addEventListener('pointerleave', (e) => {
+      if(e.pointerType === 'mouse') return;
+      if(touchPendingStart){ clearTimeout(touchPendingStart); touchPendingStart = null; return; }
+      if(active){ if(cancelPending) cancel(); else finish(); }
+    });
+    btn.addEventListener('pointercancel', (e) => {
+      if(e.pointerType === 'mouse') return;
+      if(touchPendingStart){ clearTimeout(touchPendingStart); touchPendingStart = null; return; }
+      if(active) cancel();
+    });
     if(!cancelBtnEl) return btn;
     const wrap = el('span','record-btn-wrap');
     wrap.style.cssText = 'position:relative; display:inline-flex; flex-shrink:0;';
@@ -8609,18 +8731,23 @@ function buildChatPanel(container){
     transcribe: true,
     cancelable: true,
     recorderOptions: { audioBitsPerSecond: 12000 },
+    onQuickTap: () => { chatMediaMode = 'video'; refreshComposeActionSlot(); },
   });
   const videoCircleBtn = makeRecordButton(CHAT_ICONS.video, { video: { width: {ideal: 240}, height: {ideal: 240}, facingMode: 'user' }, audio: true }, 20, doSendVideo, {
     title: 'На телефоне — зажми; на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 20 сек)',
     livePreview: true,
     recorderOptions: videoMime ? { mimeType: videoMime, videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 },
+    onQuickTap: () => { chatMediaMode = 'voice'; refreshComposeActionSlot(); },
   });
+  let chatMediaMode = 'voice'; // 'voice' | 'video' — на телефоне переключается коротким тапом
 
   const input = document.createElement('input');
   input.type='text'; input.placeholder='Написать сообщение…';
   input.style.marginBottom = '0';
   const emojiBtn = buildEmojiButton(input);
-  const sendBtn = el('button','btn','Отправить');
+  const sendBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.send);
+  sendBtn.title = 'Отправить';
+  sendBtn.style.flexShrink = '0';
   const doSend = async () => {
     const text = input.value.trim();
     if(!text) return;
@@ -8628,9 +8755,17 @@ function buildChatPanel(container){
     try{
       await doSendText(text);
     }catch(e){ console.error('send failed', e); }
+    refreshComposeActionSlot();
   };
   sendBtn.onclick = doSend;
   attachLongPressAndRightClick(sendBtn, () => openScheduleSendModal(input));
+  function refreshComposeActionSlot(){
+    const hasText = input.value.trim().length > 0;
+    sendBtn.style.display = hasText ? '' : 'none';
+    voiceBtn.style.display = (!hasText && chatMediaMode === 'voice') ? '' : 'none';
+    videoCircleBtn.style.display = (!hasText && chatMediaMode === 'video') ? '' : 'none';
+  }
+  input.addEventListener('input', refreshComposeActionSlot);
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') doSend(); });
   input.addEventListener('paste', async (e) => {
     const items = e.clipboardData?.items;
@@ -8654,11 +8789,12 @@ function buildChatPanel(container){
   });
   inputRow.appendChild(attachBtn);
   inputRow.appendChild(fileInput);
-  inputRow.appendChild(voiceBtn);
-  inputRow.appendChild(videoCircleBtn);
   inputRow.appendChild(emojiBtn);
   inputRow.appendChild(input);
+  inputRow.appendChild(voiceBtn);
+  inputRow.appendChild(videoCircleBtn);
   inputRow.appendChild(sendBtn);
+  refreshComposeActionSlot();
 
   if(!state.chatWith.isGroup && isUserBlocked(state.chatWith.uid)){
     const blockedBar = el('div','blocked-chat-bar');
@@ -9219,12 +9355,7 @@ function renderMessagesTab(){
           });
         }
         document.body.appendChild(menu);
-        const rect = menuBtn.getBoundingClientRect();
-        let left2 = rect.left;
-        const menuWidth = menu.offsetWidth || 190;
-        if(left2 + menuWidth > window.innerWidth - 8) left2 = window.innerWidth - menuWidth - 8;
-        menu.style.left = left2 + 'px';
-        menu.style.top = (rect.bottom + 6) + 'px';
+        positionFloatingMenu(menu, menuBtn.getBoundingClientRect());
         setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
       };
       row.appendChild(menuBtn);
