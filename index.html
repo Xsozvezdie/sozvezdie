@@ -1784,9 +1784,10 @@ function stopListeningForIncomingCalls(){
 async function getCallStream(type){
   try{
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    if(type !== 'video'){
-      stream.getVideoTracks().forEach(t => { t.enabled = false; });
-    }
+    // Один тип звонка на всё: камеру запрашиваем всегда (чтобы её можно было включить в любой
+    // момент прямо во время разговора), но по умолчанию она выключена — не палит собеседника
+    // видом сразу при ответе.
+    stream.getVideoTracks().forEach(t => { t.enabled = false; });
     return { stream, hasCamera: true };
   }catch(e){
     console.warn('camera unavailable, falling back to audio-only', e);
@@ -2063,7 +2064,7 @@ function renderIncomingCallBanner(){
   avatar.textContent = (incomingCallDoc.fromName || '?')[0].toUpperCase();
   banner.appendChild(avatar);
 
-  const icon = incomingCallDoc.type === 'video' ? '📹' : '📞';
+  const icon = '📞';
   const text = document.createElement('div');
   text.className = 'incoming-call-text';
   text.textContent = incomingCallDoc.groupId
@@ -5872,7 +5873,7 @@ async function togglePinMessage(chatId, msgId, pin){
 
 function messagePreviewText(m){
   if(m.callSummary){
-    const icon = m.callSummary.type === 'video' ? '📹' : '📞';
+    const icon = '📞';
     if(m.callSummary.outcome === 'missed') return icon + ' Пропущенный звонок';
     if(m.callSummary.outcome === 'declined') return icon + ' Звонок отклонён';
     return icon + ' Звонок · ' + formatDuration(m.callSummary.duration);
@@ -7740,7 +7741,7 @@ function renderChatMessages(){
     if(m.callSummary){
       const mineCall = m.fromUid === state.user.uid;
       const cs = m.callSummary;
-      const icon = cs.type === 'video' ? '📹' : '📞';
+      const icon = '📞';
       let label;
       if(cs.outcome === 'missed') label = mineCall ? 'Звонок без ответа' : 'Пропущенный звонок';
       else if(cs.outcome === 'declined') label = mineCall ? 'Звонок отклонён' : 'Вызов отклонён';
@@ -8443,16 +8444,10 @@ function buildChatPanel(container){
     callBtn.onclick = (e) => {
       e.stopPropagation();
       closeContextMenu();
-      const menu = el('div','context-menu');
-      menu.id = 'msg-context-menu';
-      const opt1 = el('div','context-menu-item','📞 Обычный звонок');
-      opt1.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); unlockAudioAutoplay(); startCall(state.chatWith.uid, state.chatWith.name, 'audio'); };
-      const opt2 = el('div','context-menu-item','📹 Видеозвонок');
-      opt2.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); unlockAudioAutoplay(); startCall(state.chatWith.uid, state.chatWith.name, 'video'); };
-      menu.appendChild(opt1); menu.appendChild(opt2);
-      document.body.appendChild(menu);
-      positionFloatingMenu(menu, callBtn.getBoundingClientRect());
-      setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+      showConfirmModal('Позвонить ' + state.chatWith.name + '?', () => {
+        unlockAudioAutoplay();
+        startCall(state.chatWith.uid, state.chatWith.name, 'video');
+      }, 'Позвонить');
     };
     headerActionsWrap.appendChild(callBtn);
 
@@ -8482,16 +8477,10 @@ function buildChatPanel(container){
         unlockAudioAutoplay(); joinOngoingGroupCall(groupId, groupName, ongoing.sessionId, ongoing.type);
         return;
       }
-      const menu = el('div','context-menu');
-      menu.id = 'msg-context-menu';
-      const opt1 = el('div','context-menu-item','📞 Обычный звонок всем');
-      opt1.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); unlockAudioAutoplay(); startGroupCall(groupId, groupName, 'audio'); };
-      const opt2 = el('div','context-menu-item','📹 Видеозвонок всем');
-      opt2.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); unlockAudioAutoplay(); startGroupCall(groupId, groupName, 'video'); };
-      menu.appendChild(opt1); menu.appendChild(opt2);
-      document.body.appendChild(menu);
-      positionFloatingMenu(menu, groupCallBtn.getBoundingClientRect());
-      setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+      showConfirmModal('Позвонить всем в группе «' + groupName + '»?', () => {
+        unlockAudioAutoplay();
+        startGroupCall(groupId, groupName, 'video');
+      }, 'Позвонить');
     };
     headerActionsWrap.appendChild(groupCallBtn);
 
@@ -8938,11 +8927,15 @@ async function openMessagesTab(retryCount){
     failed = true;
   }
   const attempt = retryCount || 0;
-  // Раньше повтор срабатывал только если запрос падал с ошибкой — но по факту он чаще всего
-  // просто ТИХО возвращал пустой список без ошибки (RLS/протухший токен это не бросают как
-  // исключение). Теперь считаем подозрительным и "успешный, но неожиданно пустой" результат —
-  // если раньше список был не пуст (см. кэш в localStorage), тоже повторяем попытку.
-  const looksSuspicious = failed || (threads && threads.length === 0 && loadThreadsCache());
+  // Раньше повтор срабатывал только если запрос падал с ошибкой, или если пустой результат
+  // расходился с уже сохранённым непустым кэшем. Но при самой первой загрузке страницы кэша
+  // ещё нет (это первый раз в этой сессии), а гонка всё равно может быть — сессия авторизации
+  // Supabase иногда ещё не до конца восстановилась к моменту первого запроса (после reload),
+  // из-за чего он тихо возвращает пусто без ошибки. Поэтому теперь ПЕРВЫЙ пустой результат
+  // всегда перепроверяем хотя бы один раз, даже без кэша для сравнения — это и объясняет,
+  // почему помогало переключение на другую вкладку и обратно (свежий повторный запрос), но не
+  // помогала сама перезагрузка страницы (запрос был только один, самый первый).
+  const looksSuspicious = failed || (threads && threads.length === 0 && attempt === 0);
   if(looksSuspicious && attempt < 3){
     await new Promise(r => setTimeout(r, 900 * (attempt + 1)));
     if(state.screen === 'messages') return openMessagesTab(attempt + 1);
