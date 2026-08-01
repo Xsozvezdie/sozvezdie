@@ -2155,6 +2155,20 @@ function renderCallScreen(){
     remoteVid.classList.toggle('cam-off', !camOn);
     remoteAvatar.style.display = camOn ? 'none' : 'flex';
   };
+  // ВАЖНО: video-трек в момент добавления (ontrack) почти всегда ещё "muted" (реальные кадры
+  // просто не успели дойти) — единоразовая проверка в этот момент ошибочно решает "камеры нет"
+  // и больше никогда не перепроверяет. Перепроверяем на события unmute/mute самого трека и на
+  // фактическое начало проигрывания видео.
+  currentCall.remoteStream.getVideoTracks().forEach(t => {
+    t.onunmute = updateRemoteAvatarVisibility;
+    t.onmute = updateRemoteAvatarVisibility;
+  });
+  currentCall.remoteStream.addEventListener('addtrack', () => {
+    currentCall.remoteStream.getVideoTracks().forEach(t => { t.onunmute = updateRemoteAvatarVisibility; t.onmute = updateRemoteAvatarVisibility; });
+    updateRemoteAvatarVisibility();
+  });
+  remoteVid.addEventListener('playing', updateRemoteAvatarVisibility);
+  remoteVid.addEventListener('loadedmetadata', updateRemoteAvatarVisibility);
   remoteTileParts.tile.insertBefore(remoteAvatar, remoteTileParts.tile.firstChild);
   remoteTileParts.tile.insertBefore(remoteVid, remoteTileParts.tile.firstChild);
   updateRemoteAvatarVisibility();
@@ -2657,6 +2671,9 @@ function renderGroupCallScreen(){
       vid.classList.toggle('cam-off', !camOn);
       avatar.style.display = camOn ? 'none' : 'flex';
     };
+    peer.remoteStream.getVideoTracks().forEach(t => { t.onunmute = updateVisibility; t.onmute = updateVisibility; });
+    vid.addEventListener('playing', updateVisibility);
+    vid.addEventListener('loadedmetadata', updateVisibility);
     tile.insertBefore(avatar, tile.firstChild);
     tile.insertBefore(vid, tile.firstChild);
     updateVisibility();
