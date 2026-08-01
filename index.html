@@ -7127,7 +7127,7 @@ function applyThreadsUpdate(newThreads){
   if(state.chatWith) return; // пользователь уже открыл конкретный чат — не трогаем
   if((!newThreads || newThreads.length === 0) && state.threads && state.threads.length > 0){
     threadsEmptyStreak++;
-    if(threadsEmptyStreak < 3){
+    if(threadsEmptyStreak < 4){
       console.warn('threads poll returned empty after having data — ignoring as likely transient (streak ' + threadsEmptyStreak + ')');
       return;
     }
@@ -7135,6 +7135,7 @@ function applyThreadsUpdate(newThreads){
     threadsEmptyStreak = 0;
   }
   state.threads = newThreads;
+  if(newThreads && newThreads.length) saveThreadsCache(newThreads);
   if(state.screen === 'messages' && !state.chatWith) render();
 }
 
@@ -7570,6 +7571,7 @@ function testVideoPlayable(dataUrl){
 }
 
 function dataUrlToObjectUrl(dataUrl){
+  if(!dataUrl || !dataUrl.startsWith('data:')) return dataUrl; // уже обычная ссылка (например, из Storage) — декодировать нечего
   try{
     const [header, base64] = dataUrl.split(',');
     const mimeMatch = header.match(/data:(.*?);base64/);
@@ -8829,26 +8831,58 @@ function applyChatWallpaper(){
   }
 }
 
+function threadsCacheKey(){ return state.user ? ('sozvezdie_threads_cache_' + state.user.uid) : null; }
+function saveThreadsCache(threads){
+  const key = threadsCacheKey();
+  if(!key || !threads || !threads.length) return;
+  try{ localStorage.setItem(key, JSON.stringify({ threads, ts: Date.now() })); }catch(e){}
+}
+function loadThreadsCache(){
+  const key = threadsCacheKey();
+  if(!key) return null;
+  try{
+    const raw = localStorage.getItem(key);
+    if(!raw) return null;
+    const data = JSON.parse(raw);
+    if(!data.threads || !data.threads.length) return null;
+    if(Date.now() - data.ts > 24*3600*1000) return null; // старше суток — не доверяем
+    return data.threads;
+  }catch(e){ return null; }
+}
+
 async function openMessagesTab(retryCount){
   state.screen = 'messages';
-  state.threadsLoading = true;
+  state.threadsLoading = !retryCount;
   state.threadsError = '';
-  render();
+  if(!retryCount) render();
+  let threads = null;
+  let failed = false;
   try{
-    state.threads = await listChatThreads();
+    threads = await listChatThreads();
   }catch(e){
-    console.error('threads load failed', e);
-    // Частая причина — проект Supabase на бесплатном тарифе "просыпается" из простоя и первый
-    // запрос после паузы падает; один автоматический повтор через секунду чинит это без участия
-    // человека (раньше приходилось вручную переключаться на другую вкладку и обратно).
-    if(!retryCount){
-      state.threadsLoading = false;
-      render();
-      await new Promise(r => setTimeout(r, 1200));
-      if(state.screen === 'messages') return openMessagesTab(1);
-      return;
-    }
-    state.threadsError = e.message;
+    console.error('threads load failed (attempt ' + ((retryCount||0)+1) + ')', e);
+    failed = true;
+  }
+  const attempt = retryCount || 0;
+  // Раньше повтор срабатывал только если запрос падал с ошибкой — но по факту он чаще всего
+  // просто ТИХО возвращал пустой список без ошибки (RLS/протухший токен это не бросают как
+  // исключение). Теперь считаем подозрительным и "успешный, но неожиданно пустой" результат —
+  // если раньше список был не пуст (см. кэш в localStorage), тоже повторяем попытку.
+  const looksSuspicious = failed || (threads && threads.length === 0 && loadThreadsCache());
+  if(looksSuspicious && attempt < 3){
+    await new Promise(r => setTimeout(r, 900 * (attempt + 1)));
+    if(state.screen === 'messages') return openMessagesTab(attempt + 1);
+    return;
+  }
+  if(threads && threads.length){
+    state.threads = threads;
+    saveThreadsCache(threads);
+  } else if(!failed){
+    state.threads = threads || []; // реально пустой список — доверяем после нескольких попыток
+  } else {
+    const cached = loadThreadsCache();
+    if(cached){ state.threads = cached; }
+    else state.threadsError = 'Не удалось загрузить переписки';
   }
   state.threadsLoading = false;
   render();
