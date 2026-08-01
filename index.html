@@ -1696,6 +1696,23 @@ function attachSpeakingDetector(stream, tileId, avatarMode){
 
 // ---- звук входящего звонка (без внешних файлов, генерируется через WebAudio) ----
 let ringtoneCtx = null, ringtoneTimer = null;
+// ---------------- разблокировка автовоспроизведения звука ----------------
+// Браузеры не разрешают звук без предшествующего клика пользователя по домену. Клик "Принять"/
+// "Позвонить" формально такой клик, но пока идёт сетевое согласование WebRTC (секунды), эта
+// "привилегия" у некоторых браузеров уже успевает истечь к моменту, когда реально приходит
+// удалённый звук — из-за этого автовоспроизведение блокировалось, и раньше был нужен отдельный
+// клик по кнопке 🔊. Проигрываем прямо в обработчике клика короткий беззвучный wav — это
+// настоящее (не пустое) воспроизведение, которое браузер засчитывает как использование
+// пользовательского разрешения, и после этого дальнейший звук на странице уже не блокируется.
+const SILENT_AUDIO_DATA_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+function unlockAudioAutoplay(){
+  try{
+    const a = new Audio(SILENT_AUDIO_DATA_URI);
+    a.volume = 0.01;
+    a.play().catch(()=>{});
+  }catch(e){ /* тихо игнорируем */ }
+}
+
 function startRingtone(){
   stopRingtone();
   try{
@@ -2058,7 +2075,7 @@ function renderIncomingCallBanner(){
   actions.className = 'incoming-call-actions';
   const acceptBtn = document.createElement('button');
   acceptBtn.className = 'btn'; acceptBtn.textContent = 'Принять';
-  acceptBtn.onclick = () => acceptIncomingCall();
+  acceptBtn.onclick = () => { unlockAudioAutoplay(); acceptIncomingCall(); };
   const declineBtn = document.createElement('button');
   declineBtn.className = 'btn ghost'; declineBtn.textContent = 'Отклонить';
   declineBtn.onclick = () => declineIncomingCall();
@@ -2264,7 +2281,14 @@ function renderCallScreen(){
     };
     renderCamBtn();
     bar.appendChild(camBtn);
+  }
 
+  // Демонстрация экрана не связана с наличием камеры — это отдельная возможность браузера
+  // (getDisplayMedia). На большинстве мобильных браузеров (Chrome/Safari на телефонах) она в
+  // принципе не поддерживается — это ограничение самого браузера, а не приложения. Если её нет,
+  // явно объясняем это в подсказке вместо непонятного "не удалось начать".
+  const screenShareSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  {
     const screenBtn = document.createElement('button');
     screenBtn.className = 'call-ctrl-btn call-ctrl-btn-labeled';
     const renderScreenBtn = () => {
@@ -2272,21 +2296,27 @@ function renderCallScreen(){
       const lbl = document.createElement('span'); lbl.textContent = 'Демонстрация';
       screenBtn.appendChild(lbl);
       screenBtn.classList.toggle('off', !currentCall.screenSharing);
+      if(!screenShareSupported){ screenBtn.classList.add('off'); screenBtn.title = 'Демонстрация экрана не поддерживается этим браузером (обычно недоступна на телефонах)'; }
     };
     screenBtn.onclick = async () => {
+      if(!screenShareSupported){
+        showToast('Демонстрация экрана не поддерживается этим браузером — обычно недоступна на телефонах, попробуйте с компьютера');
+        return;
+      }
       if(!currentCall.screenSharing){
         try{
           const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
           const screenTrack = screenStream.getVideoTracks()[0];
           const sender = currentCall.pc.getSenders().find(s => s.track && s.track.kind === 'video');
-          if(sender) await sender.replaceTrack(screenTrack);
+          if(!sender){ showToast('Нет видео-канала для демонстрации в этом звонке'); screenTrack.stop(); return; }
+          await sender.replaceTrack(screenTrack);
           currentCall.screenTrack = screenTrack;
           currentCall.screenSharing = true;
           screenTrack.onended = () => stopScreenShare();
           renderScreenBtn();
         }catch(e){
           console.error('screen share failed', e);
-          showToast('Не удалось начать демонстрацию экрана');
+          showToast('Не удалось начать демонстрацию экрана: ' + (e.message || e.name || 'ошибка'));
         }
       } else {
         stopScreenShare();
@@ -2303,16 +2333,6 @@ function renderCallScreen(){
     renderScreenBtn();
     bar.appendChild(screenBtn);
   }
-
-  const soundBtn = document.createElement('button');
-  soundBtn.className = 'call-ctrl-btn';
-  soundBtn.innerHTML = '🔊';
-  soundBtn.title = 'Если не слышно собеседника — нажми';
-  soundBtn.onclick = () => {
-    remoteMediaEls.forEach(m => { m.muted = false; m.play().catch(err => console.warn('manual unmute play failed', err)); });
-    showToast('Звук включён (если не помогло — проверьте громкость устройства)');
-  };
-  bar.appendChild(soundBtn);
 
   const hangupBtn = document.createElement('button');
   hangupBtn.className = 'call-hangup-btn'; hangupBtn.innerHTML = CALL_ICONS.phone;
@@ -2731,16 +2751,6 @@ function renderGroupCallScreen(){
     renderCamBtn();
     bar.appendChild(camBtn);
   }
-
-  const soundBtn = document.createElement('button');
-  soundBtn.className = 'call-ctrl-btn';
-  soundBtn.innerHTML = '🔊';
-  soundBtn.title = 'Если кого-то не слышно — нажми';
-  soundBtn.onclick = () => {
-    remoteMediaEls.forEach(m => { if(m !== localVid){ m.muted = false; m.play().catch(err => console.warn('manual unmute play failed', err)); } });
-    showToast('Звук включён (если не помогло — проверьте громкость устройства)');
-  };
-  bar.appendChild(soundBtn);
 
   const hangupBtn = document.createElement('button');
   hangupBtn.className = 'call-hangup-btn'; hangupBtn.innerHTML = CALL_ICONS.phone;
@@ -8436,9 +8446,9 @@ function buildChatPanel(container){
       const menu = el('div','context-menu');
       menu.id = 'msg-context-menu';
       const opt1 = el('div','context-menu-item','📞 Обычный звонок');
-      opt1.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); startCall(state.chatWith.uid, state.chatWith.name, 'audio'); };
+      opt1.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); unlockAudioAutoplay(); startCall(state.chatWith.uid, state.chatWith.name, 'audio'); };
       const opt2 = el('div','context-menu-item','📹 Видеозвонок');
-      opt2.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); startCall(state.chatWith.uid, state.chatWith.name, 'video'); };
+      opt2.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); unlockAudioAutoplay(); startCall(state.chatWith.uid, state.chatWith.name, 'video'); };
       menu.appendChild(opt1); menu.appendChild(opt2);
       document.body.appendChild(menu);
       positionFloatingMenu(menu, callBtn.getBoundingClientRect());
@@ -8469,15 +8479,15 @@ function buildChatPanel(container){
       const groupId = state.chatWith.groupId, groupName = state.chatWith.name;
       const ongoing = await checkForOngoingGroupCall(groupId);
       if(ongoing){
-        joinOngoingGroupCall(groupId, groupName, ongoing.sessionId, ongoing.type);
+        unlockAudioAutoplay(); joinOngoingGroupCall(groupId, groupName, ongoing.sessionId, ongoing.type);
         return;
       }
       const menu = el('div','context-menu');
       menu.id = 'msg-context-menu';
       const opt1 = el('div','context-menu-item','📞 Обычный звонок всем');
-      opt1.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); startGroupCall(groupId, groupName, 'audio'); };
+      opt1.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); unlockAudioAutoplay(); startGroupCall(groupId, groupName, 'audio'); };
       const opt2 = el('div','context-menu-item','📹 Видеозвонок всем');
-      opt2.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); startGroupCall(groupId, groupName, 'video'); };
+      opt2.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); unlockAudioAutoplay(); startGroupCall(groupId, groupName, 'video'); };
       menu.appendChild(opt1); menu.appendChild(opt2);
       document.body.appendChild(menu);
       positionFloatingMenu(menu, groupCallBtn.getBoundingClientRect());
