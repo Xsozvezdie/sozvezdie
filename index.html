@@ -2264,6 +2264,16 @@ function renderCallScreen(){
     bar.appendChild(screenBtn);
   }
 
+  const soundBtn = document.createElement('button');
+  soundBtn.className = 'call-ctrl-btn';
+  soundBtn.innerHTML = '🔊';
+  soundBtn.title = 'Если не слышно собеседника — нажми';
+  soundBtn.onclick = () => {
+    remoteMediaEls.forEach(m => { m.muted = false; m.play().catch(err => console.warn('manual unmute play failed', err)); });
+    showToast('Звук включён (если не помогло — проверьте громкость устройства)');
+  };
+  bar.appendChild(soundBtn);
+
   const hangupBtn = document.createElement('button');
   hangupBtn.className = 'call-hangup-btn'; hangupBtn.innerHTML = CALL_ICONS.phone;
   hangupBtn.onclick = () => endCall(true);
@@ -2677,6 +2687,16 @@ function renderGroupCallScreen(){
     renderCamBtn();
     bar.appendChild(camBtn);
   }
+
+  const soundBtn = document.createElement('button');
+  soundBtn.className = 'call-ctrl-btn';
+  soundBtn.innerHTML = '🔊';
+  soundBtn.title = 'Если кого-то не слышно — нажми';
+  soundBtn.onclick = () => {
+    remoteMediaEls.forEach(m => { if(m !== localVid){ m.muted = false; m.play().catch(err => console.warn('manual unmute play failed', err)); } });
+    showToast('Звук включён (если не помогло — проверьте громкость устройства)');
+  };
+  bar.appendChild(soundBtn);
 
   const hangupBtn = document.createElement('button');
   hangupBtn.className = 'call-hangup-btn'; hangupBtn.innerHTML = CALL_ICONS.phone;
@@ -7026,7 +7046,7 @@ async function getAvatar(uid){
   if(uid in avatarCache) return avatarCache[uid];
   if(!supabaseReady) return null;
   try{
-    const { data } = await sb.from('avatars').select('data').eq('user_id', uid).single();
+    const { data } = await sb.from('avatars').select('data').eq('user_id', uid).maybeSingle();
     const url = data?.data || null;
     avatarCache[uid] = url;
     return url;
@@ -7197,7 +7217,7 @@ function openChat(uid, name){
   // видит ли собеседник мои сообщения — обновляем "просмотрено" в реальном времени
   otherLastReadUnsub = (() => {
     async function refetchOtherRead(){
-      const { data } = await sb.from('chat_reads').select('last_read').eq('user_id', uid).eq('chat_id', chatId).single();
+      const { data } = await sb.from('chat_reads').select('last_read').eq('user_id', uid).eq('chat_id', chatId).maybeSingle();
       state.otherLastRead = data?.last_read || 0;
       if(state.screen === 'messages') renderChatMessages();
     }
