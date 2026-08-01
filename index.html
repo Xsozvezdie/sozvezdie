@@ -1794,6 +1794,9 @@ async function startCall(toUid, toName, type){
 
   pc.oniceconnectionstatechange = () => {
     console.log('ICE state (caller):', pc.iceConnectionState);
+    if(currentCall) currentCall.iceDebugState = pc.iceConnectionState;
+    const badge = document.getElementById('ice-debug-badge');
+    if(badge) badge.textContent = 'ICE: ' + pc.iceConnectionState;
     if(pc.iceConnectionState === 'failed'){ showToast('Не удалось установить соединение (проблема с сетью/TURN)'); }
   };
 
@@ -1918,6 +1921,9 @@ async function acceptIncomingCall(){
   currentCall.speakingCleanup.push(attachSpeakingDetector(localStream, 'call-tile-local', true));
   pc.oniceconnectionstatechange = () => {
     console.log('ICE state (callee):', pc.iceConnectionState);
+    if(currentCall) currentCall.iceDebugState = pc.iceConnectionState;
+    const badge = document.getElementById('ice-debug-badge');
+    if(badge) badge.textContent = 'ICE: ' + pc.iceConnectionState;
     if(pc.iceConnectionState === 'failed'){ showToast('Не удалось установить соединение (проблема с сетью/TURN)'); }
   };
 
@@ -2091,6 +2097,11 @@ function renderCallScreen(){
   const topBar = document.createElement('div');
   topBar.className = 'call-topbar';
   topBar.textContent = currentCall.otherName + (currentCall.role === 'caller' && !currentCall.startedAt ? ' · вызов…' : '');
+  const iceBadge = document.createElement('span');
+  iceBadge.id = 'ice-debug-badge';
+  iceBadge.style.cssText = 'margin-left:10px; font-size:11px; opacity:0.7; font-family:monospace;';
+  iceBadge.textContent = 'ICE: ' + (currentCall.iceDebugState || 'init');
+  topBar.appendChild(iceBadge);
   overlay.appendChild(topBar);
 
   const grid = document.createElement('div');
