@@ -1620,6 +1620,17 @@ async function fetchAllUsers(){
 // а сам голос/видео потом идёт напрямую между браузерами (peer-to-peer).
 // Ограничение: используется только публичный STUN, без TURN — в редких случаях
 // (жёсткий NAT/корпоративная сеть) соединение может не установиться напрямую.
+let candidateWriteFailedWarned = false;
+function insertCallCandidate(row){
+  sb.from('call_candidates').insert(row).then(({ error }) => {
+    if(error && !candidateWriteFailedWarned){
+      candidateWriteFailedWarned = true;
+      console.error('CRITICAL: writing ICE candidate failed', error);
+      showToast('Не удалось отправить сетевые данные звонка: ' + error.message);
+    }
+  });
+}
+
 const RTC_CONFIG = { iceServers: [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -1809,7 +1820,7 @@ async function startCall(toUid, toName, type){
   pc.onicecandidate = (e) => {
     if(!e.candidate) return;
     if(callIdForCandidates){
-      sb.from('call_candidates').insert({ call_id: callIdForCandidates, side: 'caller', candidate: e.candidate.toJSON() });
+      insertCallCandidate({ call_id: callIdForCandidates, side: 'caller', candidate: e.candidate.toJSON() });
     } else {
       pendingLocalCandidates.push(e.candidate.toJSON());
     }
@@ -1826,7 +1837,7 @@ async function startCall(toUid, toName, type){
   const callId = callRow.id;
   callIdForCandidates = callId;
   if(pendingLocalCandidates.length){
-    pendingLocalCandidates.forEach(c => sb.from('call_candidates').insert({ call_id: callId, side: 'caller', candidate: c }));
+    pendingLocalCandidates.forEach(c => insertCallCandidate({ call_id: callId, side: 'caller', candidate: c }));
     pendingLocalCandidates = [];
   }
 
@@ -1927,12 +1938,16 @@ async function acceptIncomingCall(){
     if(pc.iceConnectionState === 'failed'){ showToast('Не удалось установить соединение (проблема с сетью/TURN)'); }
   };
 
-  pc.onicecandidate = (e) => { if(e.candidate) sb.from('call_candidates').insert({ call_id: call.id, side: 'callee', candidate: e.candidate.toJSON() }); };
+  pc.onicecandidate = (e) => { if(e.candidate) insertCallCandidate({ call_id: call.id, side: 'callee', candidate: e.candidate.toJSON() }); };
 
   await pc.setRemoteDescription(new RTCSessionDescription(call.offer));
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
-  await sb.from('calls').update({ status: 'active', answer: { sdp: answer.sdp, type: answer.type } }).eq('id', call.id);
+  const { error: answerWriteError } = await sb.from('calls').update({ status: 'active', answer: { sdp: answer.sdp, type: answer.type } }).eq('id', call.id);
+  if(answerWriteError){
+    console.error('CRITICAL: writing call answer failed', answerWriteError);
+    showToast('Не удалось отправить ответ на звонок: ' + answerWriteError.message);
+  }
 
   const appliedCandidateIds = new Set();
   const channel1 = sb.channel('call-' + call.id)
@@ -2397,7 +2412,7 @@ async function createGroupPeer(peerUid, peerName, isOfferer, existingCallRow, in
   pc.onicecandidate = (e) => {
     if(!e.candidate) return;
     if(rowIdReady){
-      sb.from('call_candidates').insert({ call_id: rowIdReady, side: mySide, candidate: e.candidate.toJSON() });
+      insertCallCandidate({ call_id: rowIdReady, side: mySide, candidate: e.candidate.toJSON() });
     } else {
       pendingCandidates.push(e.candidate.toJSON());
     }
@@ -2419,11 +2434,12 @@ async function createGroupPeer(peerUid, peerName, isOfferer, existingCallRow, in
     await pc.setRemoteDescription(new RTCSessionDescription(existingCallRow.offer));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    await sb.from('calls').update({ status: 'active', answer: { sdp: answer.sdp, type: answer.type } }).eq('id', rowId);
+    const { error: groupAnswerErr } = await sb.from('calls').update({ status: 'active', answer: { sdp: answer.sdp, type: answer.type } }).eq('id', rowId);
+    if(groupAnswerErr) console.error('CRITICAL: writing group call answer failed', groupAnswerErr);
   }
   rowIdReady = rowId;
   if(pendingCandidates.length){
-    pendingCandidates.forEach(c => sb.from('call_candidates').insert({ call_id: rowId, side: mySide, candidate: c }));
+    pendingCandidates.forEach(c => insertCallCandidate({ call_id: rowId, side: mySide, candidate: c }));
     pendingCandidates = [];
   }
   peer.rowId = rowId;
