@@ -1796,6 +1796,17 @@ async function getCallStream(type){
   }
 }
 
+function sendCallControlMessage(call, data){
+  if(!call || !call.controlChannel) return;
+  const ch = call.controlChannel;
+  const payload = JSON.stringify(data);
+  if(ch.readyState === 'open'){
+    ch.send(payload);
+  } else {
+    ch.addEventListener('open', () => { try{ ch.send(payload); }catch(e){} }, { once: true });
+  }
+}
+
 async function startCall(toUid, toName, type){
   if(!supabaseReady) throw backendNotConfiguredError();
   if(currentCall){ showToast('Уже есть активный звонок'); return; }
@@ -1810,6 +1821,20 @@ async function startCall(toUid, toName, type){
   }
   const pc = new RTCPeerConnection(RTC_CONFIG);
   localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+  // track.enabled — это чисто локальный флаг у отправителя, он никогда не передаётся собеседнику
+  // напрямую через сам трек (тот, кто получает трек, продолжает получать данные — чёрные кадры —
+  // и не может по самому треку узнать, что камера "выключена"). Поэтому камеру вкл/выкл сообщаем
+  // явно через служебный DataChannel, входящий в то же WebRTC-соединение.
+  const controlChannel = pc.createDataChannel('control');
+  controlChannel.onmessage = (e) => {
+    try{
+      const msg = JSON.parse(e.data);
+      if(msg.type === 'camera' && currentCall){
+        currentCall.remoteCameraOn = !!msg.enabled;
+        currentCall.updateRemoteAvatarVisibility?.();
+      }
+    }catch(err){}
+  };
   const remoteStream = new MediaStream();
   let remoteSpeakingAttached = false;
   pc.ontrack = (e) => {
@@ -1859,7 +1884,7 @@ async function startCall(toUid, toName, type){
     pendingLocalCandidates = [];
   }
 
-  currentCall = { callId, pc, localStream, remoteStream, unsubs: [], speakingCleanup: [], role: 'caller', type, hasCamera, otherUid: toUid, otherName: toName, startedAt: null, screenSharing: false, screenTrack: null };
+  currentCall = { callId, pc, localStream, remoteStream, unsubs: [], speakingCleanup: [], role: 'caller', type, hasCamera, otherUid: toUid, otherName: toName, startedAt: null, screenSharing: false, screenTrack: null, controlChannel, remoteCameraOn: false };
   currentCall.speakingCleanup.push(attachSpeakingDetector(localStream, 'call-tile-local', true));
 
   const appliedCandidateIds = new Set();
@@ -1935,6 +1960,20 @@ async function acceptIncomingCall(){
   }
   const pc = new RTCPeerConnection(RTC_CONFIG);
   localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+  let controlChannel = null;
+  pc.ondatachannel = (e) => {
+    controlChannel = e.channel;
+    if(currentCall) currentCall.controlChannel = controlChannel;
+    controlChannel.onmessage = (ev) => {
+      try{
+        const msg = JSON.parse(ev.data);
+        if(msg.type === 'camera' && currentCall){
+          currentCall.remoteCameraOn = !!msg.enabled;
+          currentCall.updateRemoteAvatarVisibility?.();
+        }
+      }catch(err){}
+    };
+  };
   const remoteStream = new MediaStream();
   let remoteSpeakingAttachedCallee = false;
   pc.ontrack = (e) => {
@@ -1946,7 +1985,7 @@ async function acceptIncomingCall(){
     }
   };
 
-  currentCall = { callId: call.id, pc, localStream, remoteStream, unsubs: [], speakingCleanup: [], role: 'callee', type: call.type, hasCamera, otherUid: call.fromUid, otherName: call.fromName, startedAt: Date.now(), screenSharing: false, screenTrack: null };
+  currentCall = { callId: call.id, pc, localStream, remoteStream, unsubs: [], speakingCleanup: [], role: 'callee', type: call.type, hasCamera, otherUid: call.fromUid, otherName: call.fromName, startedAt: Date.now(), screenSharing: false, screenTrack: null, controlChannel, remoteCameraOn: false };
   currentCall.speakingCleanup.push(attachSpeakingDetector(localStream, 'call-tile-local', true));
   pc.oniceconnectionstatechange = () => {
     console.log('ICE state (callee):', pc.iceConnectionState);
@@ -2168,11 +2207,15 @@ function renderCallScreen(){
   remoteAvatar.className = 'call-avatar';
   remoteAvatar.textContent = (currentCall.otherName || '?')[0].toUpperCase();
   const updateRemoteAvatarVisibility = () => {
-    const track = currentCall.remoteStream.getVideoTracks()[0];
-    const camOn = !!track && !track.muted && track.enabled;
+    // track.enabled/muted у ПОЛУЧЕННОГО трека не отражают надёжно "камера собеседника выключена" —
+    // это локальный флаг отправителя, который не передаётся через сам трек. Опираемся на явный
+    // сигнал camera on/off, присланный через data channel (см. controlChannel); пока сигнала не
+    // было — считаем камеру выключенной (это и есть исходное состояние по умолчанию).
+    const camOn = !!currentCall.remoteCameraOn;
     remoteVid.classList.toggle('cam-off', !camOn);
     remoteAvatar.style.display = camOn ? 'none' : 'flex';
   };
+  currentCall.updateRemoteAvatarVisibility = updateRemoteAvatarVisibility;
   // ВАЖНО: video-трек в момент добавления (ontrack) почти всегда ещё "muted" (реальные кадры
   // просто не успели дойти) — единоразовая проверка в этот момент ошибочно решает "камеры нет"
   // и больше никогда не перепроверяет. Перепроверяем на события unmute/mute самого трека и на
@@ -2279,6 +2322,7 @@ function renderCallScreen(){
       currentCall.localStream.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
       renderCamBtn();
       if(currentCall.updateLocalAvatarVisibility) currentCall.updateLocalAvatarVisibility();
+      sendCallControlMessage(currentCall, { type: 'camera', enabled: camEnabled() });
     };
     renderCamBtn();
     bar.appendChild(camBtn);
@@ -7206,6 +7250,16 @@ function applyThreadsUpdate(newThreads){
       console.warn('threads poll returned empty after having data — ignoring as likely transient (streak ' + threadsEmptyStreak + ')');
       return;
     }
+    // Пусто уже несколько раз подряд — прежде чем стереть хороший список, пробуем подставить
+    // сохранённый кэш вместо честного (но, видимо, ошибочного) "пусто".
+    const cached = loadThreadsCache();
+    if(cached && cached.length){
+      console.warn('threads poll kept returning empty — falling back to cached list instead of wiping');
+      threadsEmptyStreak = 0;
+      state.threads = cached;
+      if(state.screen === 'messages' && !state.chatWith) render();
+      return;
+    }
   } else {
     threadsEmptyStreak = 0;
   }
@@ -8944,12 +8998,19 @@ async function openMessagesTab(retryCount){
   if(threads && threads.length){
     state.threads = threads;
     saveThreadsCache(threads);
-  } else if(!failed){
-    state.threads = threads || []; // реально пустой список — доверяем после нескольких попыток
   } else {
+    // И "упало с ошибкой", и "успешно вернулось пустым несколько раз подряд" — оба варианта
+    // теперь одинаково проверяем на кэш. Раньше кэш подставлялся только при явной ошибке,
+    // но реальный случай — запрос без ошибки, просто стабильно (не разово) возвращающий 0 строк,
+    // то есть не временный сбой, а что-то более постоянное на стороне Supabase (RLS и т.п.).
+    // В такой ситуации явно неправильно доверять "пусто" и стирать реально существующие диалоги.
     const cached = loadThreadsCache();
-    if(cached){ state.threads = cached; }
-    else state.threadsError = 'Не удалось загрузить переписки';
+    if(cached){
+      console.warn('threads query returned empty after ' + (attempt+1) + ' attempt(s) (failed=' + failed + ') — falling back to cached list from localStorage. This means the live query is not returning your chats; if this persists, something is actually wrong with the query/RLS, not just a transient hiccup.');
+      state.threads = cached;
+    }
+    else if(failed){ state.threadsError = 'Не удалось загрузить переписки'; }
+    else{ state.threads = threads || []; } // кэша нет вообще — это, скорее всего, действительно новый пользователь без диалогов
   }
   state.threadsLoading = false;
   render();
