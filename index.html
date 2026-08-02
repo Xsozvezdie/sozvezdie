@@ -9388,6 +9388,16 @@ function renderMessagesTab(){
   searchRow.appendChild(searchInput);
   sidebar.appendChild(searchRow);
 
+  if(state.threads === undefined && !state.threadsLoading){
+    // Экран "Сообщения" можно открыть в обход openMessagesTab() — например, открыть конкретный
+    // диалог напрямую (из профиля/поиска), а потом нажать "Все переписки". В этом случае список
+    // диалогов вообще ни разу не запрашивался (undefined, а не просто пустой массив) — раньше
+    // это тихо показывалось как "переписок нет", хотя на самом деле их никто и не спрашивал.
+    // Откладываем вызов на следующий тик — openMessagesTab сам делает render(), а мы сейчас
+    // ещё внутри текущего render() (вызов синхронно прямо здесь привёл бы к рекурсии).
+    state.threadsLoading = true;
+    setTimeout(() => openMessagesTab(), 0);
+  }
   if(state.threadsLoading){
     sidebar.appendChild(el('div','footer-note','Загружаем…'));
   } else if(state.threadsError){
