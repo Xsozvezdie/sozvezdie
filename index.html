@@ -475,6 +475,14 @@
 
   .folder-tabs-row{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom: 14px; }
   .folder-tab{ display: inline-flex; align-items: center; gap: 6px; }
+  .folder-tab-icon-only{ padding-left: 10px; padding-right: 10px; }
+  .thread-avatar-wrap{ position: relative; flex-shrink: 0; }
+  .thread-group-badge{
+    position: absolute; bottom: -2px; right: -2px; width: 17px; height: 17px; border-radius: 50%;
+    background: var(--gold); color: var(--bg); display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--panel);
+  }
+  .thread-group-badge svg{ width: 10px; height: 10px; }
   .chat-search-row{
     display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 8px 12px;
     background: var(--bg-soft); border-radius: 12px; color: var(--ink-dim);
@@ -1484,6 +1492,11 @@
     .app-shell:has(.shell-main .chat-panel-card) .shell-sidebar{ display: none; }
     .app-shell:not(:has(.shell-main .chat-panel-card)) .shell-main{ display: none; }
     .shell-back{ display: inline-block; }
+    /* Открытый чат на телефоне должен занимать весь экран, как в обычных мессенджерах —
+       прячем верхнюю навигацию (лого + вкладки), пока конкретный диалог открыт. app-shell
+       и так растягивается на всё оставшееся место через flex:1 (см. базовые правила выше). */
+    .wrap.shell-page:has(.app-shell .chat-panel-card) .nav-wrapper{ display: none; }
+    .wrap.shell-page:has(.app-shell .chat-panel-card){ padding: 10px 0 0; }
   }
 </style>
 </head>
@@ -7268,6 +7281,21 @@ function applyThreadsUpdate(newThreads){
   if(state.screen === 'messages' && !state.chatWith) render();
 }
 
+// ---------------- живое обновление списка чатов ----------------
+// Раньше список диалогов (последнее сообщение, порядок, бейджи) обновлялся только по таймеру
+// раз в 8 сек или при полной перезагрузке страницы. Теперь слушаем новые сообщения через
+// Supabase Realtime и обновляем список сразу же, как только что-то приходит — в любом чате,
+// не только в открытом сейчас.
+let threadsRealtimeChannel = null;
+function startThreadsRealtime(){
+  if(threadsRealtimeChannel || !supabaseReady || !state.user) return;
+  threadsRealtimeChannel = sb.channel('threads-live-' + state.user.uid)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+      listChatThreads().then(applyThreadsUpdate).catch(()=>{});
+    })
+    .subscribe();
+}
+
 function startNotificationPolling(){
   if(notifInterval) return;
   updateLastActive();
@@ -9332,22 +9360,22 @@ function renderMessagesTab(){
   sidebarHeader.appendChild(createGroupBtn);
   sidebar.appendChild(sidebarHeader);
 
-  // --- вкладки: встроенные (Все/Непрочитанные/Избранное/Группы) + пользовательские папки.
+  // --- вкладки: встроенные (Все/Группы) + пользовательские папки.
   // На компьютере — иконка и подпись, на телефоне — только иконка (см. CSS .folder-tab-label).
+  // "Группы" — всегда только иконкой, без подписи (по просьбе).
   const folders = state.profile?.chatFolders || [];
   const folderTabsRow = el('div','folder-tabs-row');
   if(!state.activeChatFolder) state.activeChatFolder = 'all';
-  function makeBuiltinTab(key, label){
-    const tab = el('button','folder-tab' + (state.activeChatFolder === key ? ' active' : ''));
+  function makeBuiltinTab(key, label, iconOnly){
+    const tab = el('button','folder-tab' + (state.activeChatFolder === key ? ' active' : '') + (iconOnly ? ' folder-tab-icon-only' : ''));
     tab.innerHTML = FOLDER_TAB_ICONS[key];
-    tab.appendChild(el('span','folder-tab-label', label));
+    if(!iconOnly) tab.appendChild(el('span','folder-tab-label', label));
+    tab.title = label;
     tab.onclick = () => { state.activeChatFolder = key; render(); };
     return tab;
   }
   folderTabsRow.appendChild(makeBuiltinTab('all','Все'));
-  folderTabsRow.appendChild(makeBuiltinTab('unread','Непрочитанные'));
-  folderTabsRow.appendChild(makeBuiltinTab('favorites','Избранное'));
-  folderTabsRow.appendChild(makeBuiltinTab('groups','Группы'));
+  folderTabsRow.appendChild(makeBuiltinTab('groups','Группы', true));
   folders.forEach(f => {
     const tab = el('button','folder-tab' + (state.activeChatFolder === f.id ? ' active' : ''), f.name);
     tab.onclick = () => { state.activeChatFolder = f.id; render(); };
@@ -9487,10 +9515,17 @@ function renderMessagesTab(){
       left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
       left.style.flex='1'; left.style.minWidth='0';
       const displayName = t.isGroup ? (t.groupName || 'Группа') : t.otherName;
+      const avatarWrap = el('div','thread-avatar-wrap');
       const threadAvatar = avatarCircleEl(displayName, 40);
       if(!t.isGroup) fillAvatarAsync(threadAvatar, t.otherUid);
       else fillGroupAvatarAsync(threadAvatar, t.groupId);
-      left.appendChild(threadAvatar);
+      avatarWrap.appendChild(threadAvatar);
+      if(t.isGroup){
+        const groupBadge = el('div','thread-group-badge');
+        groupBadge.innerHTML = FOLDER_TAB_ICONS.groups;
+        avatarWrap.appendChild(groupBadge);
+      }
+      left.appendChild(avatarWrap);
       if(t.unread) left.appendChild(el('span','unread-dot'));
       const nameCol = el('div','');
       nameCol.style.flex = '1'; nameCol.style.minWidth = '0';
@@ -10638,6 +10673,7 @@ function renderAuth(){
       listenForIncomingCalls();
       loadBlockedUsers();
       startScheduledMessagesPolling();
+      startThreadsRealtime();
     }catch(e){
       state.error = e.message;
       render();
@@ -11672,6 +11708,7 @@ if(supabaseReady){
         listenForIncomingCalls();
         loadBlockedUsers();
         startScheduledMessagesPolling();
+        startThreadsRealtime();
       }catch(e){ console.error('session restore failed', e); }
     }
     render();
