@@ -9451,6 +9451,16 @@ function renderMessagesTab(){
 
     if(visibleThreads.length === 0 && !notesThread && (!state.activeChatFolder || state.activeChatFolder === 'all') && !state.chatSearchQuery){
       sidebar.appendChild(el('div','empty','Пока нет переписок — напиши кому-нибудь из «Друзей».'));
+      const dbg = el('div','footer-note');
+      dbg.style.cssText = 'margin-top:10px; font-family:monospace; font-size:11px; opacity:0.6; word-break:break-all;';
+      let cacheInfo = 'нет';
+      try{
+        const key = threadsCacheKey();
+        const raw = key ? localStorage.getItem(key) : null;
+        if(raw){ const parsed = JSON.parse(raw); cacheInfo = (parsed.threads?.length||0) + ' шт., от ' + new Date(parsed.ts).toLocaleString('ru-RU'); }
+      }catch(e){ cacheInfo = 'ошибка чтения: ' + e.message; }
+      dbg.textContent = `[диагностика] state.threads=${state.threads ? state.threads.length : 'undefined'} · loading=${state.threadsLoading} · error=${state.threadsError || 'нет'} · кэш в localStorage=${cacheInfo}`;
+      sidebar.appendChild(dbg);
     } else if(visibleThreads.length === 0 && state.chatSearchQuery){
       grid.appendChild(el('div','empty','Ничего не найдено.'));
     } else if(visibleThreads.length === 0 && state.activeChatFolder && state.activeChatFolder !== 'all'){
