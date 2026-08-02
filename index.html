@@ -482,10 +482,8 @@
   .folder-tab{ flex-shrink: 0; }
   .folder-tabs-scroll-wrap{ display: flex; align-items: center; gap: 4px; margin-bottom: 0; }
   .folder-tabs-arrow{
-    flex-shrink: 0; width: 22px; height: 28px; display: flex; align-items: center; justify-content: center;
-    background: transparent; border: none; color: var(--ink-dim); font-size: 18px; cursor: pointer;
+    min-width: 30px !important; width: 30px; height: 30px !important; font-size: 16px !important; flex-shrink: 0;
   }
-  .folder-tabs-arrow:hover{ color: var(--ink); }
   @media (max-width: 640px){
     .folder-tabs-arrow{ display: none; }
   }
@@ -672,7 +670,8 @@
   }
 
   .msg-time{
-    font-size: 10px; opacity: 0.6; text-align: right; margin-top: 4px;
+    font-size: 10px; opacity: 0.6; margin-top: 2px;
+    float: right; clear: both; margin-left: 8px;
   }
   .msg-reactions{
     display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
@@ -1211,6 +1210,10 @@
     }
     .calendar-cell-items{ display: flex; flex-wrap: wrap; gap: 0; }
     .calendar-event-more{ display: none; }
+    .calendar-cell{ min-height: 46px; padding: 4px; }
+    .calendar-cell-day{ font-size: 11.5px; margin-bottom: 2px; }
+    .calendar-nav-row{ gap: 6px; margin-bottom: 8px; }
+    .calendar-header-row{ margin-bottom: 6px; }
   }
 
   .event-modal-box{ max-width: 420px; }
@@ -1478,12 +1481,9 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    background: color-mix(in srgb, var(--panel) 62%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--line);
-    border-radius: 16px;
-    padding: 18px;
+    background: transparent;
+    border: none;
+    padding: 0;
     overflow: hidden;
   }
   #chat-messages{
@@ -6749,6 +6749,22 @@ function renderPeople(){
     ? 'Отсортировано по тому, насколько ваши схемы похожи — сверху те, с кем совпадений больше.'
     : 'Заполни свою схему, и здесь появится сортировка по совместимости.'));
 
+  if(state.people === undefined && !state.peopleLoading){
+    // Тот же баг, что в "Сообщениях" и "Контактах" — экран можно открыть в обход openPeople().
+    state.peopleLoading = true;
+    setTimeout(() => openPeople(), 0);
+  }
+  if(state.peopleLoading){
+    w.appendChild(el('div','footer-note','Загружаем…'));
+    root.appendChild(w);
+    return;
+  }
+  if(state.peopleError){
+    w.appendChild(el('div','err', state.peopleError));
+    root.appendChild(w);
+    return;
+  }
+
   if(!state.peopleLoading && !state.peopleError && state.people && state.people.length){
     const searchRow = el('div','');
     searchRow.style.display='flex'; searchRow.style.gap='12px'; searchRow.style.flexWrap='wrap'; searchRow.style.marginBottom='16px';
@@ -7155,6 +7171,13 @@ function renderFriends(){
   w.appendChild(buildContactsViewToggle());
   w.appendChild(el('h1','', 'Контакты'));
 
+  if(state.friendsList === undefined && !state.friendsLoading){
+    // Тот же баг, что был в "Сообщениях": экран можно открыть в обход openFriends() (например,
+    // через восстановление состояния после перезагрузки страницы) — тогда список так и остаётся
+    // никогда не запрошенным. Запускаем загрузку прямо здесь, а не молча показываем пусто.
+    state.friendsLoading = true;
+    setTimeout(() => openFriends(), 0);
+  }
   if(state.friendsLoading){
     w.appendChild(el('div','footer-note','Загружаем…'));
     root.appendChild(w);
@@ -9538,9 +9561,9 @@ function renderMessagesTab(){
   };
   folderTabsRow.appendChild(addFolderBtn);
   const tabsScrollWrap = el('div','folder-tabs-scroll-wrap');
-  const leftArrow = el('button','folder-tabs-arrow folder-tabs-arrow-left','‹');
+  const leftArrow = el('button','btn ghost icon-only-btn folder-tabs-arrow','←');
   leftArrow.onclick = () => { folderTabsRow.scrollBy({ left: -140, behavior: 'smooth' }); };
-  const rightArrow = el('button','folder-tabs-arrow folder-tabs-arrow-right','›');
+  const rightArrow = el('button','btn ghost icon-only-btn folder-tabs-arrow','→');
   rightArrow.onclick = () => { folderTabsRow.scrollBy({ left: 140, behavior: 'smooth' }); };
   tabsScrollWrap.appendChild(leftArrow);
   tabsScrollWrap.appendChild(folderTabsRow);
