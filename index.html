@@ -473,7 +473,22 @@
   }
   .person-row-incomplete .name{ color: var(--ink-dim); }
 
-  .folder-tabs-row{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom: 14px; }
+  .folder-tabs-row{
+    display:flex; flex-wrap:nowrap; gap:6px; margin-bottom: 14px;
+    overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
+    scroll-behavior: smooth; flex: 1; min-width: 0;
+  }
+  .folder-tabs-row::-webkit-scrollbar{ display: none; }
+  .folder-tab{ flex-shrink: 0; }
+  .folder-tabs-scroll-wrap{ display: flex; align-items: center; gap: 4px; margin-bottom: 0; }
+  .folder-tabs-arrow{
+    flex-shrink: 0; width: 22px; height: 28px; display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; color: var(--ink-dim); font-size: 18px; cursor: pointer;
+  }
+  .folder-tabs-arrow:hover{ color: var(--ink); }
+  @media (max-width: 640px){
+    .folder-tabs-arrow{ display: none; }
+  }
   .folder-tab{ display: inline-flex; align-items: center; gap: 6px; }
   .folder-tab-icon-only{ padding-left: 10px; padding-right: 10px; }
   .thread-avatar-wrap{ position: relative; flex-shrink: 0; }
@@ -484,8 +499,8 @@
   }
   .thread-group-badge svg{ width: 10px; height: 10px; }
   .chat-search-row{
-    display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 8px 12px;
-    background: var(--bg-soft); border-radius: 12px; color: var(--ink-dim);
+    display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 8px 4px;
+    background: transparent; border: none; color: var(--ink-dim);
     max-width: 260px;
   }
   .chat-search-icon{
@@ -529,7 +544,7 @@
   .meta{ font-size:12px; color: var(--ink-dim); margin-top:4px; word-break: break-word; }
 
   .chat-box{
-    display:flex; flex-direction:column; gap:10px;
+    display:flex; flex-direction:column; gap:4px;
     max-height: 420px; min-height: 200px; overflow-y:auto;
     padding: 8px 22px;
   }
@@ -538,19 +553,20 @@
     color: var(--ink);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
-    border: 1px solid var(--line);
+    border: none;
     border-radius: 14px 14px 14px 4px;
     padding: 12px 16px;
     font-size: 15.5px;
     line-height: 1.4;
     max-width: 100%;
     word-break: break-word;
+    user-select: none; -webkit-user-select: none;
   }
   .chat-bubble.mine{
     background: var(--gold);
     background: color-mix(in srgb, var(--gold) 62%, transparent);
     color: #1a1406;
-    border-color: var(--gold);
+    border: none;
     border-radius: 12px 12px 4px 12px;
   }
   .chat-bubble.bare-media{
@@ -559,7 +575,7 @@
   .chat-bubble.mine.bare-media{ color: var(--ink); }
   .chat-bubble.mine.bare-media .voice-play{ background: var(--bg-soft); border: 1px solid var(--line); color: var(--ink); }
   .chat-bubble.bare-media .voice-play{ background: var(--bg-soft); border: 1px solid var(--line); }
-  .chat-image{ max-width: 220px; border-radius: 8px; display:block; overflow: hidden; }
+  .chat-image{ max-width: 180px; border-radius: 8px; display:block; overflow: hidden; }
   .demo-match{
     display:flex; align-items:center; gap:14px;
     background: var(--panel); border:1px solid var(--line); border-radius:14px;
@@ -1042,6 +1058,7 @@
     object-fit: contain; border-radius: 8px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.5);
     cursor: zoom-in;
+    position: relative; z-index: 1;
   }
   .image-preview-edit-btn{
     position: absolute; top: 20px; right: 116px; z-index: 10;
@@ -1066,15 +1083,15 @@
 
   .send-preview-overlay{
     position: fixed; inset: 0; z-index: 985;
-    background: rgba(4,4,8,0.85);
+    background: rgba(4,4,8,0.3);
     display:flex; align-items:center; justify-content:center;
     padding: 24px;
   }
   .send-preview-box{
     position: relative; max-width: 480px; width: 100%;
-    background: color-mix(in srgb, var(--panel) 62%, transparent);
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+    background: color-mix(in srgb, var(--panel) 35%, transparent);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
     border-radius: 16px;
     padding: 16px; display:flex; flex-direction:column; gap: 14px;
   }
@@ -1102,13 +1119,15 @@
 
   .confirm-modal-overlay{
     position: fixed; inset: 0; z-index: 990;
-    background: rgba(4,4,8,0.75);
+    background: rgba(4,4,8,0.3);
     display:flex; align-items:center; justify-content:center;
     padding: 24px;
   }
   .confirm-modal-box{
     max-width: 360px; width: 100%;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    background: color-mix(in srgb, var(--panel) 35%, transparent);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border: 1px solid color-mix(in srgb, var(--line) 55%, transparent); border-radius: 16px;
     padding: 22px; display:flex; flex-direction:column; gap: 18px;
   }
   .confirm-modal-text{ font-size: 14.5px; line-height: 1.5; color: var(--ink); }
@@ -1398,8 +1417,10 @@
     padding-top: 4px;
   }
   @media (max-width: 720px){
+    .graph-page{ height: 100dvh; max-height: 100dvh; }
     .graph-body-row{ flex-direction: column; }
-    .legend-side{ width: 100%; flex-direction: row; max-height: none; }
+    .legend-side{ width: 100%; flex-direction: row; flex-wrap: nowrap; max-height: none; overflow-x: auto; flex-shrink: 0; }
+    .graph-card-full{ min-height: 320px; }
   }
   .graph-card-full{
     flex: 1;
@@ -1437,13 +1458,14 @@
   .shell-sidebar{
     width: 320px;
     flex-shrink: 0;
-    background: color-mix(in srgb, var(--panel) 62%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--line);
-    border-radius: 16px;
-    padding: 18px;
+    background: transparent;
+    border: none;
+    padding: 18px 4px;
     overflow-y: auto;
+  }
+  .thread-row{
+    background: color-mix(in srgb, var(--bg-soft) 50%, transparent) !important;
+    border-color: color-mix(in srgb, var(--line) 50%, transparent) !important;
   }
   .shell-sidebar-header{
     display:flex; justify-content:space-between; align-items:center;
@@ -4731,6 +4753,16 @@ function renderCalendarScreen(){
   w.appendChild(navRow);
 
   const card = el('div','card card-translucent calendar-card');
+  // Свайп влево/вправо на телефоне — та же логика, что у стрелок ‹›, просто через жест.
+  let swipeStartX = null;
+  card.addEventListener('touchstart', (e) => { swipeStartX = e.touches[0].clientX; }, { passive: true });
+  card.addEventListener('touchend', (e) => {
+    if(swipeStartX === null) return;
+    const dx = e.changedTouches[0].clientX - swipeStartX;
+    swipeStartX = null;
+    if(Math.abs(dx) < 50) return;
+    if(dx < 0) nextBtn.onclick(); else prevBtn.onclick();
+  }, { passive: true });
   const grid = el('div','calendar-grid');
   ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(d => grid.appendChild(el('div','calendar-dow', d)));
 
@@ -9505,7 +9537,15 @@ function renderMessagesTab(){
     setTimeout(() => input.focus(), 0);
   };
   folderTabsRow.appendChild(addFolderBtn);
-  sidebar.appendChild(folderTabsRow);
+  const tabsScrollWrap = el('div','folder-tabs-scroll-wrap');
+  const leftArrow = el('button','folder-tabs-arrow folder-tabs-arrow-left','‹');
+  leftArrow.onclick = () => { folderTabsRow.scrollBy({ left: -140, behavior: 'smooth' }); };
+  const rightArrow = el('button','folder-tabs-arrow folder-tabs-arrow-right','›');
+  rightArrow.onclick = () => { folderTabsRow.scrollBy({ left: 140, behavior: 'smooth' }); };
+  tabsScrollWrap.appendChild(leftArrow);
+  tabsScrollWrap.appendChild(folderTabsRow);
+  tabsScrollWrap.appendChild(rightArrow);
+  sidebar.appendChild(tabsScrollWrap);
 
   // --- строка поиска чатов (по имени контакта/группы) ---
   const searchRow = el('div','chat-search-row');
@@ -9619,7 +9659,7 @@ function renderMessagesTab(){
         (!t.isGroup && !state.chatWith.isGroup && state.chatWith.uid === t.otherUid)
       );
       const isPinned = pinnedSet.has(t.chatId);
-      const row = el('div','person-row' + (t.unread ? ' unread-row' : '') + (isOpen ? ' thread-open' : ''));
+      const row = el('div','person-row thread-row' + (t.unread ? ' unread-row' : '') + (isOpen ? ' thread-open' : ''));
       const left = el('div','');
       left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
       left.style.flex='1'; left.style.minWidth='0';
