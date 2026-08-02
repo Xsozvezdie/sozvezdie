@@ -148,7 +148,7 @@
   }
   input[type=text]:focus, input[type=password]:focus{ outline:none; border-color: var(--gold); }
 
-  input[type=date], input[type=time]{
+  input[type=date], input[type=time], input[type=datetime-local]{
     background: var(--bg-soft);
     border: 1px solid var(--line);
     color: var(--ink);
@@ -159,12 +159,12 @@
     margin-bottom: 0;
     color-scheme: dark;
   }
-  input[type=date]:focus, input[type=time]:focus{ outline:none; border-color: var(--gold); }
-  body[data-theme="light"] input[type=date], body[data-theme="light"] input[type=time],
-  body[data-theme="nebula"] input[type=date], body[data-theme="nebula"] input[type=time]{
+  input[type=date]:focus, input[type=time]:focus, input[type=datetime-local]:focus{ outline:none; border-color: var(--gold); }
+  body[data-theme="light"] input[type=date], body[data-theme="light"] input[type=time], body[data-theme="light"] input[type=datetime-local],
+  body[data-theme="nebula"] input[type=date], body[data-theme="nebula"] input[type=time], body[data-theme="nebula"] input[type=datetime-local]{
     color-scheme: light;
   }
-  input[type=date]::-webkit-calendar-picker-indicator, input[type=time]::-webkit-calendar-picker-indicator{
+  input[type=date]::-webkit-calendar-picker-indicator, input[type=time]::-webkit-calendar-picker-indicator, input[type=datetime-local]::-webkit-calendar-picker-indicator{
     cursor: pointer;
     opacity: 0.8;
   }
@@ -486,10 +486,15 @@
   .chat-search-row{
     display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 8px 12px;
     background: var(--bg-soft); border-radius: 12px; color: var(--ink-dim);
+    max-width: 260px;
   }
+  .chat-search-icon{
+    flex-shrink: 0; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center;
+  }
+  .chat-search-icon svg{ width: 17px; height: 17px; display: block; }
   .chat-search-input{
     border: none; background: transparent; outline: none; flex: 1; margin-bottom: 0;
-    color: var(--ink); font-family: 'Inter', sans-serif; font-size: 14px;
+    color: var(--ink); font-family: 'Inter', sans-serif; font-size: 14px; min-width: 0;
   }
   @media (max-width: 640px){
     .folder-tab-label{ display: none; }
@@ -926,6 +931,16 @@
     transition: background .15s ease;
   }
   .chat-header-clickable:hover{ background: var(--bg-soft); }
+  .chat-header-bar{
+    display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 16px;
+    margin-bottom: 12px; flex-shrink: 0;
+    /* Чуть менее прозрачная колонка, чем область сообщений (см. .chat-box) — чтобы шапка
+       читалась на фоне выбранной темы. */
+    background: color-mix(in srgb, var(--panel) 20%, transparent);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  }
+  .chat-back-arrow{ font-size: 20px; flex-shrink: 0; color: var(--ink); }
+  .online-ring{ box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #34c759; }
   .contact-info-overlay{
     position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 960;
     display: flex; justify-content: flex-end;
@@ -1029,7 +1044,7 @@
     cursor: zoom-in;
   }
   .image-preview-edit-btn{
-    position: absolute; top: 20px; right: 20px; z-index: 10;
+    position: absolute; top: 20px; right: 116px; z-index: 10;
     display:flex; align-items:center; justify-content:center;
     width: 38px; height: 38px; border-radius: 50%;
     background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
@@ -1037,6 +1052,17 @@
   }
   .image-preview-edit-btn:hover{ background: rgba(255,255,255,0.18); }
   .image-preview-edit-btn svg{ width: 16px; height: 16px; }
+  .image-preview-download-btn, .image-preview-more-btn{
+    position: absolute; top: 20px; z-index: 10;
+    display:flex; align-items:center; justify-content:center;
+    width: 38px; height: 38px; border-radius: 50%;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+    color: #fff; cursor: pointer; font-size: 18px;
+  }
+  .image-preview-download-btn:hover, .image-preview-more-btn:hover{ background: rgba(255,255,255,0.18); }
+  .image-preview-download-btn svg{ width: 17px; height: 17px; }
+  .image-preview-download-btn{ right: 20px; }
+  .image-preview-more-btn{ right: 68px; }
 
   .send-preview-overlay{
     position: fixed; inset: 0; z-index: 985;
@@ -1467,7 +1493,9 @@
     flex-direction: column;
     border: none;
     padding: 0;
-    background: transparent;
+    /* Почти прозрачный фон (90%), чтобы был виден фон выбранной темы — шапка чата теперь
+       отдельный элемент (.chat-header-bar) со своей, менее прозрачной, подложкой. */
+    background: color-mix(in srgb, var(--panel) 10%, transparent) !important;
   }
   .shell-main .chat-box{
     flex: 1;
@@ -2159,6 +2187,7 @@ const CHAT_ICONS = {
   trash: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/><path d="M18.5 7l-.8 12.1a2 2 0 0 1-2 1.9H8.3a2 2 0 0 1-2-1.9L5.5 7"/><line x1="10" y1="11" x2="10" y2="16"/><line x1="14" y1="11" x2="14" y2="16"/></svg>',
   edit: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>',
   send: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+  download: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
 };
 
 const CALL_ICONS = {
@@ -6167,6 +6196,35 @@ function openImagePreview(src, msgContext){
   // Убрала своё меню по правому клику — стандартное меню браузера уже само умеет
   // "Копировать картинку", так что лучше не перекрывать его.
 
+  const downloadBtn = document.createElement('button');
+  downloadBtn.className = 'image-preview-download-btn';
+  downloadBtn.title = 'Скачать';
+  downloadBtn.innerHTML = CHAT_ICONS.download || '⬇️';
+  downloadBtn.onclick = (e) => {
+    e.stopPropagation();
+    downloadDataUrl(src, 'photo-' + Date.now() + '.jpg');
+  };
+  overlay.appendChild(downloadBtn);
+
+  if(msgContext && msgContext.id){
+    const moreBtn = document.createElement('button');
+    moreBtn.className = 'image-preview-more-btn';
+    moreBtn.title = 'Ещё';
+    moreBtn.textContent = '⋯';
+    moreBtn.onclick = (e) => {
+      e.stopPropagation();
+      const menu = el('div','context-menu');
+      menu.id = 'msg-context-menu';
+      const delItem = el('div','context-menu-item','🗑 Удалить');
+      delItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); openDeleteMessageModal(msgContext); overlay.remove(); };
+      menu.appendChild(delItem);
+      document.body.appendChild(menu);
+      positionFloatingMenu(menu, moreBtn.getBoundingClientRect());
+      setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+    };
+    overlay.appendChild(moreBtn);
+  }
+
   if(msgContext && msgContext.mine){
     const editBtn = document.createElement('button');
     editBtn.className = 'image-preview-edit-btn';
@@ -7416,6 +7474,8 @@ function renderChatNavOnly(){
 function renderChatHeaderStatus(){
   const el2 = document.getElementById('chat-status-text');
   if(el2) el2.textContent = state.chatStatusText || '';
+  const avatarEl = document.getElementById('chat-header-avatar');
+  if(avatarEl) avatarEl.classList.toggle('online-ring', state.chatStatusText === 'в сети');
 }
 
 function buildVoicePlayer(voiceData, transcript, waveform){
@@ -7619,16 +7679,55 @@ function showMessageContextMenu(x, y, m, chatId){
   item(m.pinned ? 'Открепить' : 'Закрепить', async () => {
     await togglePinMessage(chatId, m.id, !m.pinned);
   });
-  item('Удалить у себя', async () => { await deleteMessageForMe(m.id); });
-  if(mine){
-    item('Удалить у всех', async () => { await deleteMessageForEveryone(m.id); });
-  }
+  item('🗑 Удалить', () => { openDeleteMessageModal(m); });
 
   document.body.appendChild(menu);
   const menuW = 190, menuH = menu.offsetHeight || 220;
   menu.style.left = Math.min(x, window.innerWidth - menuW - 10) + 'px';
   menu.style.top = Math.min(y, window.innerHeight - menuH - 10) + 'px';
   setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+}
+
+// Единое окно удаления сообщения (любого типа — текст, фото, голосовое и т.д.): если сообщение
+// моё — показываем галочку "Удалить у всех", включённую по умолчанию, но её можно снять и
+// удалить только у себя; если сообщение не моё — такой галочки нет вообще, только "у себя".
+function openDeleteMessageModal(m){
+  const mine = m.mine !== undefined ? m.mine : (m.fromUid === state.user.uid);
+  const ov = document.createElement('div');
+  ov.className = 'confirm-modal-overlay';
+  const box = document.createElement('div');
+  box.className = 'confirm-modal-box';
+  box.appendChild(el('div','confirm-modal-text','Удалить сообщение?'));
+
+  let everyoneCb = null;
+  if(mine){
+    const row = el('label','poll-toggle-row');
+    everyoneCb = document.createElement('input');
+    everyoneCb.type = 'checkbox'; everyoneCb.checked = true; everyoneCb.style.width = 'auto'; everyoneCb.style.marginBottom = '0';
+    row.appendChild(everyoneCb); row.appendChild(document.createTextNode('Удалить у всех'));
+    box.appendChild(row);
+  }
+
+  const row = document.createElement('div');
+  row.className = 'confirm-modal-actions';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn ghost'; cancelBtn.textContent = 'Отмена';
+  cancelBtn.onclick = () => ov.remove();
+  const okBtn = document.createElement('button');
+  okBtn.className = 'btn'; okBtn.textContent = 'Удалить';
+  okBtn.onclick = async () => {
+    okBtn.disabled = true;
+    try{
+      if(mine && everyoneCb.checked) await deleteMessageForEveryone(m.id);
+      else await deleteMessageForMe(m.id);
+      ov.remove();
+    }catch(e){ showToast('Не удалось удалить'); okBtn.disabled = false; }
+  };
+  row.appendChild(cancelBtn); row.appendChild(okBtn);
+  box.appendChild(row);
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
 }
 
 function attachLongPressAndRightClick(el2, handler){
@@ -8478,17 +8577,20 @@ function openContactInfoPanel(){
 
 function buildChatPanel(container){
   container.innerHTML = '';
-  const backToList = el('button','btn ghost shell-back','← Все переписки');
-  backToList.onclick = () => {
+  const headerBar = el('div','chat-header-bar');
+
+  const backArrow = el('button','icon-btn chat-back-arrow','←');
+  backArrow.title = 'Назад к перепискам';
+  backArrow.onclick = () => {
     if(chatUnsubscribe){ chatUnsubscribe(); chatUnsubscribe = null; }
     if(otherLastReadUnsub){ otherLastReadUnsub(); otherLastReadUnsub = null; }
     state.chatWith = null;
     render();
   };
-  container.appendChild(backToList);
+  headerBar.appendChild(backArrow);
 
-  const headerRow = el('div','');
-  headerRow.style.display='flex'; headerRow.style.justifyContent='space-between'; headerRow.style.alignItems='flex-start'; headerRow.style.gap='12px'; headerRow.style.flexWrap='wrap';
+  const headerRow = el('div','chat-header-row');
+  headerRow.style.display='flex'; headerRow.style.justifyContent='space-between'; headerRow.style.alignItems='flex-start'; headerRow.style.gap='12px'; headerRow.style.flexWrap='wrap'; headerRow.style.flex='1';
   const titleWrap = el('div','chat-header-clickable');
   titleWrap.style.display='flex'; titleWrap.style.alignItems='center'; titleWrap.style.gap='12px';
   titleWrap.onclick = () => openContactInfoPanel();
@@ -8496,6 +8598,7 @@ function buildChatPanel(container){
   const chatAvatar = isNotesChat
     ? el('div','avatar-circle notes-avatar-icon')
     : avatarCircleEl(state.chatWith.name, 44);
+  chatAvatar.id = 'chat-header-avatar';
   if(isNotesChat){
     chatAvatar.style.width='44px'; chatAvatar.style.height='44px';
     chatAvatar.style.display='flex'; chatAvatar.style.alignItems='center'; chatAvatar.style.justifyContent='center';
@@ -8504,6 +8607,9 @@ function buildChatPanel(container){
     fillAvatarAsync(chatAvatar, state.chatWith.uid);
   } else {
     fillGroupAvatarAsync(chatAvatar, state.chatWith.groupId);
+  }
+  if(!state.chatWith.isGroup && !isNotesChat){
+    chatAvatar.classList.toggle('online-ring', state.chatStatusText === 'в сети');
   }
   titleWrap.appendChild(chatAvatar);
   const titleCol = el('div','');
@@ -8585,7 +8691,8 @@ function buildChatPanel(container){
     headerActionsWrap.appendChild(calBtn);
   }
   headerRow.appendChild(headerActionsWrap);
-  container.appendChild(headerRow);
+  headerBar.appendChild(headerRow);
+  container.appendChild(headerBar);
 
   const card = el('div','card chat-panel-card card-translucent');
   card.style.position = 'relative';
@@ -9402,7 +9509,9 @@ function renderMessagesTab(){
 
   // --- строка поиска чатов (по имени контакта/группы) ---
   const searchRow = el('div','chat-search-row');
-  searchRow.innerHTML = FOLDER_TAB_ICONS.search;
+  const searchIconWrap = el('span','chat-search-icon');
+  searchIconWrap.innerHTML = FOLDER_TAB_ICONS.search;
+  searchRow.appendChild(searchIconWrap);
   const searchInput = document.createElement('input');
   searchInput.type = 'text'; searchInput.placeholder = 'Поиск чата…'; searchInput.className = 'chat-search-input';
   searchInput.value = state.chatSearchQuery || '';
