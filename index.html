@@ -351,6 +351,9 @@
   .nav-wrapper{
     position: sticky; top: 16px; z-index: 50; margin-bottom: 40px;
   }
+  @media (max-width: 900px){
+    .nav-wrapper{ margin-bottom: 14px; top: 8px; }
+  }
   .brand-row{ margin-bottom: 10px; display:flex; align-items:center; justify-content:space-between; gap: 12px; }
   .nav-corner-actions{ display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
   .nav-corner-btn{
@@ -553,12 +556,13 @@
     -webkit-backdrop-filter: blur(6px);
     border: none;
     border-radius: 14px 14px 14px 4px;
-    padding: 12px 16px;
+    padding: 12px 16px 22px;
     font-size: 15.5px;
     line-height: 1.4;
     max-width: 100%;
     word-break: break-word;
     user-select: none; -webkit-user-select: none;
+    position: relative;
   }
   .chat-bubble.mine{
     background: var(--gold);
@@ -670,8 +674,8 @@
   }
 
   .msg-time{
-    font-size: 10px; opacity: 0.6; margin-top: 2px;
-    float: right; clear: both; margin-left: 8px;
+    font-size: 10px; opacity: 0.65;
+    position: absolute; right: 12px; bottom: 6px;
   }
   .msg-reactions{
     display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
@@ -1168,16 +1172,18 @@
   .graph-page-actions{ flex-shrink: 0; display:flex; gap:12px; margin-top: 14px; flex-wrap: wrap; }
 
   /* ---------------- Календарь ---------------- */
-  .calendar-header-row{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 6px; }
+  .calendar-header-row{ display:flex; justify-content:flex-start; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 6px; }
   .calendar-page-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 26px; margin: 0; }
-  .calendar-nav-row{ display:flex; align-items:center; gap:10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .calendar-nav-row{ display:flex; align-items:center; gap:8px; margin-bottom: 16px; flex-wrap: wrap; }
   .calendar-month-label{
-    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size: 16px; min-width: 160px;
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size: 15px; min-width: 140px;
     background: color-mix(in srgb, var(--bg-soft) 35%, transparent);
-    border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px;
+    border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px;
     cursor: pointer; color: var(--ink); text-align: center;
   }
   .calendar-month-label:hover{ border-color: var(--gold); color: var(--gold); }
+  .calendar-arrow-btn{ min-width: 36px !important; width: 36px; height: 36px !important; font-size: 16px !important; padding: 0 !important; }
+  .btn-compact{ padding: 8px 12px !important; font-size: 13px !important; }
   .calendar-card{ padding: 16px; background: color-mix(in srgb, var(--panel) 4%, transparent) !important; border-color: color-mix(in srgb, var(--line) 40%, transparent) !important; }
   .calendar-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
   .calendar-dow{ text-align:center; font-size: 12px; color: var(--ink-dim); padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -1469,6 +1475,12 @@
   .thread-row{
     background: color-mix(in srgb, var(--bg-soft) 50%, transparent) !important;
     border-color: color-mix(in srgb, var(--line) 50%, transparent) !important;
+  }
+  .shell-sidebar-sticky{
+    position: sticky; top: 0; z-index: 5;
+    background: color-mix(in srgb, var(--panel) 55%, transparent);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    padding: 4px 4px 10px; margin: -4px -4px 4px; border-radius: 14px;
   }
   .shell-sidebar-header{
     display:flex; justify-content:space-between; align-items:center;
@@ -4714,27 +4726,17 @@ function renderCalendarScreen(){
   w.appendChild(renderNav('calendar'));
 
   const headerRow = el('div','calendar-header-row');
-  headerRow.appendChild(el('h1','calendar-page-title','Календарь'));
-  const headerRightWrap = el('div','');
-  headerRightWrap.style.display = 'flex'; headerRightWrap.style.alignItems = 'center'; headerRightWrap.style.gap = '10px';
-  const bellBtn = el('button','notif-bell-btn','🔔');
-  bellBtn.id = 'notif-bell-btn';
-  bellBtn.title = 'Уведомления';
-  const unreadCount = unreadCalendarNotifCount();
-  if(unreadCount) bellBtn.appendChild(el('span','notif-bell-badge', String(unreadCount)));
-  bellBtn.onclick = (e) => { e.stopPropagation(); openNotificationPanel(); };
-  headerRightWrap.appendChild(bellBtn);
-  const addBtn = el('button','btn','+ Создать событие');
+  const addBtn = el('button','btn btn-compact','+ Событие');
   addBtn.onclick = () => openEventModal({});
-  headerRightWrap.appendChild(addBtn);
-  headerRow.appendChild(headerRightWrap);
+  headerRow.appendChild(addBtn);
+  headerRow.appendChild(el('h1','calendar-page-title','Календарь'));
   w.appendChild(headerRow);
 
   if(!state.calendarView) state.calendarView = { year: new Date().getFullYear(), month: new Date().getMonth() };
   const { year, month } = state.calendarView;
 
   const navRow = el('div','calendar-nav-row');
-  const prevBtn = el('button','btn ghost icon-only-btn','←');
+  const prevBtn = el('button','btn ghost icon-only-btn calendar-arrow-btn','←');
   prevBtn.onclick = () => {
     state.calendarView.month--; if(state.calendarView.month < 0){ state.calendarView.month = 11; state.calendarView.year--; }
     render();
@@ -4742,27 +4744,31 @@ function renderCalendarScreen(){
   const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
   const label = el('button','calendar-month-label', `${monthNames[month]} ${year}`);
   label.onclick = () => openMonthPicker(year, month);
-  const nextBtn = el('button','btn ghost icon-only-btn','→');
+  const todayBtn = el('button','btn ghost btn-compact','Сегодня');
+  todayBtn.onclick = () => { state.calendarView = { year: new Date().getFullYear(), month: new Date().getMonth() }; render(); };
+  const nextBtn = el('button','btn ghost icon-only-btn calendar-arrow-btn','→');
   nextBtn.onclick = () => {
     state.calendarView.month++; if(state.calendarView.month > 11){ state.calendarView.month = 0; state.calendarView.year++; }
     render();
   };
-  const todayBtn = el('button','btn ghost','Сегодня');
-  todayBtn.onclick = () => { state.calendarView = { year: new Date().getFullYear(), month: new Date().getMonth() }; render(); };
-  navRow.appendChild(prevBtn); navRow.appendChild(label); navRow.appendChild(nextBtn); navRow.appendChild(todayBtn);
+  navRow.appendChild(prevBtn); navRow.appendChild(label); navRow.appendChild(todayBtn); navRow.appendChild(nextBtn);
   w.appendChild(navRow);
 
-  const card = el('div','card card-translucent calendar-card');
-  // Свайп влево/вправо на телефоне — та же логика, что у стрелок ‹›, просто через жест.
-  let swipeStartX = null;
-  card.addEventListener('touchstart', (e) => { swipeStartX = e.touches[0].clientX; }, { passive: true });
-  card.addEventListener('touchend', (e) => {
+  // Свайп влево/вправо на телефоне — та же логика, что у стрелок ←→, но теперь ловим жест на
+  // всём экране календаря (а не только в сетке дней), чтобы область перелистывания была шире.
+  // Клики по самим кнопкам это не затрагивает — жест засчитывается только при реальном сдвиге.
+  let swipeStartX = null, swipeStartY = null;
+  w.addEventListener('touchstart', (e) => { swipeStartX = e.touches[0].clientX; swipeStartY = e.touches[0].clientY; }, { passive: true });
+  w.addEventListener('touchend', (e) => {
     if(swipeStartX === null) return;
     const dx = e.changedTouches[0].clientX - swipeStartX;
-    swipeStartX = null;
-    if(Math.abs(dx) < 50) return;
+    const dy = e.changedTouches[0].clientY - swipeStartY;
+    swipeStartX = null; swipeStartY = null;
+    if(Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)*1.5) return;
     if(dx < 0) nextBtn.onclick(); else prevBtn.onclick();
   }, { passive: true });
+
+  const card = el('div','card card-translucent calendar-card');
   const grid = el('div','calendar-grid');
   ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(d => grid.appendChild(el('div','calendar-dow', d)));
 
@@ -6629,6 +6635,14 @@ function renderNav(active){
 
   if(state.user){
     const cornerActions = el('div','nav-corner-actions');
+    const bellCorner = el('button','nav-corner-btn notif-bell-btn');
+    bellCorner.innerHTML = '🔔';
+    bellCorner.id = 'notif-bell-btn';
+    bellCorner.title = 'Уведомления';
+    const unreadCount = unreadCalendarNotifCount();
+    if(unreadCount) bellCorner.appendChild(el('span','notif-bell-badge', String(unreadCount)));
+    bellCorner.onclick = (e) => { e.stopPropagation(); openNotificationPanel(); };
+    cornerActions.appendChild(bellCorner);
     if(!isAppInstalled()){
       const installCorner = el('button','nav-corner-btn');
       installCorner.innerHTML = NAV_ICONS.install + '<span>Установить приложение</span>';
@@ -6656,10 +6670,6 @@ function renderNav(active){
     friendsLink.innerHTML = NAV_ICONS.friends + '<span class="nav-link-label">Контакты' + (hasPending ? ' •' + state.pendingRequestCount : '') + '</span>';
     friendsLink.onclick = () => { openFriends(); };
 
-    const peopleLink = el('button','nav-link' + (active==='people' ? ' active' : ''));
-    peopleLink.innerHTML = NAV_ICONS.people + '<span class="nav-link-label">Пользователи</span>';
-    peopleLink.onclick = () => { openPeople(); };
-
     const hasCalendarNotif = unreadCalendarNotifCount() > 0;
     const calendarLink = el('button','nav-link' + (active==='calendar' ? ' active' : '') + (hasCalendarNotif ? ' alert' : ''));
     calendarLink.innerHTML = NAV_ICONS.calendar + '<span class="nav-link-label">Календарь' + (hasCalendarNotif ? ' •'+unreadCalendarNotifCount() : '') + '</span>';
@@ -6681,10 +6691,10 @@ function renderNav(active){
     // (долгое нажатие/зажатие мышью) и сохранять на пользователя. "Установить приложение" и
     // "Поддержка" переехали в угол рядом с лого — из общего перетаскиваемого списка убраны.
     const navButtonsByKey = {
-      messages: messagesLink, friends: friendsLink, people: peopleLink, calendar: calendarLink,
+      messages: messagesLink, friends: friendsLink, calendar: calendarLink,
       goals: goalsLink, mine: myLink, account: accountLink,
     };
-    const defaultOrder = ['messages','friends','people','calendar','goals','mine','account'];
+    const defaultOrder = ['messages','friends','calendar','goals','mine','account'];
     const savedOrder = (state.profile?.navOrder || []).filter(k => navButtonsByKey[k]);
     const finalOrder = [...savedOrder, ...defaultOrder.filter(k => !savedOrder.includes(k))];
     finalOrder.forEach(key => {
@@ -9515,12 +9525,13 @@ function renderMessagesTab(){
   const shell = el('div','app-shell');
 
   const sidebar = el('div','shell-sidebar');
+  const sidebarSticky = el('div','shell-sidebar-sticky');
   const sidebarHeader = el('div','shell-sidebar-header');
   sidebarHeader.appendChild(el('h1','', 'Сообщения'));
   const createGroupBtn = el('button','btn ghost','+ Группа');
   createGroupBtn.onclick = () => { openCreateGroup(); };
   sidebarHeader.appendChild(createGroupBtn);
-  sidebar.appendChild(sidebarHeader);
+  sidebarSticky.appendChild(sidebarHeader);
 
   // --- вкладки: встроенные (Все/Группы) + пользовательские папки.
   // На компьютере — иконка и подпись, на телефоне — только иконка (см. CSS .folder-tab-label).
@@ -9560,15 +9571,7 @@ function renderMessagesTab(){
     setTimeout(() => input.focus(), 0);
   };
   folderTabsRow.appendChild(addFolderBtn);
-  const tabsScrollWrap = el('div','folder-tabs-scroll-wrap');
-  const leftArrow = el('button','btn ghost icon-only-btn folder-tabs-arrow','←');
-  leftArrow.onclick = () => { folderTabsRow.scrollBy({ left: -140, behavior: 'smooth' }); };
-  const rightArrow = el('button','btn ghost icon-only-btn folder-tabs-arrow','→');
-  rightArrow.onclick = () => { folderTabsRow.scrollBy({ left: 140, behavior: 'smooth' }); };
-  tabsScrollWrap.appendChild(leftArrow);
-  tabsScrollWrap.appendChild(folderTabsRow);
-  tabsScrollWrap.appendChild(rightArrow);
-  sidebar.appendChild(tabsScrollWrap);
+  sidebarSticky.appendChild(folderTabsRow);
 
   // --- строка поиска чатов (по имени контакта/группы) ---
   const searchRow = el('div','chat-search-row');
@@ -9586,7 +9589,8 @@ function renderMessagesTab(){
     if(freshInput){ freshInput.focus(); freshInput.setSelectionRange(cursorPos, cursorPos); }
   };
   searchRow.appendChild(searchInput);
-  sidebar.appendChild(searchRow);
+  sidebarSticky.appendChild(searchRow);
+  sidebar.appendChild(sidebarSticky);
 
   if(state.threads === undefined && !state.threadsLoading){
     // Экран "Сообщения" можно открыть в обход openMessagesTab() — например, открыть конкретный
