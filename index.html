@@ -491,6 +491,18 @@
     .folder-tabs-arrow{ display: none; }
   }
   .folder-tab{ display: inline-flex; align-items: center; gap: 6px; }
+  .loading-spinner-wrap{
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 40px 0; width: 100%;
+  }
+  .loading-spinner{
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 3px solid color-mix(in srgb, var(--ink) 15%, transparent);
+    border-top-color: var(--gold);
+    animation: spin-loader 0.8s linear infinite;
+  }
+  .loading-spinner-label{ font-size: 13px; color: var(--ink-dim); }
+  @keyframes spin-loader{ to{ transform: rotate(360deg); } }
   .folder-tab-icon-only{ padding-left: 10px; padding-right: 10px; }
   .thread-avatar-wrap{ position: relative; flex-shrink: 0; }
   .thread-group-badge{
@@ -500,7 +512,7 @@
   }
   .thread-group-badge svg{ width: 10px; height: 10px; }
   .chat-search-row{
-    display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 8px 4px;
+    display: flex; align-items: center; gap: 8px; margin-bottom: 4px; padding: 8px 4px;
     background: transparent; border: none; color: var(--ink-dim);
     width: 100%;
   }
@@ -1495,7 +1507,7 @@
   .shell-sidebar-sticky{
     position: sticky; top: 0; z-index: 5;
     background: color-mix(in srgb, var(--bg-soft) 50%, transparent);
-    padding: 4px 4px 10px; margin: -4px -4px 4px; border-radius: 14px;
+    padding: 4px 4px 2px; margin: -4px -4px 0; border-radius: 14px;
   }
   .shell-sidebar-header{
     display:flex; justify-content:center; align-items:center;
@@ -3270,9 +3282,14 @@ async function loadCalendarNotifications(){
 async function markCalendarNotificationsRead(){
   const unreadIds = calendarNotifications.filter(n => !n.read).map(n => n.id);
   calendarNotifications.forEach(n => n.read = true);
+  refreshGlobalNav();
   if(!supabaseReady || !unreadIds.length) return;
-  try{ await sb.from('calendar_notifications').update({ read: true }).in('id', unreadIds); }
-  catch(e){ console.error('mark notifications read failed', e); }
+  try{
+    const { error } = await sb.from('calendar_notifications').update({ read: true }).in('id', unreadIds);
+    if(error) throw error;
+  }catch(e){
+    console.error('CRITICAL: mark notifications read failed (will revert to unread on reload)', e);
+  }
 }
 
 function unreadCalendarNotifCount(){
@@ -4198,7 +4215,7 @@ function renderGoalsScreen(){
       retryBtn.onclick = () => { state.goalsError = ''; render(); };
       loadingCard.appendChild(retryBtn);
     } else {
-      loadingCard.appendChild(el('div','footer-note','Загружаем цели…'));
+      loadingCard.appendChild(buildSpinner('Загружаем цели…'));
     }
     w.appendChild(loadingCard);
     root.appendChild(w);
@@ -6503,6 +6520,13 @@ function render(){
   else if(state.screen === 'goals') renderGoalsScreen();
 }
 
+function buildSpinner(label){
+  const wrap = el('div','loading-spinner-wrap');
+  wrap.appendChild(el('div','loading-spinner'));
+  if(label) wrap.appendChild(el('div','loading-spinner-label', label));
+  return wrap;
+}
+
 function el(tag, cls, html){
   const e = document.createElement(tag);
   if(cls) e.className = cls;
@@ -6780,7 +6804,7 @@ function renderPeople(){
     setTimeout(() => openPeople(), 0);
   }
   if(state.peopleLoading){
-    w.appendChild(el('div','footer-note','Загружаем…'));
+    w.appendChild(buildSpinner('Загружаем…'));
     root.appendChild(w);
     return;
   }
@@ -7204,7 +7228,7 @@ function renderFriends(){
     setTimeout(() => openFriends(), 0);
   }
   if(state.friendsLoading){
-    w.appendChild(el('div','footer-note','Загружаем…'));
+    w.appendChild(buildSpinner('Загружаем…'));
     root.appendChild(w);
     return;
   }
@@ -7964,7 +7988,7 @@ function renderChatMessages(){
   // Раньше при открытии чата экран просто оставался пустым на пару секунд, пока грузятся
   // сообщения — выглядело как будто чат сломан. Теперь явно показываем, что идёт загрузка.
   if(state.chatMessagesLoading && visible.length === 0){
-    box.appendChild(el('div','footer-note','Загружаем переписку…'));
+    box.appendChild(buildSpinner('Загружаем переписку…'));
     return;
   }
 
@@ -8842,6 +8866,22 @@ function buildChatPanel(container){
   box.className = 'chat-box';
   card.appendChild(box);
 
+  // Общее решение для любого асинхронно подгружаемого контента внутри переписки (опросы,
+  // картинки, голосовые), которое может внезапно увеличить высоту уже открытого сообщения —
+  // раньше это "отрезало" вид от настоящего низа переписки. Следим за собственной прокруткой
+  // человека (stickToBottom), и если он был внизу — при любом изменении высоты подтягиваем
+  // прокрутку обратно вниз.
+  let stickToBottom = true;
+  box.addEventListener('scroll', () => {
+    stickToBottom = (box.scrollHeight - box.scrollTop - box.clientHeight < 120);
+  });
+  if(window.ResizeObserver){
+    const resizeObs = new ResizeObserver(() => {
+      if(stickToBottom) box.scrollTop = box.scrollHeight;
+    });
+    resizeObs.observe(box);
+  }
+
   const scrollDownBtn = el('button','scroll-to-bottom-btn','↓');
   scrollDownBtn.id = 'scroll-to-bottom-btn';
   scrollDownBtn.style.display = 'none';
@@ -9679,7 +9719,7 @@ function renderMessagesTab(){
     setTimeout(() => openMessagesTab(), 0);
   }
   if(state.threadsLoading){
-    sidebar.appendChild(el('div','footer-note','Загружаем…'));
+    sidebar.appendChild(buildSpinner('Загружаем…'));
   } else if(state.threadsError){
     sidebar.appendChild(el('div','err', state.threadsError));
     const retryBtn = el('button','btn ghost','Повторить');
