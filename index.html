@@ -503,7 +503,7 @@
   }
   .loading-spinner-label{ font-size: 13px; color: var(--ink-dim); }
   @keyframes spin-loader{ to{ transform: rotate(360deg); } }
-  .folder-tab-icon-only{ padding-left: 10px; padding-right: 10px; }
+  .folder-tab-icon-only{ width: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
   .thread-avatar-wrap{ position: relative; flex-shrink: 0; }
   .thread-group-badge{
     position: absolute; bottom: -2px; right: -2px; width: 17px; height: 17px; border-radius: 50%;
@@ -512,7 +512,7 @@
   }
   .thread-group-badge svg{ width: 10px; height: 10px; }
   .chat-search-row{
-    display: flex; align-items: center; gap: 8px; margin-bottom: 4px; padding: 8px 4px;
+    display: flex; align-items: center; gap: 8px; margin-bottom: 0; padding: 4px 4px;
     background: transparent; border: none; color: var(--ink-dim);
     width: 100%;
   }
@@ -529,9 +529,10 @@
     .folder-tab{ padding: 8px 10px; }
   }
   .folder-tab{
-    font-size: 12.5px; padding: 7px 12px; border-radius: 999px;
+    font-size: 12.5px; padding: 0 12px; height: 32px; border-radius: 999px;
     border: 1px solid var(--line); background: var(--bg-soft); color: var(--ink-dim);
     cursor: pointer; font-family:'Inter',sans-serif; white-space: nowrap;
+    box-sizing: border-box;
   }
   .folder-tab.active{ border-color: var(--gold); color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, transparent); }
   .folder-tab-add{ font-weight: 700; }
@@ -1507,7 +1508,7 @@
   .shell-sidebar-sticky{
     position: sticky; top: 0; z-index: 5;
     background: color-mix(in srgb, var(--bg-soft) 50%, transparent);
-    padding: 4px 4px 2px; margin: -4px -4px 0; border-radius: 14px;
+    padding: 4px 4px 0; margin: -4px -4px 0; border-radius: 14px;
   }
   .shell-sidebar-header{
     display:flex; justify-content:center; align-items:center;
@@ -11982,7 +11983,7 @@ function drawGraph(container, graph){
 // а не в коде.
 (function(){
   const tag = document.createElement('div');
-  tag.textContent = 'build sozvezdie_56';
+  tag.textContent = 'build sozvezdie_57';
   tag.style.cssText = 'position:fixed; bottom:4px; right:6px; z-index:9999; font-size:9px; opacity:0.35; color:#888; pointer-events:none; font-family:monospace;';
   document.body.appendChild(tag);
 })();
