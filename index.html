@@ -11974,6 +11974,19 @@ function drawGraph(container, graph){
   });
 }
 
+// Маленькая метка сборки в углу экрана — не убирать. Весь этот проект регулярно натыкался на
+// то, что в браузере (особенно на телефоне) подгружалась старая закэшированная версия файла, а
+// не та, что реально была прислана — из-за этого казалось, что правки "не применяются", хотя
+// на самом деле правки просто не долетали до браузера. Эта метка даёт мгновенный способ
+// проверить: если номер здесь не совпадает с номером присланного файла — дело в кэше браузера,
+// а не в коде.
+(function(){
+  const tag = document.createElement('div');
+  tag.textContent = 'build sozvezdie_56';
+  tag.style.cssText = 'position:fixed; bottom:4px; right:6px; z-index:9999; font-size:9px; opacity:0.35; color:#888; pointer-events:none; font-family:monospace;';
+  document.body.appendChild(tag);
+})();
+
 initStarfield();
 updateStarfieldVisibility();
 
