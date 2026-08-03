@@ -502,7 +502,7 @@
   .chat-search-row{
     display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 8px 4px;
     background: transparent; border: none; color: var(--ink-dim);
-    max-width: 260px;
+    width: 100%;
   }
   .chat-search-icon{
     flex-shrink: 0; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center;
@@ -1017,6 +1017,8 @@
   }
   .icon-btn:hover{ border-color: var(--gold); }
   .icon-btn.disabled{ opacity:.5; cursor:default; }
+  .chat-header-action-btn{ width: 40px !important; height: 40px !important; font-size: 18px !important; }
+  .chat-header-action-btn svg{ width: 19px; height: 19px; }
 
   .unread-row{ border-color: var(--gold); }
   .unread-dot{
@@ -1183,6 +1185,7 @@
   }
   .calendar-month-label:hover{ border-color: var(--gold); color: var(--gold); }
   .calendar-arrow-btn{ min-width: 36px !important; width: 36px; height: 36px !important; font-size: 16px !important; padding: 0 !important; }
+  .calendar-arrow-flip{ transform: scaleX(-1); }
   .btn-compact{ padding: 8px 12px !important; font-size: 13px !important; }
   .calendar-card{ padding: 16px; background: color-mix(in srgb, var(--panel) 4%, transparent) !important; border-color: color-mix(in srgb, var(--line) 40%, transparent) !important; }
   .calendar-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
@@ -1454,6 +1457,9 @@
     display: flex;
     flex-direction: column;
   }
+  @supports (height: 100dvh){
+    .wrap.shell-page{ height: 100dvh; }
+  }
   @media (min-width: 780px){
     .wrap.shell-page{ padding-left: 32px; padding-right: 32px; }
   }
@@ -1478,13 +1484,12 @@
   }
   .shell-sidebar-sticky{
     position: sticky; top: 0; z-index: 5;
-    background: color-mix(in srgb, var(--panel) 55%, transparent);
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    background: color-mix(in srgb, var(--bg-soft) 50%, transparent);
     padding: 4px 4px 10px; margin: -4px -4px 4px; border-radius: 14px;
   }
   .shell-sidebar-header{
-    display:flex; justify-content:space-between; align-items:center;
-    margin-bottom: 14px; gap: 10px;
+    display:flex; justify-content:center; align-items:center;
+    margin-bottom: 14px; gap: 16px;
   }
   .shell-sidebar-header h1{ font-size: 22px; margin: 0; }
   .shell-main{
@@ -4736,7 +4741,7 @@ function renderCalendarScreen(){
   const { year, month } = state.calendarView;
 
   const navRow = el('div','calendar-nav-row');
-  const prevBtn = el('button','btn ghost icon-only-btn calendar-arrow-btn','←');
+  const prevBtn = el('button','btn ghost icon-only-btn calendar-arrow-btn calendar-arrow-flip','→');
   prevBtn.onclick = () => {
     state.calendarView.month--; if(state.calendarView.month < 0){ state.calendarView.month = 11; state.calendarView.year--; }
     render();
@@ -4751,7 +4756,7 @@ function renderCalendarScreen(){
     state.calendarView.month++; if(state.calendarView.month > 11){ state.calendarView.month = 0; state.calendarView.year++; }
     render();
   };
-  navRow.appendChild(prevBtn); navRow.appendChild(label); navRow.appendChild(todayBtn); navRow.appendChild(nextBtn);
+  navRow.appendChild(prevBtn); navRow.appendChild(label); navRow.appendChild(nextBtn); navRow.appendChild(todayBtn);
   w.appendChild(navRow);
 
   // Свайп влево/вправо на телефоне — та же логика, что у стрелок ←→, но теперь ловим жест на
@@ -8299,6 +8304,8 @@ function buildEmojiButton(targetInput){
 }
 
 async function renderPollIntoBubble(container, pollId){
+  const box = document.getElementById('chat-messages');
+  const wasNearBottom = box && (box.scrollHeight - box.scrollTop - box.clientHeight < 120);
   let data;
   try{ data = await getPollWithVotes(pollId); }
   catch(e){ container.appendChild(el('div','footer-note','Не удалось загрузить опрос')); return; }
@@ -8363,6 +8370,9 @@ async function renderPollIntoBubble(container, pollId){
     container.appendChild(resultsWrap);
     container.appendChild(el('div','meta', 'Всего голосов: ' + votes.length));
   }
+  // Опрос догрузился асинхронно и мог заметно увеличить высоту сообщения — если человек до этого
+  // был внизу переписки, доскролливаем вниз ещё раз, иначе казалось, что чат "подскочил" вверх.
+  if(wasNearBottom && box) box.scrollTop = box.scrollHeight;
 }
 
 function openContactInfoPanel(){
@@ -8655,7 +8665,7 @@ function buildChatPanel(container){
   headerBar.appendChild(backArrow);
 
   const headerRow = el('div','chat-header-row');
-  headerRow.style.display='flex'; headerRow.style.justifyContent='space-between'; headerRow.style.alignItems='flex-start'; headerRow.style.gap='12px'; headerRow.style.flexWrap='wrap'; headerRow.style.flex='1';
+  headerRow.style.display='flex'; headerRow.style.justifyContent='space-between'; headerRow.style.alignItems='center'; headerRow.style.gap='12px'; headerRow.style.flexWrap='wrap'; headerRow.style.flex='1';
   const titleWrap = el('div','chat-header-clickable');
   titleWrap.style.display='flex'; titleWrap.style.alignItems='center'; titleWrap.style.gap='12px';
   titleWrap.onclick = () => openContactInfoPanel();
@@ -8691,7 +8701,7 @@ function buildChatPanel(container){
   headerActionsWrap.style.display = 'flex'; headerActionsWrap.style.alignItems = 'center'; headerActionsWrap.style.gap = '8px'; headerActionsWrap.style.flexShrink = '0';
 
   if(!state.chatWith.isGroup && state.chatWith.uid !== state.user.uid){
-    const callBtn = el('button','icon-btn', CHAT_ICONS.call);
+    const callBtn = el('button','icon-btn chat-header-action-btn', CHAT_ICONS.call);
     callBtn.title = 'Позвонить';
     callBtn.style.color = 'var(--ink)';
     callBtn.onclick = (e) => {
@@ -8704,7 +8714,7 @@ function buildChatPanel(container){
     };
     headerActionsWrap.appendChild(callBtn);
 
-    const calBtn = el('button','icon-btn', CHAT_ICONS.calendar);
+    const calBtn = el('button','icon-btn chat-header-action-btn', CHAT_ICONS.calendar);
     calBtn.title = 'Создать событие';
     calBtn.style.color = 'var(--ink)';
     calBtn.onclick = async (e) => {
@@ -8718,7 +8728,7 @@ function buildChatPanel(container){
     headerActionsWrap.appendChild(calBtn);
   }
   if(state.chatWith.isGroup){
-    const groupCallBtn = el('button','icon-btn', CHAT_ICONS.call);
+    const groupCallBtn = el('button','icon-btn chat-header-action-btn', CHAT_ICONS.call);
     groupCallBtn.title = 'Позвонить в группу';
     groupCallBtn.style.color = 'var(--ink)';
     groupCallBtn.onclick = async (e) => {
@@ -8737,7 +8747,7 @@ function buildChatPanel(container){
     };
     headerActionsWrap.appendChild(groupCallBtn);
 
-    const calBtn = el('button','icon-btn', CHAT_ICONS.calendar);
+    const calBtn = el('button','icon-btn chat-header-action-btn', CHAT_ICONS.calendar);
     calBtn.title = 'Создать событие для группы';
     calBtn.style.color = 'var(--ink)';
     calBtn.onclick = async (e) => {
@@ -9618,7 +9628,7 @@ function renderMessagesTab(){
     const notesOpen = !!(state.chatWith && !state.chatWith.isGroup && state.chatWith.uid === state.user.uid);
     const notesThread = (state.threads||[]).find(t => t.chatId === notesChatId);
     if(state.activeChatFolder === 'all' && !state.chatSearchQuery){
-      const notesRow = el('div','person-row notes-row' + (notesOpen ? ' thread-open' : ''));
+      const notesRow = el('div','person-row thread-row notes-row' + (notesOpen ? ' thread-open' : ''));
       const left = el('div','');
       left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
       const notesAvatar = el('div','avatar-circle notes-avatar-icon');
