@@ -723,6 +723,16 @@
   .poll-result-label{ display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 3px; }
   .poll-result-bar-track{ height: 8px; border-radius: 4px; background: var(--bg-soft); overflow: hidden; }
   .poll-result-bar{ height: 100%; background: color-mix(in srgb, var(--gold) 60%, var(--ink-dim)); border-radius: 4px; }
+  .poll-total-votes{ font-size: 13px; color: var(--ink); font-weight: 600; margin-top: 4px; }
+  .poll-result-row.clickable{ cursor: pointer; border-radius: 8px; padding: 4px; margin: 0 -4px 8px; transition: background .12s ease; }
+  .poll-result-row.clickable:hover{ background: var(--bg-soft); }
+  .poll-voters-avatars{ display: flex; gap: 4px; margin-top: 4px; align-items: center; }
+  .poll-voters-more{
+    font-size: 11px; color: var(--ink-dim); background: var(--bg-soft); border-radius: 999px;
+    width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  }
+  .poll-voters-list{ max-height: 320px; overflow-y: auto; }
+  .poll-voter-row{ display: flex; align-items: center; gap: 10px; padding: 6px 0; }
   .mute-badge{ font-size: 11px; opacity: 0.7; }
   .download-chip{
     font-size: 11px; opacity: 0.8; cursor: pointer; margin-top: 6px; text-decoration: underline;
@@ -8303,14 +8313,48 @@ function buildEmojiButton(targetInput){
   return btn;
 }
 
-async function renderPollIntoBubble(container, pollId){
+const pollDataCache = {};
+function invalidatePollCache(pollId){ delete pollDataCache[pollId]; }
+
+function openPollVotersModal(optionText, voters){
+  const ov = document.createElement('div');
+  ov.className = 'confirm-modal-overlay';
+  const box = document.createElement('div');
+  box.className = 'confirm-modal-box';
+  box.appendChild(el('div','confirm-modal-text', `Проголосовали за «${optionText}»:`));
+  const list = el('div','poll-voters-list');
+  if(!voters.length) list.appendChild(el('div','meta','Пока никто'));
+  voters.forEach(v => {
+    const row = el('div','poll-voter-row');
+    const av = avatarCircleEl(v.name, 30);
+    fillAvatarAsync(av, v.uid);
+    row.appendChild(av);
+    row.appendChild(el('div','', v.name));
+    list.appendChild(row);
+  });
+  box.appendChild(list);
+  const closeBtn = el('button','btn ghost','Закрыть');
+  closeBtn.style.marginTop = '10px';
+  closeBtn.onclick = () => ov.remove();
+  box.appendChild(closeBtn);
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
+async function renderPollIntoBubble(container, pollId, forceRefresh){
   const box = document.getElementById('chat-messages');
   const wasNearBottom = box && (box.scrollHeight - box.scrollTop - box.clientHeight < 120);
-  let data;
-  try{ data = await getPollWithVotes(pollId); }
-  catch(e){ container.appendChild(el('div','footer-note','Не удалось загрузить опрос')); return; }
+  // Кэшируем данные опроса — раньше при КАЖДОЙ перерисовке чата (даже без изменений) опрос
+  // заново запрашивался и полностью пересобирался, из-за чего внизу переписки было заметное
+  // "мигание"/обновление. Теперь перезапрашиваем только сразу после своего голоса.
+  let data = pollDataCache[pollId];
+  if(!data || forceRefresh){
+    try{ data = await getPollWithVotes(pollId); pollDataCache[pollId] = data; }
+    catch(e){ container.innerHTML = ''; container.appendChild(el('div','footer-note','Не удалось загрузить опрос')); return; }
+  }
   const { poll, votes } = data;
-  if(!poll){ container.appendChild(el('div','footer-note','Опрос не найден')); return; }
+  if(!poll){ container.innerHTML = ''; container.appendChild(el('div','footer-note','Опрос не найден')); return; }
   const myVote = votes.find(v => v.uid === state.user.uid);
   container.innerHTML = '';
   container.appendChild(el('div','poll-question', '📊 ' + poll.question));
@@ -8341,21 +8385,26 @@ async function renderPollIntoBubble(container, pollId){
       e.stopPropagation();
       if(!selected.size){ showToast('Выберите вариант'); return; }
       voteBtn.disabled = true;
-      try{ await voteOnPoll(pollId, [...selected]); renderPollIntoBubble(container, pollId); }
+      try{ await voteOnPoll(pollId, [...selected]); renderPollIntoBubble(container, pollId, true); }
       catch(err){ showToast('Не удалось проголосовать'); voteBtn.disabled = false; }
     };
     container.appendChild(voteBtn);
   } else {
     const total = votes.length || 1;
     const counts = {};
-    votes.forEach(v => (v.option_ids||[]).forEach(oid => { counts[oid] = (counts[oid]||0) + 1; }));
+    const votersByOption = {};
+    votes.forEach(v => (v.option_ids||[]).forEach(oid => {
+      counts[oid] = (counts[oid]||0) + 1;
+      (votersByOption[oid] = votersByOption[oid] || []).push({ uid: v.uid, name: v.voter_name || 'Без имени' });
+    }));
     const correctSet = new Set(poll.correct_option_ids || []);
     const resultsWrap = el('div','poll-options-results');
     (poll.options||[]).forEach(opt => {
       const c = counts[opt.id] || 0;
       const pct = Math.round(c / total * 100);
       const mine = (myVote.option_ids||[]).includes(opt.id);
-      const row = el('div','poll-result-row' + (mine ? ' mine' : ''));
+      const optVoters = votersByOption[opt.id] || [];
+      const row = el('div','poll-result-row' + (mine ? ' mine' : '') + (!poll.anonymous ? ' clickable' : ''));
       const labelRow = el('div','poll-result-label');
       labelRow.appendChild(document.createTextNode(opt.text + (correctSet.has(opt.id) ? ' ✅' : '') + (mine ? ' (ваш выбор)' : '')));
       labelRow.appendChild(document.createTextNode(pct + '%'));
@@ -8365,10 +8414,27 @@ async function renderPollIntoBubble(container, pollId){
       bar.style.width = pct + '%';
       barTrack.appendChild(bar);
       row.appendChild(barTrack);
+      // Для неанонимных опросов — аватарки проголосовавших под вариантом, и клик открывает
+      // полный список (кто именно выбрал этот вариант).
+      if(!poll.anonymous && optVoters.length){
+        const avatarsRow = el('div','poll-voters-avatars');
+        optVoters.slice(0, 6).forEach(v => {
+          const av = avatarCircleEl(v.name, 22);
+          fillAvatarAsync(av, v.uid);
+          av.title = v.name;
+          avatarsRow.appendChild(av);
+        });
+        if(optVoters.length > 6) avatarsRow.appendChild(el('div','poll-voters-more', '+' + (optVoters.length - 6)));
+        row.appendChild(avatarsRow);
+      }
+      if(!poll.anonymous){
+        row.style.cursor = 'pointer';
+        row.onclick = (e) => { e.stopPropagation(); openPollVotersModal(opt.text, optVoters); };
+      }
       resultsWrap.appendChild(row);
     });
     container.appendChild(resultsWrap);
-    container.appendChild(el('div','meta', 'Всего голосов: ' + votes.length));
+    container.appendChild(el('div','poll-total-votes', 'Всего голосов: ' + votes.length));
   }
   // Опрос догрузился асинхронно и мог заметно увеличить высоту сообщения — если человек до этого
   // был внизу переписки, доскролливаем вниз ещё раз, иначе казалось, что чат "подскочил" вверх.
