@@ -1641,6 +1641,45 @@ function usernameToEmail(name){
   return 'sozvezdie.user.' + hashUsername(name) + '@gmail.com';
 }
 
+// Обходим обязательное подтверждение email (нужное для настоящей почты в профиле) для
+// служебных фиктивных адресов вида sozvezdie.user.<хэш>@gmail.com — регистрация и смена
+// логина остаются мгновенными, как и раньше, ничего не меняется для пользователя.
+async function autoConfirmInternalEmail(uid, newEmail){
+  const { data, error } = await sb.functions.invoke('confirm-account-email', {
+    body: newEmail ? { uid, email: newEmail } : { uid }
+  });
+  if(error) throw new Error(error.message || 'Не удалось подтвердить служебный email.');
+  return data;
+}
+
+// Настоящая почта (для восстановления доступа) считается подтверждённой, когда текущий
+// email сессии в Supabase Auth отличается от служебного фиктивного — то есть Supabase
+// уже принял ссылку подтверждения и сменил основной email аккаунта.
+function isAccountEmailConfirmed(){
+  if(!state.user || !state.authEmail) return false;
+  return state.authEmail !== usernameToEmail(state.user.login);
+}
+
+async function requestAccountEmailChange(newEmail){
+  if(!supabaseReady) throw backendNotConfiguredError();
+  const { error } = await sb.auth.updateUser({ email: newEmail });
+  if(error){
+    if(/already registered|exists/i.test(error.message)) throw new Error('Эта почта уже привязана к другому аккаунту.');
+    throw new Error(error.message);
+  }
+  await updateProfileFields({ email: newEmail });
+}
+
+async function recheckAccountEmailStatus(){
+  try{
+    const { data, error } = await sb.auth.refreshSession();
+    if(!error && data?.session?.user){
+      state.authEmail = data.session.user.email;
+    }
+  }catch(e){ console.error('recheck email status failed', e); }
+  render();
+}
+
 async function registerUser(username, password){
   if(!supabaseReady) throw backendNotConfiguredError();
   const email = usernameToEmail(username);
@@ -1651,6 +1690,12 @@ async function registerUser(username, password){
     throw new Error(error.message);
   }
   const uid = data.user.id;
+  // Обязательное подтверждение email включено (нужно для настоящей почты в профиле),
+  // поэтому сразу после регистрации у нас нет сессии — подтверждаем служебный
+  // фиктивный адрес на бэкенде и логинимся заново, чтобы получить сессию.
+  await autoConfirmInternalEmail(uid);
+  const { error: signInError } = await sb.auth.signInWithPassword({ email, password });
+  if(signInError) throw new Error(signInError.message);
   const { error: profileError } = await sb.from('profiles').insert({ id: uid, login: username, name: username });
   if(profileError) throw new Error(profileError.message);
   return { uid, name: username, login: username };
@@ -1687,10 +1732,11 @@ async function changeLogin(newLogin, currentPassword){
   const { error: reauthError } = await sb.auth.signInWithPassword({ email: oldEmail, password: currentPassword });
   if(reauthError) throw new Error('Неверный текущий пароль.');
   const newEmail = usernameToEmail(newLogin);
-  const { error } = await sb.auth.updateUser({ email: newEmail });
-  if(error){
-    if(/already registered|exists/i.test(error.message)) throw new Error('Такой логин уже занят.');
-    throw new Error(error.message);
+  try{
+    await autoConfirmInternalEmail(state.user.uid, newEmail);
+  }catch(e){
+    if(/already registered|exists/i.test(e.message)) throw new Error('Такой логин уже занят.');
+    throw e;
   }
   const { error: profileError } = await sb.from('profiles').update({ login: newLogin }).eq('id', state.user.uid);
   if(profileError) throw new Error(profileError.message);
@@ -6720,7 +6766,8 @@ function renderNav(active){
     myLink.innerHTML = NAV_ICONS.mine + '<span class="nav-link-label">' + (state.graph ? 'Моя схема' : 'Написать о себе') + '</span>';
     myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
 
-    const accountLink = el('button','nav-link' + (active==='account' ? ' active' : ''));
+    const emailUnconfirmed = !isAccountEmailConfirmed();
+    const accountLink = el('button','nav-link' + (active==='account' ? ' active' : '') + (emailUnconfirmed ? ' alert' : ''));
     accountLink.innerHTML = NAV_ICONS.account + '<span class="nav-link-label">Аккаунт</span>';
     accountLink.onclick = () => { state.screen = 'account'; render(); };
 
@@ -10570,6 +10617,59 @@ function renderAccountScreen(){
   loginCard.appendChild(loginBtn);
   w.appendChild(loginCard);
 
+  // --- Почта (для восстановления доступа) ---
+  const emailCard = el('div','card card-translucent');
+  emailCard.style.marginBottom = '16px';
+  emailCard.appendChild(el('div','top-tag','Почта'));
+  emailCard.appendChild(el('p','lead','Добавь настоящую почту — если забудешь пароль, сможешь восстановить доступ. Необязательно, но пока не подтверждена — вкладка «Аккаунт» будет мигать красным.'));
+  if(state.emailError) emailCard.appendChild(el('div','err', state.emailError));
+
+  if(isAccountEmailConfirmed()){
+    emailCard.appendChild(el('div','compat-badge', 'Подтверждена: ' + state.authEmail + ' ✓'));
+  } else {
+    const emailInput = document.createElement('input');
+    emailInput.type = 'email';
+    emailInput.placeholder = 'you@example.com';
+    emailInput.value = state.profile?.email || '';
+    emailCard.appendChild(emailInput);
+
+    const emailBtnRow = el('div','');
+    emailBtnRow.style.display = 'flex'; emailBtnRow.style.gap = '8px'; emailBtnRow.style.flexWrap = 'wrap';
+
+    const emailBtn = el('button','btn ghost', state.profile?.email ? 'Отправить письмо ещё раз' : 'Сохранить и отправить письмо');
+    emailBtn.onclick = async () => {
+      const value = emailInput.value.trim();
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)){
+        state.emailError = 'Введи корректный email.';
+        render(); return;
+      }
+      emailBtn.disabled = true; emailBtn.textContent = 'Отправляем…';
+      try{
+        await requestAccountEmailChange(value);
+        state.emailError = '';
+        showToast('Письмо отправлено — перейди по ссылке в нём, чтобы подтвердить.');
+        render();
+      }catch(e){
+        state.emailError = e.message;
+        emailBtn.disabled = false; emailBtn.textContent = 'Сохранить и отправить письмо';
+        render();
+      }
+    };
+    emailBtnRow.appendChild(emailBtn);
+
+    if(state.profile?.email){
+      const recheckBtn = el('button','btn ghost','Я подтвердил(а) — проверить');
+      recheckBtn.onclick = async () => {
+        recheckBtn.disabled = true; recheckBtn.textContent = 'Проверяем…';
+        await recheckAccountEmailStatus();
+        recheckBtn.disabled = false; recheckBtn.textContent = 'Я подтвердил(а) — проверить';
+      };
+      emailBtnRow.appendChild(recheckBtn);
+    }
+    emailCard.appendChild(emailBtnRow);
+  }
+  w.appendChild(emailCard);
+
   // --- Профиль ---
   const card = el('div','card card-translucent');
   card.appendChild(el('div','top-tag','Профиль'));
@@ -12201,6 +12301,7 @@ updateStarfieldVisibility();
 
 if(supabaseReady){
   sb.auth.onAuthStateChange(async (event, session) => {
+    if(session?.user) state.authEmail = session.user.email;
     if(session?.user && !state.user){
       try{
         const { data: profileRow } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
