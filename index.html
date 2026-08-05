@@ -6778,17 +6778,196 @@ async function openPeople(){
 
 function buildContactsViewToggle(){
   const row = el('div','contacts-view-toggle');
-  const friendsTab = el('button','contacts-view-tab' + (state.contactsView !== 'people' ? ' active' : ''), 'Контакты');
+  const friendsTab = el('button','contacts-view-tab' + (state.contactsView !== 'people' && state.contactsView !== 'phone' ? ' active' : ''), 'Контакты');
   friendsTab.onclick = () => openFriends();
   const peopleTab = el('button','contacts-view-tab' + (state.contactsView === 'people' ? ' active' : ''), 'Пользователи');
   peopleTab.onclick = () => openPeople();
-  row.appendChild(friendsTab); row.appendChild(peopleTab);
+  const phoneTab = el('button','contacts-view-tab' + (state.contactsView === 'phone' ? ' active' : ''), 'Из телефона');
+  phoneTab.onclick = () => openPhoneContacts();
+  row.appendChild(friendsTab); row.appendChild(peopleTab); row.appendChild(phoneTab);
   return row;
 }
 
 function renderContacts(){
   if(state.contactsView === 'people') renderPeople();
+  else if(state.contactsView === 'phone') renderPhoneContactsView();
   else renderFriends();
+}
+
+// ---------------- поиск друзей по контактам телефона (Capacitor Contacts plugin) ----------------
+// Номер телефона в профиле НЕ подтверждается кодом — это просто текстовое поле для сверки
+// с телефонной книгой, как договорились. Разрешение на контакты запрашивается один раз,
+// именно в момент открытия этой вкладки (а не при регистрации и не при каждом входе).
+
+function normalizePhoneForMatch(raw){
+  if(!raw) return '';
+  const digits = String(raw).replace(/\D/g, '');
+  if(digits.length < 10) return '';
+  return digits.slice(-10); // последние 10 цифр — не зависит от +7 / 8 / 7 / кода страны
+}
+
+async function openPhoneContacts(){
+  state.screen = 'contacts';
+  state.contactsView = 'phone';
+  render();
+  if(state.profile?.phone){
+    loadPhoneContactsMatches();
+  }
+}
+
+async function savePhoneAndContinue(rawPhone){
+  const phone = (rawPhone || '').trim();
+  if(!phone){ showToast('Введи номер телефона'); return; }
+  try{
+    await updateProfileFields({ phone });
+  }catch(e){
+    showToast('Не удалось сохранить номер: ' + e.message);
+    return;
+  }
+  render();
+  loadPhoneContactsMatches();
+}
+
+async function loadPhoneContactsMatches(){
+  state.phoneContactsLoading = true;
+  state.phoneContactsError = '';
+  state.phoneMatches = undefined;
+  render();
+  try{
+    if(!window.Capacitor || !window.Capacitor.isNativePlatform()){
+      state.phoneContactsError = 'native-only';
+      state.phoneContactsLoading = false;
+      render();
+      return;
+    }
+    const { Contacts } = window.Capacitor.Plugins;
+    if(!Contacts){
+      state.phoneContactsError = 'Модуль контактов пока не собран в это приложение (нужно npm install @capacitor-community/contacts && npx cap sync).';
+      state.phoneContactsLoading = false;
+      render();
+      return;
+    }
+    const perm = await Contacts.requestPermissions();
+    if(perm.contacts !== 'granted'){
+      state.phoneContactsError = 'denied';
+      state.phoneContactsLoading = false;
+      render();
+      return;
+    }
+    const { contacts } = await Contacts.getContacts({ projection: { name: true, phones: true } });
+    const allUsers = await fetchAllUsers();
+    const byPhone = {};
+    allUsers.forEach(u => {
+      const norm = normalizePhoneForMatch(u.profile?.phone);
+      if(norm && u.uid !== state.user.uid) byPhone[norm] = u;
+    });
+    const matches = [];
+    const seenUids = new Set();
+    (contacts || []).forEach(c => {
+      const displayName = (c.name && (c.name.display || [c.name.given, c.name.family].filter(Boolean).join(' '))) || 'Без имени';
+      (c.phones || []).forEach(ph => {
+        const norm = normalizePhoneForMatch(ph.number);
+        const match = norm && byPhone[norm];
+        if(match && !seenUids.has(match.uid)){
+          seenUids.add(match.uid);
+          matches.push({ contactName: displayName, user: match });
+        }
+      });
+    });
+    state.phoneMatches = matches;
+  }catch(e){
+    console.error('phone contacts match failed', e);
+    state.phoneContactsError = e.message || 'Не удалось получить контакты.';
+  }
+  state.phoneContactsLoading = false;
+  render();
+}
+
+function renderPhoneContactsView(){
+  const w = el('div','wrap wide');
+  w.appendChild(renderNav('friends'));
+  w.appendChild(buildContactsViewToggle());
+  w.appendChild(el('h1','', 'Из телефона'));
+
+  if(!window.Capacitor || !window.Capacitor.isNativePlatform()){
+    const card = el('div','card');
+    card.appendChild(el('div','empty', 'Поиск друзей по контактам работает только в мобильном приложении Sozvezdie, не в браузере.'));
+    w.appendChild(card);
+    root.appendChild(w);
+    return;
+  }
+
+  if(!state.profile?.phone){
+    const card = el('div','card');
+    card.appendChild(el('p','lead', 'Оставь свой номер, чтобы друзья, у которых ты уже записан в контактах, могли легко тебя найти в Sozvezdie. Номер не подтверждается кодом — он нужен только для сверки с твоей телефонной книгой.'));
+    const input = el('input','');
+    input.type = 'tel';
+    input.placeholder = '+7 900 000-00-00';
+    input.style.width = '100%';
+    card.appendChild(input);
+    const btn = el('button','btn','Сохранить и разрешить доступ к контактам');
+    btn.style.marginTop = '12px';
+    btn.onclick = () => { btn.disabled = true; btn.textContent = 'Сохраняем…'; savePhoneAndContinue(input.value); };
+    card.appendChild(btn);
+    w.appendChild(card);
+    root.appendChild(w);
+    return;
+  }
+
+  if(state.phoneContactsLoading){
+    w.appendChild(buildSpinner('Ищем совпадения…'));
+    root.appendChild(w);
+    return;
+  }
+
+  if(state.phoneContactsError === 'denied'){
+    const card = el('div','card');
+    card.appendChild(el('div','empty', 'Доступ к контактам не разрешён. Включи его в настройках телефона для приложения Sozvezdie, чтобы видеть, кто из твоих контактов уже здесь.'));
+    const retryBtn = el('button','btn ghost','Попробовать снова');
+    retryBtn.onclick = () => loadPhoneContactsMatches();
+    card.appendChild(retryBtn);
+    w.appendChild(card);
+    root.appendChild(w);
+    return;
+  }
+
+  if(state.phoneContactsError){
+    const card = el('div','card');
+    card.appendChild(el('div','err', state.phoneContactsError));
+    const retryBtn = el('button','btn ghost','Попробовать снова');
+    retryBtn.onclick = () => loadPhoneContactsMatches();
+    card.appendChild(retryBtn);
+    w.appendChild(card);
+    root.appendChild(w);
+    return;
+  }
+
+  const card = el('div','card');
+  if(!state.phoneMatches || state.phoneMatches.length === 0){
+    card.appendChild(el('div','empty', 'Пока никто из твоих контактов не найден в Sozvezdie.'));
+  } else {
+    const grid = el('div','people-grid');
+    state.phoneMatches.forEach(m => {
+      const row = el('div','person-row');
+      const left = el('div','');
+      left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
+      const avatar = avatarCircleEl(m.contactName, 36);
+      fillAvatarAsync(avatar, m.user.uid);
+      left.appendChild(avatar);
+      const nameCol = el('div','');
+      nameCol.appendChild(el('div','name', m.contactName));
+      nameCol.appendChild(el('div','meta', 'в Sozvezdie: ' + m.user.name));
+      left.appendChild(nameCol);
+      row.appendChild(left);
+      const actionsContainer = el('div','');
+      renderFriendActionInto(actionsContainer, m.user);
+      row.appendChild(actionsContainer);
+      grid.appendChild(row);
+    });
+    card.appendChild(grid);
+  }
+  w.appendChild(card);
+  root.appendChild(w);
 }
 
 function renderPeople(){
