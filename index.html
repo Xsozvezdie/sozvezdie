@@ -1683,17 +1683,19 @@ async function recheckAccountEmailStatus(){
 async function registerUser(username, password){
   if(!supabaseReady) throw backendNotConfiguredError();
   const email = usernameToEmail(username);
-  const { data, error } = await sb.auth.signUp({ email, password });
-  if(error){
-    if(error.status === 422 || /already registered|already exists/i.test(error.message)) throw new Error('Это имя уже занято — выбери другое.');
-    if(/password/i.test(error.message)) throw new Error('Пароль слишком короткий — минимум 6 символов.');
-    throw new Error(error.message);
+  let uid;
+  try{
+    const { data, error } = await sb.functions.invoke('confirm-account-email', {
+      body: { mode: 'register', email, password }
+    });
+    if(error) throw new Error(error.message || 'Не удалось создать аккаунт.');
+    uid = data?.uid;
+    if(!uid) throw new Error('Не удалось создать аккаунт.');
+  }catch(e){
+    if(/already registered|already exists/i.test(e.message)) throw new Error('Это имя уже занято — выбери другое.');
+    if(/password/i.test(e.message)) throw new Error('Пароль слишком короткий — минимум 6 символов.');
+    throw e;
   }
-  const uid = data.user.id;
-  // Обязательное подтверждение email включено (нужно для настоящей почты в профиле),
-  // поэтому сразу после регистрации у нас нет сессии — подтверждаем служебный
-  // фиктивный адрес на бэкенде и логинимся заново, чтобы получить сессию.
-  await autoConfirmInternalEmail(uid);
   const { error: signInError } = await sb.auth.signInWithPassword({ email, password });
   if(signInError) throw new Error(signInError.message);
   const { error: profileError } = await sb.from('profiles').insert({ id: uid, login: username, name: username });
