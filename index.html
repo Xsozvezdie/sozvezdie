@@ -6768,8 +6768,7 @@ function renderNav(active){
     myLink.innerHTML = NAV_ICONS.mine + '<span class="nav-link-label">' + (state.graph ? 'Моя схема' : 'Написать о себе') + '</span>';
     myLink.onclick = () => { state.screen = state.graph ? 'result' : 'story'; render(); };
 
-    const emailUnconfirmed = !isAccountEmailConfirmed();
-    const accountLink = el('button','nav-link' + (active==='account' ? ' active' : '') + (emailUnconfirmed ? ' alert' : ''));
+    const accountLink = el('button','nav-link' + (active==='account' ? ' active' : ''));
     accountLink.innerHTML = NAV_ICONS.account + '<span class="nav-link-label">Аккаунт</span>';
     accountLink.onclick = () => { state.screen = 'account'; render(); };
 
@@ -10622,54 +10621,53 @@ function renderAccountScreen(){
   // --- Почта (для восстановления доступа) ---
   const emailCard = el('div','card card-translucent');
   emailCard.style.marginBottom = '16px';
-  emailCard.appendChild(el('div','top-tag','Почта'));
-  emailCard.appendChild(el('p','lead','Добавь настоящую почту — если забудешь пароль, сможешь восстановить доступ. Необязательно, но пока не подтверждена — вкладка «Аккаунт» будет мигать красным.'));
+  const emailConfirmedNow = isAccountEmailConfirmed();
+  emailCard.appendChild(el('div','top-tag','Почта' + (emailConfirmedNow ? ' <span style="color:#4ade80;font-weight:600;">✓ Подтверждена</span>' : '')));
+  emailCard.appendChild(el('p','lead','Добавь почту — если забудешь пароль, сможешь восстановить доступ.'));
   if(state.emailError) emailCard.appendChild(el('div','err', state.emailError));
 
-  if(isAccountEmailConfirmed()){
-    emailCard.appendChild(el('div','compat-badge', 'Подтверждена: ' + state.authEmail + ' ✓'));
-  } else {
-    const emailInput = document.createElement('input');
-    emailInput.type = 'email';
-    emailInput.placeholder = 'you@example.com';
-    emailInput.value = state.profile?.email || '';
-    emailCard.appendChild(emailInput);
+  const currentEmailValue = emailConfirmedNow ? state.authEmail : (state.profile?.email || '');
+  const emailInput = document.createElement('input');
+  emailInput.type = 'email';
+  emailInput.placeholder = 'you@example.com';
+  emailInput.value = currentEmailValue;
+  emailCard.appendChild(emailInput);
 
-    const emailBtnRow = el('div','');
-    emailBtnRow.style.display = 'flex'; emailBtnRow.style.gap = '8px'; emailBtnRow.style.flexWrap = 'wrap';
+  const emailBtnRow = el('div','');
+  emailBtnRow.style.display = 'flex'; emailBtnRow.style.gap = '8px'; emailBtnRow.style.flexWrap = 'wrap';
 
-    const emailBtn = el('button','btn ghost', state.profile?.email ? 'Отправить письмо ещё раз' : 'Сохранить и отправить письмо');
-    emailBtn.onclick = async () => {
-      const value = emailInput.value.trim();
-      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)){
-        state.emailError = 'Введи корректный email.';
-        render(); return;
-      }
-      emailBtn.disabled = true; emailBtn.textContent = 'Отправляем…';
-      try{
-        await requestAccountEmailChange(value);
-        state.emailError = '';
-        showToast('Письмо отправлено — перейди по ссылке в нём, чтобы подтвердить.');
-        render();
-      }catch(e){
-        state.emailError = e.message;
-        emailBtn.disabled = false; emailBtn.textContent = 'Сохранить и отправить письмо';
-        render();
-      }
-    };
-    emailBtnRow.appendChild(emailBtn);
-
-    if(state.profile?.email){
-      const recheckBtn = el('button','btn ghost','Я подтвердил(а) — проверить');
-      recheckBtn.onclick = async () => {
-        recheckBtn.disabled = true; recheckBtn.textContent = 'Проверяем…';
-        await recheckAccountEmailStatus();
-        recheckBtn.disabled = false; recheckBtn.textContent = 'Я подтвердил(а) — проверить';
-      };
-      emailBtnRow.appendChild(recheckBtn);
+  const emailBtn = el('button','btn ghost', emailConfirmedNow ? 'Изменить' : (state.profile?.email ? 'Отправить письмо ещё раз' : 'Сохранить и отправить письмо'));
+  emailBtn.onclick = async () => {
+    const value = emailInput.value.trim();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)){
+      state.emailError = 'Введи корректный email.';
+      render(); return;
     }
-    emailCard.appendChild(emailBtnRow);
+    if(emailConfirmedNow && value === currentEmailValue) return;
+    emailBtn.disabled = true; emailBtn.textContent = 'Отправляем…';
+    try{
+      await requestAccountEmailChange(value);
+      state.emailError = '';
+      showToast('Письмо отправлено на ' + value + '. Проверь почту (и папку «Спам») и перейди по ссылке — обычно после этого всё подтверждается само собой. Если нет, вернись сюда и нажми «Проверить».');
+      render();
+    }catch(e){
+      state.emailError = e.message;
+      emailBtn.disabled = false;
+      render();
+    }
+  };
+  emailBtnRow.appendChild(emailBtn);
+
+  if(!emailConfirmedNow && state.profile?.email){
+    const recheckBtn = el('button','btn ghost','Проверить');
+    recheckBtn.onclick = async () => {
+      recheckBtn.disabled = true; recheckBtn.textContent = 'Проверяем…';
+      await recheckAccountEmailStatus();
+      recheckBtn.disabled = false; recheckBtn.textContent = 'Проверить';
+    };
+    emailBtnRow.appendChild(recheckBtn);
   }
+  emailCard.appendChild(emailBtnRow);
   w.appendChild(emailCard);
 
   // --- Профиль ---
