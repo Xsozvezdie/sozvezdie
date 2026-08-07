@@ -1645,7 +1645,7 @@ function usernameToEmail(name){
 // служебных фиктивных адресов вида sozvezdie.user.<хэш>@gmail.com — регистрация и смена
 // логина остаются мгновенными, как и раньше, ничего не меняется для пользователя.
 async function autoConfirmInternalEmail(uid, newEmail){
-  const { data, error } = await sb.functions.invoke('confirm-account-email', {
+  const { data, error } = await sb.functions.invoke('dynamic-service', {
     body: newEmail ? { uid, email: newEmail } : { uid }
   });
   if(error) throw new Error(error.message || 'Не удалось подтвердить служебный email.');
@@ -1685,7 +1685,7 @@ async function registerUser(username, password){
   const email = usernameToEmail(username);
   let uid;
   try{
-    const { data, error } = await sb.functions.invoke('confirm-account-email', {
+    const { data, error } = await sb.functions.invoke('dynamic-service', {
       body: { mode: 'register', email, password }
     });
     if(error) throw new Error(error.message || 'Не удалось создать аккаунт.');
