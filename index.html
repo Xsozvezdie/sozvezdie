@@ -1933,6 +1933,14 @@ function stopListeningForIncomingCalls(){
 // Запрашиваем камеру+микрофон всегда (для единого интерфейса звонка),
 // но если камера недоступна/запрещена (например, в некоторых браузерах) —
 // откатываемся на аудио-only, чтобы звонок всё равно состоялся.
+function showMediaAccessError(e){
+  if(e && e.name === 'NotAllowedError'){
+    showToast('Нет доступа к микрофону/камере — разреши в системном диалоге. Если он не появился, включи доступ вручную в настройках телефона для Sozvezdie.');
+  } else {
+    showToast('Нет доступа к микрофону/камере: ' + (e?.name || e?.message || 'неизвестная ошибка'));
+  }
+}
+
 async function getCallStream(type){
   try{
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
@@ -1968,7 +1976,7 @@ async function startCall(toUid, toName, type){
     const res = await getCallStream(type);
     localStream = res.stream; hasCamera = res.hasCamera;
   }catch(e){
-    showToast('Нет доступа к микрофону/камере: ' + (e.name || e.message));
+    showMediaAccessError(e);
     return;
   }
   const pc = new RTCPeerConnection(RTC_CONFIG);
@@ -2107,7 +2115,7 @@ async function acceptIncomingCall(){
     const res = await getCallStream(call.type);
     localStream = res.stream; hasCamera = res.hasCamera;
   }catch(e){
-    showToast('Нет доступа к микрофону/камере: ' + (e.name || e.message));
+    showMediaAccessError(e);
     return;
   }
   const pc = new RTCPeerConnection(RTC_CONFIG);
@@ -2737,7 +2745,7 @@ async function startGroupCall(groupId, groupName, type){
     const res = await getCallStream(type);
     localStream = res.stream; hasCamera = res.hasCamera;
   }catch(e){
-    showToast('Нет доступа к микрофону/камере: ' + (e.name || e.message));
+    showMediaAccessError(e);
     return;
   }
   let members;
@@ -2765,7 +2773,7 @@ async function joinGroupCallFromInvite(call){
     const res = await getCallStream(call.type);
     localStream = res.stream; hasCamera = res.hasCamera;
   }catch(e){
-    showToast('Нет доступа к микрофону/камере: ' + (e.name || e.message));
+    showMediaAccessError(e);
     try{ await sb.from('calls').update({ status: 'declined' }).eq('id', call.id); }catch(e2){}
     return;
   }
@@ -2785,7 +2793,7 @@ async function joinOngoingGroupCall(groupId, groupName, sessionId, type){
     const res = await getCallStream(type);
     localStream = res.stream; hasCamera = res.hasCamera;
   }catch(e){
-    showToast('Нет доступа к микрофону/камере: ' + (e.name || e.message));
+    showMediaAccessError(e);
     return;
   }
   currentGroupCall = { sessionId, groupId, groupName, type, localStream, hasCamera, peers: {}, screenSharing: false, screenTrack: null, unsubs: [] };
