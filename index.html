@@ -11348,45 +11348,97 @@ function renderAuth(){
   card.appendChild(switchLink);
 
   if(isLogin){
-    if(!state.showForgotPassword){
+    if(!state.forgotStep){
       const forgotLink = el('button','nav-link','Забыли пароль?');
       forgotLink.style.display = 'block';
       forgotLink.style.marginTop = '8px';
-      forgotLink.onclick = () => { state.showForgotPassword = true; state.error=''; render(); };
+      forgotLink.onclick = () => {
+        if(!userInput.value.trim()){
+          state.error = 'Сначала введи логин в поле выше.';
+          render(); return;
+        }
+        state.forgotStep = 'confirm';
+        state.forgotLogin = userInput.value.trim();
+        state.error = '';
+        render();
+      };
       card.appendChild(forgotLink);
     } else {
       const forgotBox = el('div','');
       forgotBox.style.marginTop = '16px';
       forgotBox.style.paddingTop = '16px';
       forgotBox.style.borderTop = '1px solid var(--line, rgba(255,255,255,0.1))';
-      forgotBox.appendChild(el('p','lead','Введи почту, которую добавляла в Аккаунте — пришлём ссылку для сброса пароля.'));
-      const forgotEmailInput = document.createElement('input');
-      forgotEmailInput.type = 'email';
-      forgotEmailInput.placeholder = 'you@example.com';
-      forgotBox.appendChild(forgotEmailInput);
-      const forgotBtn = el('button','btn ghost','Отправить ссылку');
-      forgotBtn.style.marginTop = '10px';
-      forgotBtn.onclick = async () => {
-        const value = forgotEmailInput.value.trim();
-        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)){
-          state.error = 'Введи корректный email.';
-          render(); return;
-        }
-        forgotBtn.disabled = true; forgotBtn.textContent = 'Отправляем…';
-        try{
-          const { error } = await sb.auth.resetPasswordForEmail(value);
-          if(error) throw error;
-          state.showForgotPassword = false;
-          state.error = '';
-          showToast('Если такая почта привязана к аккаунту — письмо со ссылкой уже отправлено. Проверь почту (и папку «Спам»).');
-          render();
-        }catch(e){
-          state.error = e.message;
-          forgotBtn.disabled = false; forgotBtn.textContent = 'Отправить ссылку';
-          render();
-        }
-      };
-      forgotBox.appendChild(forgotBtn);
+
+      const cancelForgot = () => { state.forgotStep = null; state.forgotLogin = ''; state.forgotMaskedEmail = ''; state.error=''; render(); };
+
+      if(state.forgotStep === 'confirm'){
+        forgotBox.appendChild(el('p','lead','Отправить код для сброса пароля на почту, привязанную к аккаунту «' + state.forgotLogin + '»?'));
+        const yesBtn = el('button','btn ghost','Да, отправить код');
+        yesBtn.onclick = async () => {
+          yesBtn.disabled = true; yesBtn.textContent = 'Отправляем…';
+          try{
+            const { data, error } = await sb.functions.invoke('dynamic-service', {
+              body: { mode: 'request_reset_code', login: state.forgotLogin }
+            });
+            if(error) throw new Error(error.message || 'Не удалось отправить код.');
+            if(data?.error) throw new Error(data.error);
+            state.forgotMaskedEmail = data?.maskedEmail || '';
+            state.forgotStep = 'code';
+            state.error = '';
+            render();
+          }catch(e){
+            state.error = e.message;
+            yesBtn.disabled = false; yesBtn.textContent = 'Да, отправить код';
+            render();
+          }
+        };
+        forgotBox.appendChild(yesBtn);
+        const cancelBtn = el('button','nav-link','Отмена');
+        cancelBtn.style.display='block'; cancelBtn.style.marginTop='10px';
+        cancelBtn.onclick = cancelForgot;
+        forgotBox.appendChild(cancelBtn);
+      }
+
+      if(state.forgotStep === 'code'){
+        forgotBox.appendChild(el('p','lead','Код отправлен на ' + state.forgotMaskedEmail + '. Введи код и новый пароль:'));
+        const codeInput = document.createElement('input');
+        codeInput.type = 'text'; codeInput.placeholder = 'Код из письма'; codeInput.inputMode = 'numeric';
+        forgotBox.appendChild(codeInput);
+        const newPassInput = document.createElement('input');
+        newPassInput.type = 'password'; newPassInput.placeholder = 'Новый пароль';
+        newPassInput.style.marginTop = '10px';
+        forgotBox.appendChild(newPassInput);
+
+        const confirmBtn = el('button','btn ghost','Подтвердить и сменить пароль');
+        confirmBtn.style.marginTop = '10px';
+        confirmBtn.onclick = async () => {
+          if(!codeInput.value.trim() || newPassInput.value.length < 6){
+            state.error = 'Введи код и пароль (минимум 6 символов).';
+            render(); return;
+          }
+          confirmBtn.disabled = true; confirmBtn.textContent = 'Проверяем…';
+          try{
+            const { data, error } = await sb.functions.invoke('dynamic-service', {
+              body: { mode: 'verify_reset_code', login: state.forgotLogin, code: codeInput.value.trim(), newPassword: newPassInput.value }
+            });
+            if(error) throw new Error(error.message || 'Не удалось сменить пароль.');
+            if(data?.error) throw new Error(data.error);
+            cancelForgot();
+            showToast('Пароль изменён — теперь можно войти с новым паролем.');
+            userInput.value = state.forgotLogin;
+          }catch(e){
+            state.error = e.message;
+            confirmBtn.disabled = false; confirmBtn.textContent = 'Подтвердить и сменить пароль';
+            render();
+          }
+        };
+        forgotBox.appendChild(confirmBtn);
+        const cancelBtn = el('button','nav-link','Отмена');
+        cancelBtn.style.display='block'; cancelBtn.style.marginTop='10px';
+        cancelBtn.onclick = cancelForgot;
+        forgotBox.appendChild(cancelBtn);
+      }
+
       card.appendChild(forgotBox);
     }
   }
