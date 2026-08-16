@@ -4233,19 +4233,31 @@ function openArchiveModal(){
   const box = document.createElement('div');
   box.className = 'send-preview-box';
   box.appendChild(el('div','','Архив')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
-  const archived = (state.goals||[]).filter(g => g.archived);
+  const archived = (state.goals||[]).filter(g => g.archived)
+    .sort((a, b) => new Date(b.archived_at || 0) - new Date(a.archived_at || 0));
   if(!archived.length){
     box.appendChild(el('div','footer-note','Архив пуст.'));
   } else {
     archived.forEach(goal => {
       const row = el('div','goal-room-row');
-      row.appendChild(el('div','', goal.title));
+      const infoCol = el('div','');
+      infoCol.appendChild(el('div','', goal.title));
+      if(goal.archived_at){
+        infoCol.appendChild(el('div','meta', 'В архиве с ' + timeAgoShort(new Date(goal.archived_at).getTime())));
+      }
+      row.appendChild(infoCol);
+      const btnRow = el('div','');
+      btnRow.style.cssText = 'display:flex;gap:8px;flex-shrink:0;';
+      const showBtn = el('button','btn ghost','Показать');
+      showBtn.onclick = () => openGoalDetail(goal);
+      btnRow.appendChild(showBtn);
       const restoreBtn = el('button','btn ghost','Вернуть');
       restoreBtn.onclick = async () => {
         try{ await updateGoal(goal.id, { archived: false }); state.goalsLoaded = false; ov.remove(); render(); }
         catch(e){ showToast('Не удалось вернуть: '+e.message); }
       };
-      row.appendChild(restoreBtn);
+      btnRow.appendChild(restoreBtn);
+      row.appendChild(btnRow);
       box.appendChild(row);
     });
   }
@@ -4749,7 +4761,7 @@ function buildFeaturedChecklistCard(checklists, index){
       doneRow.appendChild(el('span','goal-done-badge','✓ Готово!'));
       const hideBtn = el('button','btn ghost','Скрыть');
       hideBtn.onclick = async () => {
-        try{ await updateGoal(goal.id, { archived: true }); state.goalsLoaded = false; state.goalsFeaturedIndex = 0; render(); }
+        try{ await updateGoal(goal.id, { archived: true, archived_at: new Date().toISOString() }); state.goalsLoaded = false; state.goalsFeaturedIndex = 0; render(); }
         catch(e){ showToast('Не удалось скрыть: '+e.message); }
       };
       doneRow.appendChild(hideBtn);
