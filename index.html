@@ -1705,12 +1705,18 @@ async function registerUser(username, password){
 
 async function loginUser(username, password){
   if(!supabaseReady) throw backendNotConfiguredError();
-  const email = usernameToEmail(username);
-  const { data, error } = await sb.auth.signInWithPassword({ email, password });
-  if(error){
-    throw new Error('Неверный логин или пароль.');
-  }
-  const uid = data.user.id;
+  const { data, error } = await sb.functions.invoke('dynamic-service', {
+    body: { mode: 'login', login: username, password }
+  });
+  if(error) throw new Error('Неверный логин или пароль.');
+  if(data?.error) throw new Error(data.error);
+  const { error: setSessionError } = await sb.auth.setSession({
+    access_token: data.access_token,
+    refresh_token: data.refresh_token
+  });
+  if(setSessionError) throw new Error(setSessionError.message);
+  const { data: userRes } = await sb.auth.getUser();
+  const uid = userRes.user.id;
   const { data: profileRow } = await sb.from('profiles').select('*').eq('id', uid).single();
   return {
     uid,
@@ -1730,15 +1736,23 @@ function logoutUser(){
 
 async function changeLogin(newLogin, currentPassword){
   if(!supabaseReady) throw backendNotConfiguredError();
-  const oldEmail = usernameToEmail(state.user.login);
+  const oldEmail = state.authEmail || usernameToEmail(state.user.login);
   const { error: reauthError } = await sb.auth.signInWithPassword({ email: oldEmail, password: currentPassword });
   if(reauthError) throw new Error('Неверный текущий пароль.');
-  const newEmail = usernameToEmail(newLogin);
-  try{
-    await autoConfirmInternalEmail(state.user.uid, newEmail);
-  }catch(e){
-    if(/already registered|exists/i.test(e.message)) throw new Error('Такой логин уже занят.');
-    throw e;
+
+  const { data: existing } = await sb.from('profiles').select('id').eq('login', newLogin).maybeSingle();
+  if(existing && existing.id !== state.user.uid) throw new Error('Такой логин уже занят.');
+
+  // Служебный фиктивный email меняем только если настоящая почта ещё не подтверждена —
+  // иначе это стёрло бы уже подтверждённую настоящую почту пользователя.
+  if(!isAccountEmailConfirmed()){
+    const newEmail = usernameToEmail(newLogin);
+    try{
+      await autoConfirmInternalEmail(state.user.uid, newEmail);
+    }catch(e){
+      if(/already registered|exists/i.test(e.message)) throw new Error('Такой логин уже занят.');
+      throw e;
+    }
   }
   const { error: profileError } = await sb.from('profiles').update({ login: newLogin }).eq('id', state.user.uid);
   if(profileError) throw new Error(profileError.message);
