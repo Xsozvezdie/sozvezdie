@@ -7106,13 +7106,6 @@ function renderNav(active){
     if(unreadCount) bellCorner.appendChild(el('span','notif-bell-badge', String(unreadCount)));
     bellCorner.onclick = (e) => { e.stopPropagation(); openNotificationPanel(); };
     cornerActions.appendChild(bellCorner);
-    if(!isAppInstalled()){
-      const installCorner = el('button','nav-corner-btn');
-      installCorner.innerHTML = NAV_ICONS.install + '<span>Установить приложение</span>';
-      installCorner.title = 'Установить приложение';
-      installCorner.onclick = () => { triggerInstallPrompt(); };
-      cornerActions.appendChild(installCorner);
-    }
     const supportCorner = el('button','nav-corner-btn nav-corner-support' + (active==='support' ? ' active' : ''), 'Поддержка');
     supportCorner.onclick = () => { openSupport(); };
     cornerActions.appendChild(supportCorner);
