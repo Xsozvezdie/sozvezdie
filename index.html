@@ -10374,10 +10374,6 @@ function renderMessagesTab(){
 
   const sidebar = el('div','shell-sidebar');
   const sidebarSticky = el('div','shell-sidebar-sticky');
-  const sidebarHeader = el('div','shell-sidebar-header');
-  sidebarHeader.appendChild(el('h1','', 'Сообщения'));
-  sidebarSticky.appendChild(sidebarHeader);
-
   // --- вкладки: встроенные (Все/Группы) + пользовательские папки.
   // На компьютере — иконка и подпись, на телефоне — только иконка (см. CSS .folder-tab-label).
   // "Группы" — всегда только иконкой, без подписи (по просьбе).
