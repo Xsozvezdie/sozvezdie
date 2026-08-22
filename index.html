@@ -12837,7 +12837,9 @@ async function syncStatusBarStyle(){
   if(!StatusBar) return;
   try{
     const isLightTheme = document.body.dataset.theme === 'light';
-    await StatusBar.setStyle({ style: isLightTheme ? 'DARK' : 'LIGHT' });
+    // На Android эти значения на практике действуют наоборот тому, что написано
+    // в документации Capacitor — поэтому здесь специально "перевёрнуто".
+    await StatusBar.setStyle({ style: isLightTheme ? 'LIGHT' : 'DARK' });
   }catch(e){ console.error('status bar style failed', e); }
 }
 async function applyNativeStatusBar(){
