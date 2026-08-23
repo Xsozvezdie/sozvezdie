@@ -3106,7 +3106,7 @@ async function createCalendarEvent(evt){
     participants,
     kind: evt.kind || 'event',
     schedule_pattern: evt.schedulePattern || null,
-    reminder_minutes: evt.reminderMinutes || null,
+    reminder_minutes_list: evt.reminderMinutesList || null,
     excluded_ts: [],
     description: evt.description || null,
     color: evt.color || '#7c9eff',
@@ -3508,16 +3508,19 @@ function checkCalendarReminders(){
   const now = Date.now();
   const horizon = now + 24*60*60*1000;
   state.calendarEvents.forEach(ev => {
-    if(!ev.reminder_minutes || ev.kind === 'work_schedule') return;
+    const minutesList = ev.reminder_minutes_list || (ev.reminder_minutes ? [ev.reminder_minutes] : null);
+    if(!minutesList || !minutesList.length || ev.kind === 'work_schedule') return;
     const occs = expandRecurrence(ev, now - 60*1000, horizon);
     occs.forEach(occ => {
-      const remindAt = occ.start - ev.reminder_minutes*60*1000;
-      const key = ev.id + '@' + occ.start;
-      if(remindAt <= now && occ.start > now && !remindedEventIds.has(key)){
-        remindedEventIds.add(key);
-        saveRemindedEventIds();
-        pushCalendarNotification(`«${ev.title}» ${formatTimeUntil(occ.start - now)} в ${formatClockTime(occ.start)}`);
-      }
+      minutesList.forEach(mins => {
+        const remindAt = occ.start - mins*60*1000;
+        const key = ev.id + '@' + occ.start + '@' + mins;
+        if(remindAt <= now && occ.start > now && !remindedEventIds.has(key)){
+          remindedEventIds.add(key);
+          saveRemindedEventIds();
+          pushCalendarNotification(`«${ev.title}» ${formatTimeUntil(occ.start - now)} в ${formatClockTime(occ.start)}`);
+        }
+      });
     });
   });
 }
@@ -5252,7 +5255,7 @@ function openEventModal(opts){
   reminderWrap.appendChild(el('div','top-tag','Напомнить'));
   const reminderSelect = document.createElement('select');
   [['','Не напоминать'],['10','За 10 минут'],['30','За 30 минут'],['60','За 1 час'],['180','За 3 часа'],['1440','За 1 день']]
-    .forEach(([val,label]) => reminderSelect.appendChild(new Option(label, val, false, editing && String(ev0.reminder_minutes||'') === val)));
+    .forEach(([val,label]) => reminderSelect.appendChild(new Option(label, val, false, editing && String((ev0.reminder_minutes_list && ev0.reminder_minutes_list[0]) ?? ev0.reminder_minutes ?? '') === val)));
   reminderWrap.appendChild(reminderSelect);
   box.appendChild(reminderWrap);
 
@@ -5411,7 +5414,7 @@ function openEventModal(opts){
       if(editing){
         const patch = {
           title, start_ts: startTs, end_ts: endTs, all_day: allDayCheckbox.checked,
-          reminder_minutes: reminderSelect.value ? parseInt(reminderSelect.value, 10) : null,
+          reminder_minutes_list: reminderSelect.value ? [parseInt(reminderSelect.value, 10)] : null,
           description: notesInput.value.trim() || null,
         };
         if(scheduleCheckbox.checked){
@@ -5436,7 +5439,7 @@ function openEventModal(opts){
         await createCalendarEvent({
           title, startTs, endTs, allDay: allDayCheckbox.checked,
           recurrence: recurrenceSelect.value, groupId: opts.groupId || null,
-          reminderMinutes: reminderSelect.value ? parseInt(reminderSelect.value, 10) : null,
+          reminderMinutesList: reminderSelect.value ? [parseInt(reminderSelect.value, 10)] : null,
           description: notesInput.value.trim() || null,
           participants, color: 'var(--gold)',
         });
