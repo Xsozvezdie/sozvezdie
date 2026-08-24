@@ -375,6 +375,7 @@
 
   .nav-wrapper{
     position: sticky; top: 16px; z-index: 50; margin-bottom: 40px;
+    background: var(--bg); padding-bottom: 6px;
   }
   @media (max-width: 900px){
     .nav-wrapper{ margin-bottom: 14px; top: 8px; }
@@ -469,6 +470,7 @@
   .nav-link:hover{ color: var(--gold); border-color: var(--gold); }
   .nav-link.active{ color: var(--gold); border-color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, transparent); }
   .nav-link.nav-dragging{ opacity: 0.5; border-color: var(--gold); cursor: grabbing; }
+  .nav-link{ touch-action: none; }
   @media (max-width: 640px){
     .nav-link-label{ display: none; }
     .nav-link{ padding: 9px 10px; flex: 1; justify-content: center; }
@@ -7971,6 +7973,7 @@ function makeNavSortable(container){
 
   siblings().forEach(btn => {
     btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
       startX = e.clientX; startY = e.clientY;
       longPressTimer = setTimeout(() => {
         longPressTimer = null;
@@ -8156,7 +8159,7 @@ function buildContactsViewToggle(){
   peopleTab.onclick = () => openPeople();
   const phoneTab = el('button','contacts-view-tab' + (state.contactsView === 'phone' ? ' active' : ''), 'Из телефона');
   phoneTab.onclick = () => openPhoneContacts();
-  row.appendChild(friendsTab); row.appendChild(peopleTab); row.appendChild(phoneTab);
+  row.appendChild(phoneTab); row.appendChild(friendsTab); row.appendChild(peopleTab);
   return row;
 }
 
