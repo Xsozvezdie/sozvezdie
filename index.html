@@ -375,6 +375,9 @@
 
   .nav-wrapper{
     position: sticky; top: 16px; z-index: 50; margin-bottom: 40px;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    padding-bottom: 6px;
   }
   @media (max-width: 900px){
     .nav-wrapper{ margin-bottom: 14px; top: 8px; }
@@ -7993,6 +7996,7 @@ function makeNavSortable(container){
     document.removeEventListener('pointermove', onPointerMove);
     document.removeEventListener('pointerup', endDrag);
     const newOrder = siblings().map(el2 => el2.dataset.navKey).filter(Boolean);
+    if(state.profile) state.profile.navOrder = newOrder;
     updateProfileFields({ navOrder: newOrder }).catch(e => console.error('save nav order failed', e));
   }
 
@@ -8050,7 +8054,7 @@ function getNavOrder(){
 }
 function navigateToTabByKey(key){
   if(key === 'messages') openMessagesTab();
-  else if(key === 'friends') openFriends();
+  else if(key === 'friends') openContactsTab();
   else if(key === 'calendar'){ invalidateCalendarCache(); state.screen = 'calendar'; render(); }
   else if(key === 'mine'){ state.screen = state.graph ? 'result' : 'story'; render(); }
   else if(key === 'account'){ state.screen = 'account'; render(); }
@@ -8115,7 +8119,7 @@ function renderNav(active){
     const hasPending = (state.pendingRequestCount||0) > 0;
     const friendsLink = el('button','nav-link' + (active==='friends' ? ' active' : '') + (hasPending ? ' alert' : ''));
     friendsLink.innerHTML = NAV_ICONS.friends + '<span class="nav-link-label">Контакты' + (hasPending ? ' •' + state.pendingRequestCount : '') + '</span>';
-    friendsLink.onclick = () => { openFriends(); };
+    friendsLink.onclick = () => { openContactsTab(); };
 
     const hasCalendarNotif = unreadCalendarNotifCount() > 0;
     const calendarLink = el('button','nav-link' + (active==='calendar' ? ' active' : '') + (hasCalendarNotif ? ' alert' : ''));
@@ -8182,14 +8186,27 @@ async function openPeople(){
 
 function buildContactsViewToggle(){
   const row = el('div','contacts-view-toggle');
+  function rememberTab(tab){
+    if(state.profile) state.profile.lastContactsTab = tab;
+    updateProfileFields({ lastContactsTab: tab }).catch(e => console.error('save contacts tab failed', e));
+  }
   const friendsTab = el('button','contacts-view-tab' + (state.contactsView !== 'people' && state.contactsView !== 'phone' ? ' active' : ''), 'Контакты');
-  friendsTab.onclick = () => openFriends();
+  friendsTab.onclick = () => { rememberTab('friends'); openFriends(); };
   const peopleTab = el('button','contacts-view-tab' + (state.contactsView === 'people' ? ' active' : ''), 'Пользователи');
-  peopleTab.onclick = () => openPeople();
+  peopleTab.onclick = () => { rememberTab('people'); openPeople(); };
   const phoneTab = el('button','contacts-view-tab' + (state.contactsView === 'phone' ? ' active' : ''), 'Из телефона');
-  phoneTab.onclick = () => openPhoneContacts();
+  phoneTab.onclick = () => { rememberTab('phone'); openPhoneContacts(); };
   row.appendChild(phoneTab); row.appendChild(friendsTab); row.appendChild(peopleTab);
   return row;
+}
+
+// Вход в раздел через иконку в навигации — открывает ту подвкладку, что была открыта
+// последней, а если такого выбора ещё не было ни разу — "Из телефона" по умолчанию.
+function openContactsTab(){
+  const last = state.profile?.lastContactsTab || 'phone';
+  if(last === 'people') openPeople();
+  else if(last === 'friends') openFriends();
+  else openPhoneContacts();
 }
 
 function renderContacts(){
@@ -9561,22 +9578,45 @@ function dataUrlToObjectUrl(dataUrl){
 
 async function downloadDataUrl(url, filename){
   try{
+    const isNative = window.Capacitor && window.Capacitor.isNativePlatform();
+    let base64Data = null;
+    let blobUrl = url;
     if(url.startsWith('data:')){
-      const a = document.createElement('a');
-      a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click(); a.remove();
+      base64Data = url.split(',')[1];
+    } else {
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      if(isNative){
+        base64Data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(String(reader.result).split(',')[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } else {
+        blobUrl = URL.createObjectURL(blob);
+      }
+    }
+
+    // В приложении на телефоне обычный трюк с <a download> не работает (WebView его
+    // просто игнорирует) — вместо этого пишем файл через нативный плагин и открываем
+    // системное меню "Поделиться", откуда уже можно сохранить его куда угодно.
+    if(isNative && window.Capacitor.Plugins.Filesystem){
+      const { Filesystem, Directory } = window.Capacitor.Plugins;
+      const result = await Filesystem.writeFile({ path: filename, data: base64Data, directory: Directory.Cache });
+      if(window.Capacitor.Plugins.Share){
+        try{ await window.Capacitor.Plugins.Share.share({ url: result.uri, title: filename }); }
+        catch(e){ /* человек мог просто закрыть окно "Поделиться" без выбора — не ошибка */ }
+      } else {
+        showToast('Файл сохранён: ' + filename);
+      }
       return;
     }
-    // Медиафайлы теперь хранятся в Supabase Storage — это ссылка на другой домен.
-    // Браузеры игнорируют атрибут download для чужого домена и просто открывают файл
-    // вместо скачивания. Поэтому сперва качаем сами байты и скачиваем уже локальный blob.
-    const resp = await fetch(url);
-    const blob = await resp.blob();
-    const blobUrl = URL.createObjectURL(blob);
+
     const a = document.createElement('a');
     a.href = blobUrl; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);
+    if(blobUrl !== url) setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);
   }catch(e){
     console.error('download failed', e);
     showToast('Не удалось скачать файл');
