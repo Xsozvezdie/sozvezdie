@@ -1289,13 +1289,23 @@
     .calendar-header-row{ margin-bottom: 6px; }
   }
 
-  .event-modal-box{ max-width: 420px; }
+  .event-modal-box{ max-width: 420px; max-height: 85vh; overflow-y: auto; }
   .event-modal-row{ display:flex; gap: 8px; }
   .event-modal-row select, .event-modal-row input{ margin-bottom: 0 !important; }
-  .event-modal-time-row{ margin-top: 4px; align-items: flex-start; }
+  .event-modal-time-row{ margin-top: 2px; align-items: flex-start; }
   .event-modal-time-col{ flex: 1; min-width: 0; }
-  .event-modal-time-col .footer-note{ margin-bottom: 4px; }
-  .event-modal-time-arrow-col{ display:flex; flex-direction:column; align-items:center; padding-top: 26px; flex-shrink:0; width: 40px; }
+  .event-modal-time-col .footer-note{ margin: 0 0 4px; padding-top: 0; }
+  .participant-picker-box{ max-width: 420px; max-height: 80vh; display:flex; flex-direction:column; }
+  .participant-picker-list{ overflow-y: auto; flex: 1; min-height: 0; display:flex; flex-direction:column; gap: 4px; }
+  .participant-picker-row{
+    display:flex; align-items:center; gap: 10px; padding: 9px 8px; border-radius: 10px; cursor: pointer;
+  }
+  .participant-picker-row:hover{ background: rgba(255,255,255,0.06); }
+  .participant-picker-row .avatar-circle{ width: 32px; height: 32px; font-size: 13px; flex-shrink: 0; }
+  .participant-picker-name{ flex: 1; min-width: 0; font-size: 14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .participant-picker-row input[type=checkbox]{ width: 18px; height: 18px; flex-shrink: 0; margin: 0; accent-color: var(--gold); }
+
+  .event-modal-time-arrow-col{ display:flex; flex-direction:column; align-items:center; flex-shrink:0; width: 32px; }
   .event-modal-time-arrow{ color: var(--gold); font-size: 16px; }
   .event-modal-time-duration{ color: var(--ink-dim); font-size: 10px; margin-top: 2px; white-space: nowrap; }
 
@@ -5521,6 +5531,96 @@ function createCustomTimePicker(hh, mm){
 }
 
 // opts: { presetDate, presetParticipant:{uid,name}, groupId, groupMembers:[{uid,name}] }
+// Виджет выбора участников события — выглядит как список чатов (личные + группы),
+// с галочками; отметив группу, добавляются сразу все её участники.
+function openParticipantPicker(currentParticipants, onSave){
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box participant-picker-box';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'send-preview-close'; closeBtn.textContent = '✕';
+  closeBtn.onclick = () => ov.remove();
+  box.appendChild(closeBtn);
+
+  box.appendChild(el('div','','Добавить участников')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
+
+  const listEl = el('div','participant-picker-list');
+  listEl.appendChild(el('div','footer-note','Загрузка…'));
+  box.appendChild(listEl);
+
+  const selected = new Map(currentParticipants.map(p => [p.uid, p]));
+  const groupCheckboxRows = []; // {checkbox, memberUids}
+
+  listChatThreads().then(async threads => {
+    listEl.innerHTML = '';
+    if(!threads.length){
+      listEl.appendChild(el('div','footer-note','Пока нет ни одного чата — участников можно будет добавить позже.'));
+      return;
+    }
+    for(const t of threads){
+      const row = el('div','participant-picker-row');
+      const name = t.isGroup ? (t.groupName || 'Группа') : (t.otherName || '');
+      const av = el('div','avatar-circle', (name||'?')[0].toUpperCase());
+      row.appendChild(av);
+      if(!t.isGroup) fillAvatarAsync(av, t.otherUid);
+      row.appendChild(el('div','participant-picker-name', name + (t.isGroup ? ' (группа)' : '')));
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      row.appendChild(checkbox);
+
+      let memberUids = [];
+      if(t.isGroup){
+        try{
+          const { data } = await sb.from('groups').select('members, member_names').eq('id', t.groupId).single();
+          memberUids = (data?.members || []).filter(uid => uid !== state.user.uid);
+          memberUids = memberUids.map(uid => ({ uid, name: data.member_names?.[uid] || 'Без имени' }));
+        }catch(e){ console.error('group members load failed', e); }
+        checkbox.checked = memberUids.length > 0 && memberUids.every(m => selected.has(m.uid));
+        groupCheckboxRows.push({ checkbox, memberUids });
+      } else {
+        checkbox.checked = selected.has(t.otherUid);
+      }
+
+      row.onclick = (e) => {
+        if(e.target === checkbox) return;
+        checkbox.checked = !checkbox.checked;
+        checkbox.dispatchEvent(new Event('change'));
+      };
+      checkbox.onchange = () => {
+        if(t.isGroup){
+          if(checkbox.checked){
+            memberUids.forEach(m => { selected.set(m.uid, m); incrementParticipantAddCount(m.uid); });
+          } else {
+            memberUids.forEach(m => selected.delete(m.uid));
+          }
+        } else {
+          if(checkbox.checked){ selected.set(t.otherUid, { uid: t.otherUid, name: t.otherName }); incrementParticipantAddCount(t.otherUid); }
+          else selected.delete(t.otherUid);
+        }
+      };
+      listEl.appendChild(row);
+    }
+  }).catch(e => {
+    listEl.innerHTML = '';
+    listEl.appendChild(el('div','footer-note','Не удалось загрузить список чатов.'));
+    console.error('participant picker load failed', e);
+  });
+
+  const saveBtn = el('button','btn','Сохранить');
+  saveBtn.style.marginTop = '10px';
+  saveBtn.onclick = () => {
+    ov.remove();
+    onSave(Array.from(selected.values()));
+  };
+  box.appendChild(saveBtn);
+
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
 function openEventModal(opts){
   opts = opts || {};
   const editing = !!opts.existingEvent;
@@ -5554,6 +5654,8 @@ function openEventModal(opts){
   const startTimeInput = createCustomTimePicker(startBase.getHours(), startBase.getMinutes());
   startTimeCol.appendChild(startTimeInput.element);
   const timeArrowCol = el('div','event-modal-time-arrow-col');
+  const timeArrowSpacer = el('div',''); timeArrowSpacer.style.cssText = 'height:21px;';
+  timeArrowCol.appendChild(timeArrowSpacer);
   timeArrowCol.appendChild(el('div','event-modal-time-arrow','→'));
   const durationLabel = el('div','event-modal-time-duration','');
   timeArrowCol.appendChild(durationLabel);
@@ -5643,75 +5745,16 @@ function openEventModal(opts){
   participantsSection.appendChild(participantsListEl);
 
   const addParticipantRow = el('div','');
-  addParticipantRow.style.position = 'relative';
-  const addParticipantToggleBtn = el('button','btn ghost','+ Добавить участника');
+  const addParticipantToggleBtn = el('button','btn ghost','+ Добавить участников');
   addParticipantToggleBtn.type = 'button';
-  addParticipantRow.appendChild(addParticipantToggleBtn);
-
-  const friendSearchInput = document.createElement('input');
-  friendSearchInput.type = 'text'; friendSearchInput.placeholder = '🔍 Найти контакт…';
-  friendSearchInput.style.display = 'none';
-  addParticipantRow.appendChild(friendSearchInput);
-  const friendResultsList = el('div','event-modal-search-results');
-  friendResultsList.style.display = 'none';
-  let allFriendsForSearch = [];
-  let resultsOpen = false;
-  listFriends().then(friends => { allFriendsForSearch = friends; if(resultsOpen) renderFriendSearchResults(); }).catch(()=>{});
-  function renderFriendSearchResults(){
-    const q = friendSearchInput.value.trim().toLowerCase();
-    friendResultsList.innerHTML = '';
-    let candidates = allFriendsForSearch.filter(f => !participants.some(p=>p.uid===f.uid));
-    if(q) candidates = candidates.filter(f => f.name.toLowerCase().includes(q));
-    // Подсказки: сначала те, кого чаще всего зовёшь на встречи, при равенстве — по алфавиту.
-    candidates = sortFriendsBySuggestion(candidates).slice(0, 8);
-    if(!candidates.length){
-      friendResultsList.appendChild(el('div','footer-note','Никого не нашлось.'));
-      return;
-    }
-    candidates.forEach(f => {
-      const item = el('div','event-modal-search-result-item','');
-      item.style.display = 'flex'; item.style.alignItems = 'center'; item.style.gap = '8px';
-      const av = el('div','avatar-circle', (f.name||'?')[0].toUpperCase());
-      av.style.width = '24px'; av.style.height = '24px'; av.style.fontSize = '11px'; av.style.flexShrink = '0';
-      item.appendChild(av);
-      fillAvatarAsync(av, f.uid);
-      item.appendChild(el('span','', f.name));
-      item.onclick = () => {
-        participants.push(f);
-        incrementParticipantAddCount(f.uid);
-        renderParticipants();
-        friendSearchInput.value = '';
-        renderFriendSearchResults();
-      };
-      friendResultsList.appendChild(item);
-    });
-  }
-  // Первый тап по кнопке — сразу показываем подсказки снизу, без клавиатуры.
   addParticipantToggleBtn.onclick = (e) => {
     e.stopPropagation();
-    if(resultsOpen){
-      resultsOpen = false;
-      friendResultsList.style.display = 'none';
-      friendSearchInput.style.display = 'none';
-      friendResultsList.classList.remove('docked-top');
-      return;
-    }
-    resultsOpen = true;
-    friendResultsList.style.display = '';
-    friendSearchInput.style.display = '';
-    renderFriendSearchResults();
+    openParticipantPicker(participants, (newParticipants) => {
+      participants = newParticipants;
+      renderParticipants();
+    });
   };
-  // Повторный тап именно в строку ввода — переключаемся в режим печати: список
-  // "уезжает" наверх экрана (над клавиатурой), а снизу открывается сама клавиатура.
-  friendSearchInput.addEventListener('focus', () => {
-    friendResultsList.classList.add('docked-top');
-    renderFriendSearchResults();
-  });
-  friendSearchInput.addEventListener('input', renderFriendSearchResults);
-  friendSearchInput.addEventListener('blur', () => {
-    setTimeout(() => { friendResultsList.classList.remove('docked-top'); }, 150);
-  });
-  addParticipantRow.appendChild(friendResultsList);
+  addParticipantRow.appendChild(addParticipantToggleBtn);
   participantsSection.appendChild(addParticipantRow);
   box.appendChild(participantsSection);
   if(scheduleCheckbox.checked) participantsSection.style.display = 'none';
