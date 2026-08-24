@@ -1292,9 +1292,20 @@
   .event-modal-box{ max-width: 420px; max-height: 85vh; overflow-y: auto; }
   .event-modal-row{ display:flex; gap: 8px; }
   .event-modal-row select, .event-modal-row input{ margin-bottom: 0 !important; }
-  .event-modal-time-row{ margin-top: 2px; align-items: flex-start; }
+  .event-modal-time-row{ margin-top: 2px; align-items: center; }
   .event-modal-time-col{ flex: 1; min-width: 0; }
-  .event-modal-time-col .footer-note{ margin: 0 0 4px; padding-top: 0; }
+  .reminder-chips-row{ display:flex; flex-wrap:wrap; gap: 6px; margin-bottom: 6px; }
+  .reminder-chip{
+    padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg-soft);
+    color: var(--ink-dim); font-size: 12.5px; cursor: pointer; font-family:'Inter',sans-serif;
+  }
+  .reminder-chip.active{ background: color-mix(in srgb, var(--gold) 20%, transparent); border-color: var(--gold); color: var(--gold); font-weight: 600; }
+  .reminder-add-custom-btn{ font-size: 12.5px; padding: 6px 12px; }
+  .reminder-custom-row{ display:flex; gap: 6px; margin-top: 6px; align-items:center; }
+  .reminder-custom-row input[type=number]{ width: 70px; margin-bottom: 0 !important; }
+  .reminder-custom-row .custom-select-wrap{ width: 80px; margin-bottom: 0; }
+  .reminder-custom-row .btn{ flex-shrink: 0; white-space: nowrap; }
+
   .participant-picker-box{ max-width: 420px; max-height: 80vh; display:flex; flex-direction:column; }
   .participant-picker-list{ overflow-y: auto; flex: 1; min-height: 0; display:flex; flex-direction:column; gap: 4px; }
   .participant-picker-row{
@@ -5210,7 +5221,7 @@ function openDayDetail(year, month, day, items){
           const isRecurring = item.event.recurrence !== 'none' || item.event.kind === 'work_schedule';
           const editBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.edit);
           editBtn.title = 'Редактировать';
-          editBtn.onclick = (e) => { e.stopPropagation(); ov.remove(); openEventModal({ existingEvent: item.event }); };
+          editBtn.onclick = (e) => { e.stopPropagation(); ov.remove(); openEventModal({ existingEvent: item.event, occurrenceStart: item.start, occurrenceEnd: item.end }); };
           actionsWrap.appendChild(editBtn);
 
           const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
@@ -5300,6 +5311,96 @@ document.addEventListener('click', (e) => {
   if(e.target.closest && (e.target.closest('.custom-select-wrap'))) return;
   closeAllCustomPopups(null);
 });
+
+// Несколько напоминаний одновременно + своё произвольное время (число + единица).
+function createReminderPicker(initialMinutesList){
+  const wrap = document.createElement('div');
+  const PRESETS = [10, 30, 60, 180, 1440];
+  const PRESET_LABELS = { 10:'10 мин', 30:'30 мин', 60:'1 час', 180:'3 часа', 1440:'1 день' };
+  let selectedMinutes = new Set(initialMinutesList || []);
+
+  const chipsRow = document.createElement('div');
+  chipsRow.className = 'reminder-chips-row';
+  wrap.appendChild(chipsRow);
+
+  const addCustomToggleBtn = document.createElement('button');
+  addCustomToggleBtn.type = 'button'; addCustomToggleBtn.className = 'btn ghost reminder-add-custom-btn';
+  addCustomToggleBtn.textContent = '+ Своё время';
+  wrap.appendChild(addCustomToggleBtn);
+
+  const customRow = document.createElement('div');
+  customRow.className = 'reminder-custom-row';
+  customRow.style.display = 'none';
+  const customAmountInput = document.createElement('input');
+  customAmountInput.type = 'number'; customAmountInput.min = '1'; customAmountInput.placeholder = 'Число';
+  const customUnitSelect = createCustomSelect([['1','мин'],['60','ч'],['1440','дн']], '60');
+  const customAddBtn = document.createElement('button');
+  customAddBtn.type = 'button'; customAddBtn.className = 'btn'; customAddBtn.textContent = 'Добавить';
+  customRow.appendChild(customAmountInput);
+  customRow.appendChild(customUnitSelect.element);
+  customRow.appendChild(customAddBtn);
+  wrap.appendChild(customRow);
+
+  addCustomToggleBtn.onclick = (e) => {
+    e.stopPropagation();
+    customRow.style.display = customRow.style.display === 'none' ? 'flex' : 'none';
+  };
+  customAddBtn.onclick = (e) => {
+    e.stopPropagation();
+    const amount = parseInt(customAmountInput.value, 10);
+    const unitMult = parseInt(customUnitSelect.value, 10);
+    if(!amount || amount <= 0) return;
+    selectedMinutes.add(amount * unitMult);
+    customAmountInput.value = '';
+    customRow.style.display = 'none';
+    renderChips();
+    wrap.dispatchEvent(new Event('change'));
+  };
+
+  function labelFor(mins){
+    if(PRESET_LABELS[mins]) return PRESET_LABELS[mins];
+    if(mins % 1440 === 0) return (mins/1440) + ' дн';
+    if(mins % 60 === 0) return (mins/60) + ' ч';
+    return mins + ' мин';
+  }
+
+  function renderChips(){
+    chipsRow.innerHTML = '';
+    PRESETS.forEach(mins => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'reminder-chip' + (selectedMinutes.has(mins) ? ' active' : '');
+      chip.textContent = PRESET_LABELS[mins];
+      chip.onclick = (e) => {
+        e.stopPropagation();
+        if(selectedMinutes.has(mins)) selectedMinutes.delete(mins); else selectedMinutes.add(mins);
+        renderChips();
+        wrap.dispatchEvent(new Event('change'));
+      };
+      chipsRow.appendChild(chip);
+    });
+    [...selectedMinutes].filter(m => !PRESETS.includes(m)).sort((a,b) => a-b).forEach(mins => {
+      const chip = document.createElement('button');
+      chip.type = 'button'; chip.className = 'reminder-chip active';
+      chip.textContent = labelFor(mins) + ' ✕';
+      chip.onclick = (e) => {
+        e.stopPropagation();
+        selectedMinutes.delete(mins);
+        renderChips();
+        wrap.dispatchEvent(new Event('change'));
+      };
+      chipsRow.appendChild(chip);
+    });
+  }
+  renderChips();
+
+  return {
+    element: wrap,
+    get value(){ return [...selectedMinutes]; },
+    set value(arr){ selectedMinutes = new Set(arr||[]); renderChips(); },
+    addEventListener: (ev,fn) => wrap.addEventListener(ev,fn),
+  };
+}
 
 function createCustomSelect(options, initialValue){
   const wrap = document.createElement('div');
@@ -5416,7 +5517,7 @@ function createCustomDatePicker(initialDate){
   };
 }
 
-function createWheelColumn(max, initialValue, onChange){
+function createWheelColumn(max, initialValue, onChange, onTapCurrent){
   const ITEM_HEIGHT = 40;
   const REPEATS = 9;
   const MID = Math.floor(REPEATS/2);
@@ -5472,10 +5573,12 @@ function createWheelColumn(max, initialValue, onChange){
   inner.addEventListener('click', (e) => {
     const idx = items.indexOf(e.target);
     if(idx >= 0){
+      const wasAlreadyCentered = e.target.classList.contains('center');
       const v = idx % max;
       value = v; onChange(value);
       scrollToIndex(idx, true);
       updateHighlight(idx);
+      if(wasAlreadyCentered && onTapCurrent) onTapCurrent();
     }
   });
   setTimeout(() => {
@@ -5504,9 +5607,9 @@ function createCustomTimePicker(hh, mm){
   panel.className = 'custom-timepicker-panel';
   panel.style.display = 'none';
   const wheelsRow = document.createElement('div'); wheelsRow.className = 'wheel-picker-row';
-  const hourCol = createWheelColumn(24, curH, (v) => { curH = v; btn.innerHTML = fmt() + '<span class="custom-select-caret">▾</span>'; wrap.dispatchEvent(new Event('change')); });
+  const hourCol = createWheelColumn(24, curH, (v) => { curH = v; btn.innerHTML = fmt() + '<span class="custom-select-caret">▾</span>'; wrap.dispatchEvent(new Event('change')); }, () => { panel.style.display = 'none'; });
   const sep = document.createElement('div'); sep.className = 'wheel-picker-sep'; sep.textContent = ':';
-  const minCol = createWheelColumn(60, curM, (v) => { curM = v; btn.innerHTML = fmt() + '<span class="custom-select-caret">▾</span>'; wrap.dispatchEvent(new Event('change')); });
+  const minCol = createWheelColumn(60, curM, (v) => { curM = v; btn.innerHTML = fmt() + '<span class="custom-select-caret">▾</span>'; wrap.dispatchEvent(new Event('change')); }, () => { panel.style.display = 'none'; });
   wheelsRow.appendChild(hourCol.element); wheelsRow.appendChild(sep); wheelsRow.appendChild(minCol.element);
   const wheelHighlightBar = document.createElement('div'); wheelHighlightBar.className = 'wheel-picker-highlight-bar';
   const wheelsWrap = document.createElement('div'); wheelsWrap.className = 'wheel-picker-wrap';
@@ -5546,12 +5649,25 @@ function openParticipantPicker(currentParticipants, onSave){
 
   box.appendChild(el('div','','Добавить участников')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
 
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text'; searchInput.placeholder = '🔍 Найти по имени…';
+  searchInput.style.marginBottom = '8px';
+  box.appendChild(searchInput);
+
   const listEl = el('div','participant-picker-list');
   listEl.appendChild(el('div','footer-note','Загрузка…'));
   box.appendChild(listEl);
 
   const selected = new Map(currentParticipants.map(p => [p.uid, p]));
-  const groupCheckboxRows = []; // {checkbox, memberUids}
+  const allRows = []; // {row, name}
+
+  function applyFilter(){
+    const q = searchInput.value.trim().toLowerCase();
+    allRows.forEach(({row, name}) => {
+      row.style.display = !q || name.toLowerCase().includes(q) ? '' : 'none';
+    });
+  }
+  searchInput.addEventListener('input', applyFilter);
 
   listChatThreads().then(async threads => {
     listEl.innerHTML = '';
@@ -5569,6 +5685,7 @@ function openParticipantPicker(currentParticipants, onSave){
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       row.appendChild(checkbox);
+      allRows.push({ row, name });
 
       let memberUids = [];
       if(t.isGroup){
@@ -5578,7 +5695,6 @@ function openParticipantPicker(currentParticipants, onSave){
           memberUids = memberUids.map(uid => ({ uid, name: data.member_names?.[uid] || 'Без имени' }));
         }catch(e){ console.error('group members load failed', e); }
         checkbox.checked = memberUids.length > 0 && memberUids.every(m => selected.has(m.uid));
-        groupCheckboxRows.push({ checkbox, memberUids });
       } else {
         checkbox.checked = selected.has(t.otherUid);
       }
@@ -5602,6 +5718,7 @@ function openParticipantPicker(currentParticipants, onSave){
       };
       listEl.appendChild(row);
     }
+    applyFilter();
   }).catch(e => {
     listEl.innerHTML = '';
     listEl.appendChild(el('div','footer-note','Не удалось загрузить список чатов.'));
@@ -5637,30 +5754,27 @@ function openEventModal(opts){
   titleInput.value = editing ? ev0.title : (opts.groupId ? '' : (opts.presetParticipant ? `Встреча с ${opts.presetParticipant.name}` : ''));
   box.appendChild(titleInput);
 
-  const baseDate = editing ? new Date(ev0.start_ts) : (opts.presetDate || new Date());
+  const baseDate = editing ? new Date(opts.occurrenceStart || ev0.start_ts) : (opts.presetDate || new Date());
   const dateWrap = el('div','');
   dateWrap.appendChild(el('div','top-tag','Дата'));
   const startDateInput = createCustomDatePicker(baseDate);
   dateWrap.appendChild(startDateInput.element);
   box.appendChild(dateWrap);
 
-  const startBase = editing ? new Date(ev0.start_ts) : (() => { const d = new Date(); d.setHours(12,0,0,0); return d; })();
-  const endBase = editing ? new Date(ev0.end_ts) : (() => { const d = new Date(); d.setHours(13,0,0,0); return d; })();
+  const startBase = editing ? new Date(opts.occurrenceStart || ev0.start_ts) : (() => { const d = new Date(); d.setHours(12,0,0,0); return d; })();
+  const endBase = editing ? new Date(opts.occurrenceEnd || ev0.end_ts) : (() => { const d = new Date(); d.setHours(13,0,0,0); return d; })();
   const timeWrap = el('div','');
   timeWrap.appendChild(el('div','top-tag','Время'));
   const timeRow = el('div','event-modal-row event-modal-time-row');
   const startTimeCol = el('div','event-modal-time-col');
-  startTimeCol.appendChild(el('div','footer-note','Начало'));
   const startTimeInput = createCustomTimePicker(startBase.getHours(), startBase.getMinutes());
   startTimeCol.appendChild(startTimeInput.element);
   const timeArrowCol = el('div','event-modal-time-arrow-col');
-  const timeArrowSpacer = el('div',''); timeArrowSpacer.style.cssText = 'height:21px;';
-  timeArrowCol.appendChild(timeArrowSpacer);
   timeArrowCol.appendChild(el('div','event-modal-time-arrow','→'));
   const durationLabel = el('div','event-modal-time-duration','');
   timeArrowCol.appendChild(durationLabel);
+  timeArrowCol.appendChild(durationLabel);
   const endTimeCol = el('div','event-modal-time-col');
-  endTimeCol.appendChild(el('div','footer-note','Конец'));
   const endTimeInput = createCustomTimePicker(endBase.getHours(), endBase.getMinutes());
   endTimeCol.appendChild(endTimeInput.element);
   timeRow.appendChild(startTimeCol); timeRow.appendChild(timeArrowCol); timeRow.appendChild(endTimeCol);
@@ -5704,9 +5818,8 @@ function openEventModal(opts){
 
   const reminderWrap = el('div','');
   reminderWrap.appendChild(el('div','top-tag','Напомнить'));
-  const reminderOptions = [['','Не напоминать'],['10','За 10 минут'],['30','За 30 минут'],['60','За 1 час'],['180','За 3 часа'],['1440','За 1 день']];
-  const reminderInitial = editing ? String((ev0.reminder_minutes_list && ev0.reminder_minutes_list[0]) ?? ev0.reminder_minutes ?? '') : '';
-  const reminderSelect = createCustomSelect(reminderOptions, reminderInitial);
+  const reminderInitialList = editing ? (ev0.reminder_minutes_list || (ev0.reminder_minutes ? [ev0.reminder_minutes] : [])) : [];
+  const reminderSelect = createReminderPicker(reminderInitialList);
   reminderWrap.appendChild(reminderSelect.element);
   box.appendChild(reminderWrap);
 
@@ -5809,12 +5922,47 @@ function openEventModal(opts){
     doSaveEvent(title, startTs, endTs);
   };
   async function doSaveEvent(title, startTs, endTs){
+    // Редактируем конкретный день повторяющегося события — уточняем область изменений,
+    // прежде чем сохранять.
+    if(editing && !scheduleCheckbox.checked && ev0.recurrence && ev0.recurrence !== 'none'){
+      const chooser = document.createElement('div');
+      chooser.className = 'send-preview-overlay';
+      const cbox = document.createElement('div');
+      cbox.className = 'send-preview-box';
+      cbox.appendChild(el('div','','Изменить только этот день или все повторения?')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:15px;';
+      const onlyDayBtn = el('button','btn ghost','Только этот день');
+      onlyDayBtn.onclick = () => { chooser.remove(); doSaveEventScoped(title, startTs, endTs, 'day'); };
+      const allBtn = el('button','btn','Все повторения');
+      allBtn.onclick = () => { chooser.remove(); doSaveEventScoped(title, startTs, endTs, 'all'); };
+      const cancelChooserBtn = el('button','btn ghost','Отмена');
+      cancelChooserBtn.onclick = () => chooser.remove();
+      cbox.appendChild(onlyDayBtn); cbox.appendChild(allBtn); cbox.appendChild(cancelChooserBtn);
+      chooser.appendChild(cbox);
+      chooser.onclick = (e) => { if(e.target === chooser) chooser.remove(); };
+      document.body.appendChild(chooser);
+      return;
+    }
+    doSaveEventScoped(title, startTs, endTs, 'all');
+  }
+  async function doSaveEventScoped(title, startTs, endTs, scope){
     saveBtn.disabled = true; saveBtn.textContent = editing ? 'Сохраняем…' : 'Создаём…';
     try{
-      if(editing){
+      if(editing && scope === 'day'){
+        // Только этот день: старое повторяющееся событие в этот день больше не показываем,
+        // а изменения сохраняем как отдельное разовое событие именно на этот день.
+        const originalOccurrenceStart = opts.occurrenceStart || ev0.start_ts;
+        await updateCalendarEvent(ev0.id, { excluded_ts: [...(ev0.excluded_ts||[]), originalOccurrenceStart] });
+        await createCalendarEvent({
+          title, startTs, endTs, allDay: allDayCheckbox.checked,
+          recurrence: 'none', groupId: opts.groupId || null,
+          reminderMinutesList: reminderSelect.value.length ? reminderSelect.value : null,
+          description: notesInput.value.trim() || null,
+          participants, color: 'var(--gold)',
+        });
+      } else if(editing){
         const patch = {
           title, start_ts: startTs, end_ts: endTs, all_day: allDayCheckbox.checked,
-          reminder_minutes_list: reminderSelect.value ? [parseInt(reminderSelect.value, 10)] : null,
+          reminder_minutes_list: reminderSelect.value.length ? reminderSelect.value : null,
           description: notesInput.value.trim() || null,
         };
         if(scheduleCheckbox.checked){
@@ -5839,7 +5987,7 @@ function openEventModal(opts){
         await createCalendarEvent({
           title, startTs, endTs, allDay: allDayCheckbox.checked,
           recurrence: recurrenceSelect.value, groupId: opts.groupId || null,
-          reminderMinutesList: reminderSelect.value ? [parseInt(reminderSelect.value, 10)] : null,
+          reminderMinutesList: reminderSelect.value.length ? reminderSelect.value : null,
           description: notesInput.value.trim() || null,
           participants, color: 'var(--gold)',
         });
