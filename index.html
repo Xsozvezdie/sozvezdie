@@ -159,7 +159,7 @@
   }
   textarea:focus{ outline:none; border-color: var(--gold); }
 
-  input[type=text], input[type=password]{
+  input[type=text], input[type=password], input[type=number]{
     width:100%;
     background: var(--bg-soft);
     border:1px solid var(--line);
@@ -171,7 +171,7 @@
     margin-bottom: 14px;
     display: block;
   }
-  input[type=text]:focus, input[type=password]:focus{ outline:none; border-color: var(--gold); }
+  input[type=text]:focus, input[type=password]:focus, input[type=number]:focus{ outline:none; border-color: var(--gold); }
 
   input[type=date], input[type=time], input[type=datetime-local]{
     background: var(--bg-soft);
@@ -1273,6 +1273,17 @@
     color: var(--ink); border-left: 2px solid var(--chip-color, var(--gold));
   }
   .calendar-event-more{ font-size: 10px; color: var(--ink-dim); padding-left: 4px; }
+  .calendar-cell-selected{ border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+
+  .calendar-body-row{ display:flex; gap: 16px; align-items: flex-start; }
+  .calendar-body-row .calendar-card{ flex: 1.4; min-width: 0; }
+  .calendar-day-panel{ flex: 1; min-width: 0; padding: 16px; max-height: 560px; overflow-y: auto; }
+  .calendar-day-panel-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 15px; margin-bottom: 10px; }
+  .calendar-day-panel-items{ display:flex; flex-direction:column; gap: 4px; }
+  @media (max-width: 780px){
+    .calendar-body-row{ flex-direction: column; }
+    .calendar-day-panel{ max-height: none; width: 100%; }
+  }
   @media (max-width: 640px){
     /* На узком экране время+название не помещаются в клетку дня и вылезают наружу —
        сворачиваем событие в цветную точку, подробности остаются доступны по тапу на день. */
@@ -1292,8 +1303,32 @@
   .event-modal-box{ max-width: 420px; max-height: 85vh; overflow-y: auto; }
   .event-modal-row{ display:flex; gap: 8px; }
   .event-modal-row select, .event-modal-row input{ margin-bottom: 0 !important; }
-  .event-modal-time-row{ margin-top: 2px; align-items: center; }
-  .event-modal-time-col{ flex: 1; min-width: 0; }
+  .event-modal-time-row{ margin-top: 2px; align-items: center; gap: 20px; justify-content: center; }
+  .event-modal-time-col{ flex: 0 0 auto; min-width: 0; }
+  .event-modal-time-col .custom-select-wrap{ width: 96px; margin-bottom: 0; }
+  .event-modal-time-col .custom-select-btn{ justify-content: center; padding: 10px 8px; }
+  .event-modal-time-col .custom-select-caret{ display: none; }
+  .color-picker-row{ display:flex; gap: 10px; margin-bottom: 10px; }
+  .color-picker-dot{
+    width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent;
+    cursor: pointer; padding: 0; box-sizing: border-box;
+  }
+  .color-picker-dot.active{ border-color: var(--ink); box-shadow: 0 0 0 2px var(--bg-soft); }
+
+  .event-modal-attach-row{ margin: 4px 0 10px; }
+  .event-modal-attachments{ display:flex; flex-wrap:wrap; gap: 6px; margin-bottom: 6px; }
+  .event-modal-attachment-chip{ position: relative; }
+  .event-modal-attachment-thumb{ width: 56px; height: 56px; object-fit: cover; border-radius: 8px; cursor: zoom-in; display:block; }
+  .event-modal-attachment-file{
+    font-size: 12px; padding: 8px 10px; border-radius: 8px; background: var(--bg-soft);
+    border: 1px solid var(--line); cursor: pointer; max-width: 140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .event-modal-attachment-remove{
+    position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--line); font-size: 10px;
+    display:flex; align-items:center; justify-content:center; cursor: pointer;
+  }
+
   .reminder-chips-row{ display:flex; flex-wrap:wrap; gap: 6px; margin-bottom: 6px; }
   .reminder-chip{
     padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg-soft);
@@ -1450,6 +1485,22 @@
     20%  { transform: translate(-50%,-50%) scale(1.15); opacity: 1; }
     35%  { transform: translate(-50%,-50%) scale(1); opacity: 1; }
     100% { transform: translate(-50%,-60%) scale(1.05); opacity: 0; }
+  }
+
+  .birthday-confetti-wrap{ position: fixed; inset: 0; z-index: 9999; pointer-events: none; overflow: hidden; }
+  .birthday-confetti-piece{
+    position: absolute; top: -20px; width: 8px; height: 14px; opacity: 0.9;
+    animation-name: birthday-confetti-fall; animation-timing-function: ease-in; animation-fill-mode: forwards;
+  }
+  @keyframes birthday-confetti-fall{
+    0%{ transform: translateY(0) rotate(0deg); opacity: 1; }
+    100%{ transform: translateY(100vh) rotate(540deg); opacity: 0.3; }
+  }
+  .birthday-confetti-banner{
+    position: fixed; top: 40%; left: 50%; transform: translate(-50%,-50%);
+    font-family:'Space Grotesk',sans-serif; font-weight: 800; font-size: 26px; color: var(--gold);
+    text-shadow: 0 2px 12px rgba(0,0,0,0.5); text-align: center; white-space: nowrap;
+    animation: goal-celebration-pop 2.2s ease-out forwards;
   }
 
   .goal-week-row-wrap{ width: 100%; margin: 10px 0; }
@@ -3208,6 +3259,7 @@ async function createCalendarEvent(evt){
     reminder_minutes_list: evt.reminderMinutesList || null,
     excluded_ts: [],
     description: evt.description || null,
+    attachments: evt.attachments || [],
     color: evt.color || '#7c9eff',
   };
   const { data, error } = await sb.from('calendar_events').insert(row).select().single();
@@ -3843,6 +3895,41 @@ function playGoalCelebration(){
   burst.textContent = '🎉✨🎊';
   document.body.appendChild(burst);
   setTimeout(() => burst.remove(), 1800);
+}
+
+// Проверяем, не сегодня ли день рождения самого пользователя (вызывается один раз
+// при восстановлении сессии/входе) — если да, показываем конфетти и поздравление.
+function checkOwnBirthdayToday(){
+  const bday = state.profile?.birthday;
+  if(!bday) return;
+  const full = bday.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const noYear = bday.match(/^--(\d{2})-(\d{2})$/);
+  let mm, dd;
+  if(full){ mm = parseInt(full[2],10); dd = parseInt(full[3],10); }
+  else if(noYear){ mm = parseInt(noYear[1],10); dd = parseInt(noYear[2],10); }
+  else return;
+  const today = new Date();
+  if(today.getMonth()+1 === mm && today.getDate() === dd){
+    playBirthdayConfetti();
+  }
+}
+function playBirthdayConfetti(){
+  const wrap = document.createElement('div');
+  wrap.className = 'birthday-confetti-wrap';
+  const colors = ['#e0559c','#4a9eda','#e0b04d','#5cb85c','#9b6fd1','#e08a3c'];
+  for(let i=0; i<40; i++){
+    const piece = document.createElement('div');
+    piece.className = 'birthday-confetti-piece';
+    piece.style.left = (Math.random()*100) + 'vw';
+    piece.style.background = colors[Math.floor(Math.random()*colors.length)];
+    piece.style.animationDelay = (Math.random()*0.6) + 's';
+    piece.style.animationDuration = (2.2 + Math.random()*1.4) + 's';
+    wrap.appendChild(piece);
+  }
+  const banner = el('div','birthday-confetti-banner','🎉 С днём рождения! 🎉');
+  wrap.appendChild(banner);
+  document.body.appendChild(wrap);
+  setTimeout(() => wrap.remove(), 4200);
 }
 
 function openGoalModal(presetKind){
@@ -5074,8 +5161,23 @@ function renderCalendarScreen(){
   (state.calendarBirthdays || []).forEach(b => {
     if(b.month !== month) return;
     const bucket = dayBuckets[b.day];
-    if(bucket) bucket.push({ title: '🎂 ' + b.name, color: '#e0559c', isBirthday: true });
+    if(bucket) bucket.unshift({
+      title: '🎁 ' + b.name,
+      detailTitle: `🎁 У ${b.name} сегодня день рождения, не забудьте поздравить!`,
+      color: '#e0559c', isBirthday: true,
+    });
   });
+
+  // Если раньше выбранный день был в другом месяце (пролистали календарь) — сбрасываем:
+  // если сейчас смотрим текущий месяц, по умолчанию выбираем сегодня, иначе первое число.
+  if(!state.calendarSelectedDay || state.calendarSelectedDay.year !== year || state.calendarSelectedDay.month !== month){
+    const today = new Date();
+    if(today.getFullYear() === year && today.getMonth() === month){
+      state.calendarSelectedDay = { year, month, day: today.getDate() };
+    } else {
+      state.calendarSelectedDay = { year, month, day: 1 };
+    }
+  }
 
   for(let i=0; i<startWeekday; i++) grid.appendChild(el('div','calendar-cell calendar-cell-empty'));
   for(let d=1; d<=daysInMonth; d++){
@@ -5091,11 +5193,33 @@ function renderCalendarScreen(){
     });
     if(dayBuckets[d].length > 3) itemsWrap.appendChild(el('div','calendar-event-more', `+${dayBuckets[d].length-3}`));
     cell.appendChild(itemsWrap);
-    cell.onclick = () => openDayDetail(year, month, d, dayBuckets[d]);
+    if(state.calendarSelectedDay && state.calendarSelectedDay.year === year && state.calendarSelectedDay.month === month && state.calendarSelectedDay.day === d){
+      cell.classList.add('calendar-cell-selected');
+    }
+    cell.onclick = () => { state.calendarSelectedDay = { year, month, day: d }; render(); };
     grid.appendChild(cell);
   }
   card.appendChild(grid);
-  w.appendChild(card);
+
+  const bodyRow = el('div','calendar-body-row');
+  bodyRow.appendChild(card);
+
+  const dayPanel = el('div','card card-translucent calendar-day-panel');
+  const selDay = state.calendarSelectedDay;
+  const selDayDate = new Date(selDay.year, selDay.month, selDay.day);
+  const dayPanelMonthNames = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  const isSelToday = selDayDate.toDateString() === new Date().toDateString();
+  dayPanel.appendChild(el('div','calendar-day-panel-title', (isSelToday ? 'Сегодня, ' : '') + `${selDay.day} ${dayPanelMonthNames[selDay.month]}`));
+  const dayPanelItems = el('div','calendar-day-panel-items');
+  renderDayDetailItems(dayPanelItems, selDay.year, selDay.month, selDay.day, dayBuckets[selDay.day] || [], () => {});
+  dayPanel.appendChild(dayPanelItems);
+  const dayPanelAddBtn = el('button','btn ghost btn-compact','+ Добавить событие на этот день');
+  dayPanelAddBtn.style.marginTop = '8px';
+  dayPanelAddBtn.onclick = () => openEventModal({ presetDate: selDayDate });
+  dayPanel.appendChild(dayPanelAddBtn);
+  bodyRow.appendChild(dayPanel);
+
+  w.appendChild(bodyRow);
 
   root.appendChild(w);
 
@@ -5138,6 +5262,155 @@ async function loadCalendarBirthdays(){
   return result;
 }
 
+// items рендерятся и в модальном окне (клик по дню на телефоне), и в постоянной панели —
+// вся начинка вынесена сюда, чтобы не дублировать код кнопок принять/отклонить/редактировать.
+function renderDayDetailItems(container, year, month, day, items, closeOverlay){
+  if(!items.length){
+    container.appendChild(el('div','footer-note','Пока ничего не запланировано'));
+    return;
+  }
+  items.forEach(item => {
+    const row = el('div','calendar-day-detail-row');
+    row.style.setProperty('--chip-color', item.color);
+    const timeStr = item.start ? formatClockTime(item.start) + (item.end ? '–'+formatClockTime(item.end) : '') : '';
+    row.appendChild(el('div','calendar-day-detail-dot'));
+    const info = el('div','');
+    info.style.flex = '1'; info.style.minWidth = '0';
+    info.appendChild(el('div','calendar-day-detail-title', item.detailTitle || item.title));
+    if(timeStr) info.appendChild(el('div','meta', timeStr));
+    if(item.isPendingForMe && item.event){
+      const names = (item.event.participants||[]).map(p => p.uid === state.user.uid ? 'вы' : p.name);
+      if(names.length){
+        const partRow = el('div','event-modal-participants');
+        partRow.style.marginTop = '4px';
+        (item.event.participants||[]).forEach(p => {
+          const chip = el('div','event-modal-participant-chip','');
+          const av = el('div','avatar-circle', (p.name||'?')[0].toUpperCase());
+          av.style.width = '18px'; av.style.height = '18px'; av.style.fontSize = '9px'; av.style.marginRight = '4px';
+          chip.appendChild(av);
+          fillAvatarAsync(av, p.uid);
+          chip.appendChild(document.createTextNode(p.uid === state.user.uid ? 'вы' : p.name));
+          partRow.appendChild(chip);
+        });
+        info.appendChild(partRow);
+      }
+      if(item.event.description) info.appendChild(el('div','meta', item.event.description));
+    }
+    if(item.event && (item.event.attachments||[]).length){
+      const attWrap = el('div','event-modal-attachments');
+      attWrap.style.marginTop = '4px';
+      item.event.attachments.forEach(a => {
+        const chip = el('div','event-modal-attachment-chip');
+        if(a.type === 'image'){
+          const thumb = document.createElement('img');
+          thumb.src = a.dataUrl; thumb.className = 'event-modal-attachment-thumb';
+          thumb.onclick = (e) => { e.stopPropagation(); openImagePreview(a.dataUrl); };
+          chip.appendChild(thumb);
+        } else {
+          const link = el('div','event-modal-attachment-file', '📄 ' + a.name);
+          link.onclick = (e) => { e.stopPropagation(); downloadDataUrl(a.dataUrl, a.name); };
+          chip.appendChild(link);
+        }
+        attWrap.appendChild(chip);
+      });
+      info.appendChild(attWrap);
+    }
+    row.appendChild(info);
+    const actionsWrap = el('div','calendar-day-detail-actions');
+    if(item.event && !item.isBirthday){
+      const mine = item.event.owner_uid === state.user.uid;
+      const myPart = (item.event.participants||[]).find(p => p.uid === state.user.uid);
+      if(!mine && myPart && myPart.status === 'pending'){
+        const acceptBtn = el('button','btn','✓');
+        acceptBtn.title = 'Принять';
+        acceptBtn.onclick = async (e) => {
+          e.stopPropagation();
+          const doAccept = async () => {
+            try{
+              await respondToCalendarEvent(item.event, 'confirmed');
+              invalidateCalendarCache(); closeOverlay(); render();
+            }catch(err){ console.error('accept event failed', err); showToast('Не удалось принять: ' + err.message); }
+          };
+          if(hasCalendarConflict(item.start, item.end, item.event.id)){
+            showConfirmModal('У вас уже есть событие в это же время. Всё равно принять?', doAccept, 'Всё равно принять');
+          } else {
+            doAccept();
+          }
+        };
+        const declineBtn = el('button','btn ghost','✕');
+        declineBtn.title = 'Отклонить';
+        declineBtn.onclick = async (e) => {
+          e.stopPropagation();
+          try{
+            await respondToCalendarEvent(item.event, 'declined');
+            invalidateCalendarCache(); closeOverlay(); render();
+          }catch(err){ console.error('decline event failed', err); showToast('Не удалось отклонить: ' + err.message); }
+        };
+        actionsWrap.appendChild(acceptBtn); actionsWrap.appendChild(declineBtn);
+      }
+      // Участник (не владелец), уже подтвердивший участие, может только позвать ещё людей —
+      // менять время/название/повторение чужого события он не может.
+      if(!mine && myPart && myPart.status === 'confirmed'){
+        const addPartBtn = el('button','btn ghost icon-only-btn','＋');
+        addPartBtn.title = 'Добавить участника';
+        addPartBtn.onclick = (e) => { e.stopPropagation(); openAddParticipantModal(item.event); };
+        actionsWrap.appendChild(addPartBtn);
+      }
+      if(mine){
+        const isRecurring = item.event.recurrence !== 'none' || item.event.kind === 'work_schedule';
+        const editBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.edit);
+        editBtn.title = 'Редактировать';
+        editBtn.onclick = (e) => { e.stopPropagation(); closeOverlay(); openEventModal({ existingEvent: item.event, occurrenceStart: item.start, occurrenceEnd: item.end }); };
+        actionsWrap.appendChild(editBtn);
+
+        const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
+        delBtn.title = 'Удалить';
+        delBtn.onclick = async (e) => {
+          e.stopPropagation();
+          if(!isRecurring){
+            showConfirmModal('Удалить это событие?', async () => {
+              try{ await deleteCalendarEvent(item.event.id); invalidateCalendarCache(); closeOverlay(); render(); }
+              catch(err){ console.error('delete event failed', err); showToast('Не удалось удалить: ' + err.message); }
+            });
+            return;
+          }
+          // Повторяющееся событие — уточняем, что именно удалить.
+          const chooser = document.createElement('div');
+          chooser.className = 'send-preview-overlay';
+          const cbox = document.createElement('div');
+          cbox.className = 'send-preview-box';
+          cbox.appendChild(el('div','','Что удалить?')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:15px;';
+          const onlyDayBtn = el('button','btn ghost','Только этот день');
+          onlyDayBtn.onclick = async () => {
+            chooser.remove();
+            const excluded = [...(item.event.excluded_ts||[]), item.start];
+            try{ await updateCalendarEvent(item.event.id, { excluded_ts: excluded }); invalidateCalendarCache(); closeOverlay(); render(); }
+            catch(err){ console.error('exclude occurrence failed', err); showToast('Не удалось удалить: ' + err.message); }
+          };
+          const allBtn = el('button','btn','Удалить всё событие');
+          allBtn.onclick = async () => {
+            chooser.remove();
+            try{ await deleteCalendarEvent(item.event.id); invalidateCalendarCache(); closeOverlay(); render(); }
+            catch(err){ console.error('delete event failed', err); showToast('Не удалось удалить: ' + err.message); }
+          };
+          const cancelChooserBtn = el('button','btn ghost','Отмена');
+          cancelChooserBtn.onclick = () => chooser.remove();
+          const chooserRow = document.createElement('div');
+          chooserRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;';
+          chooserRow.appendChild(cancelChooserBtn); chooserRow.appendChild(onlyDayBtn); chooserRow.appendChild(allBtn);
+          cbox.appendChild(chooserRow);
+          chooser.appendChild(cbox);
+          chooser.onclick = (ev2) => { if(ev2.target === chooser) chooser.remove(); };
+          document.body.appendChild(chooser);
+        };
+        actionsWrap.appendChild(delBtn);
+      }
+    }
+    row.appendChild(actionsWrap);
+    container.appendChild(row);
+  });
+}
+
 function openDayDetail(year, month, day, items){
   const ov = document.createElement('div');
   ov.className = 'send-preview-overlay';
@@ -5146,131 +5419,7 @@ function openDayDetail(year, month, day, items){
   const monthNames = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
   box.appendChild(el('div','', `${day} ${monthNames[month]} ${year}`)).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:16px;';
 
-  if(!items.length){
-    box.appendChild(el('div','footer-note','Пока ничего не запланировано'));
-  } else {
-    items.forEach(item => {
-      const row = el('div','calendar-day-detail-row');
-      row.style.setProperty('--chip-color', item.color);
-      const timeStr = item.start ? formatClockTime(item.start) + (item.end ? '–'+formatClockTime(item.end) : '') : '';
-      row.appendChild(el('div','calendar-day-detail-dot'));
-      const info = el('div','');
-      info.style.flex = '1'; info.style.minWidth = '0';
-      info.appendChild(el('div','calendar-day-detail-title', item.title));
-      if(timeStr) info.appendChild(el('div','meta', timeStr));
-      if(item.isPendingForMe && item.event){
-        const names = (item.event.participants||[]).map(p => p.uid === state.user.uid ? 'вы' : p.name);
-        if(names.length){
-          const partRow = el('div','event-modal-participants');
-          partRow.style.marginTop = '4px';
-          (item.event.participants||[]).forEach(p => {
-            const chip = el('div','event-modal-participant-chip','');
-            const av = el('div','avatar-circle', (p.name||'?')[0].toUpperCase());
-            av.style.width = '18px'; av.style.height = '18px'; av.style.fontSize = '9px'; av.style.marginRight = '4px';
-            chip.appendChild(av);
-            fillAvatarAsync(av, p.uid);
-            chip.appendChild(document.createTextNode(p.uid === state.user.uid ? 'вы' : p.name));
-            partRow.appendChild(chip);
-          });
-          info.appendChild(partRow);
-        }
-        if(item.event.description) info.appendChild(el('div','meta', item.event.description));
-      }
-      row.appendChild(info);
-      const actionsWrap = el('div','calendar-day-detail-actions');
-      if(item.event && !item.isBirthday){
-        const mine = item.event.owner_uid === state.user.uid;
-        const myPart = (item.event.participants||[]).find(p => p.uid === state.user.uid);
-        if(!mine && myPart && myPart.status === 'pending'){
-          const acceptBtn = el('button','btn','✓');
-          acceptBtn.title = 'Принять';
-          acceptBtn.onclick = async (e) => {
-            e.stopPropagation();
-            const doAccept = async () => {
-              try{
-                await respondToCalendarEvent(item.event, 'confirmed');
-                invalidateCalendarCache(); ov.remove(); render();
-              }catch(err){ console.error('accept event failed', err); showToast('Не удалось принять: ' + err.message); }
-            };
-            if(hasCalendarConflict(item.start, item.end, item.event.id)){
-              showConfirmModal('У вас уже есть событие в это же время. Всё равно принять?', doAccept, 'Всё равно принять');
-            } else {
-              doAccept();
-            }
-          };
-          const declineBtn = el('button','btn ghost','✕');
-          declineBtn.title = 'Отклонить';
-          declineBtn.onclick = async (e) => {
-            e.stopPropagation();
-            try{
-              await respondToCalendarEvent(item.event, 'declined');
-              invalidateCalendarCache(); ov.remove(); render();
-            }catch(err){ console.error('decline event failed', err); showToast('Не удалось отклонить: ' + err.message); }
-          };
-          actionsWrap.appendChild(acceptBtn); actionsWrap.appendChild(declineBtn);
-        }
-        // Участник (не владелец), уже подтвердивший участие, может только позвать ещё людей —
-        // менять время/название/повторение чужого события он не может.
-        if(!mine && myPart && myPart.status === 'confirmed'){
-          const addPartBtn = el('button','btn ghost icon-only-btn','＋');
-          addPartBtn.title = 'Добавить участника';
-          addPartBtn.onclick = (e) => { e.stopPropagation(); openAddParticipantModal(item.event); };
-          actionsWrap.appendChild(addPartBtn);
-        }
-        if(mine){
-          const isRecurring = item.event.recurrence !== 'none' || item.event.kind === 'work_schedule';
-          const editBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.edit);
-          editBtn.title = 'Редактировать';
-          editBtn.onclick = (e) => { e.stopPropagation(); ov.remove(); openEventModal({ existingEvent: item.event, occurrenceStart: item.start, occurrenceEnd: item.end }); };
-          actionsWrap.appendChild(editBtn);
-
-          const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
-          delBtn.title = 'Удалить';
-          delBtn.onclick = async (e) => {
-            e.stopPropagation();
-            if(!isRecurring){
-              showConfirmModal('Удалить это событие?', async () => {
-                try{ await deleteCalendarEvent(item.event.id); invalidateCalendarCache(); ov.remove(); render(); }
-                catch(err){ console.error('delete event failed', err); showToast('Не удалось удалить: ' + err.message); }
-              });
-              return;
-            }
-            // Повторяющееся событие — уточняем, что именно удалить.
-            const chooser = document.createElement('div');
-            chooser.className = 'send-preview-overlay';
-            const cbox = document.createElement('div');
-            cbox.className = 'send-preview-box';
-            cbox.appendChild(el('div','','Что удалить?')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:15px;';
-            const onlyDayBtn = el('button','btn ghost','Только этот день');
-            onlyDayBtn.onclick = async () => {
-              chooser.remove();
-              const excluded = [...(item.event.excluded_ts||[]), item.start];
-              try{ await updateCalendarEvent(item.event.id, { excluded_ts: excluded }); invalidateCalendarCache(); ov.remove(); render(); }
-              catch(err){ console.error('exclude occurrence failed', err); showToast('Не удалось удалить: ' + err.message); }
-            };
-            const allBtn = el('button','btn','Удалить всё событие');
-            allBtn.onclick = async () => {
-              chooser.remove();
-              try{ await deleteCalendarEvent(item.event.id); invalidateCalendarCache(); ov.remove(); render(); }
-              catch(err){ console.error('delete event failed', err); showToast('Не удалось удалить: ' + err.message); }
-            };
-            const cancelChooserBtn = el('button','btn ghost','Отмена');
-            cancelChooserBtn.onclick = () => chooser.remove();
-            const chooserRow = document.createElement('div');
-            chooserRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;';
-            chooserRow.appendChild(cancelChooserBtn); chooserRow.appendChild(onlyDayBtn); chooserRow.appendChild(allBtn);
-            cbox.appendChild(chooserRow);
-            chooser.appendChild(cbox);
-            chooser.onclick = (ev2) => { if(ev2.target === chooser) chooser.remove(); };
-            document.body.appendChild(chooser);
-          };
-          actionsWrap.appendChild(delBtn);
-        }
-      }
-      row.appendChild(actionsWrap);
-      box.appendChild(row);
-    });
-  }
+  renderDayDetailItems(box, year, month, day, items, () => ov.remove());
 
   const addHereBtn = el('button','btn ghost','+ Добавить событие на этот день');
   addHereBtn.style.marginTop = '8px';
@@ -5313,6 +5462,34 @@ document.addEventListener('click', (e) => {
 });
 
 // Несколько напоминаний одновременно + своё произвольное время (число + единица).
+const EVENT_COLORS = ['#4a9eda','#e0b04d','#5cb85c','#9b6fd1','#e08a3c'];
+function createColorPicker(initialColor){
+  const wrap = document.createElement('div');
+  wrap.className = 'color-picker-row';
+  let current = EVENT_COLORS.includes(initialColor) ? initialColor : EVENT_COLORS[0];
+  const swatches = [];
+  EVENT_COLORS.forEach(c => {
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'color-picker-dot' + (c === current ? ' active' : '');
+    dot.style.background = c;
+    dot.onclick = (e) => {
+      e.stopPropagation();
+      current = c;
+      swatches.forEach(s => s.classList.toggle('active', s === dot));
+      wrap.dispatchEvent(new Event('change'));
+    };
+    swatches.push(dot);
+    wrap.appendChild(dot);
+  });
+  return {
+    element: wrap,
+    get value(){ return current; },
+    set value(c){ current = c; swatches.forEach((s,i) => s.classList.toggle('active', EVENT_COLORS[i] === c)); },
+    addEventListener: (ev,fn) => wrap.addEventListener(ev,fn),
+  };
+}
+
 function createReminderPicker(initialMinutesList){
   const wrap = document.createElement('div');
   const PRESETS = [10, 30, 60, 180, 1440];
@@ -5809,6 +5986,12 @@ function openEventModal(opts){
     timeWrap.style.display = allDayCheckbox.checked ? 'none' : '';
   };
 
+  const colorWrap = el('div','');
+  colorWrap.appendChild(el('div','top-tag','Цвет'));
+  const colorPicker = createColorPicker(editing ? ev0.color : EVENT_COLORS[0]);
+  colorWrap.appendChild(colorPicker.element);
+  box.appendChild(colorWrap);
+
   const recurrenceWrap = el('div','');
   recurrenceWrap.appendChild(el('div','top-tag','Повторение'));
   const recurrenceOptions = [['none','Никогда'],['daily','Каждый день'],['weekdays','По будням'],['weekends','По выходным'],['weekly','Раз в неделю'],['monthly','Раз в месяц'],['yearly','Раз в год']];
@@ -5879,6 +6062,77 @@ function openEventModal(opts){
   notesInput.style.minHeight = '60px';
   notesInput.value = editing ? (ev0.description || '') : '';
   notesWrap.appendChild(notesInput);
+
+  let attachments = editing ? (ev0.attachments || []).slice() : [];
+  const attachmentsList = el('div','event-modal-attachments');
+  function renderAttachments(){
+    attachmentsList.innerHTML = '';
+    attachments.forEach((a, idx) => {
+      const chip = el('div','event-modal-attachment-chip');
+      if(a.type === 'image'){
+        const thumb = document.createElement('img');
+        thumb.src = a.dataUrl; thumb.className = 'event-modal-attachment-thumb';
+        thumb.onclick = () => openImagePreview(a.dataUrl);
+        chip.appendChild(thumb);
+      } else {
+        const link = el('div','event-modal-attachment-file', '📄 ' + a.name);
+        link.onclick = () => downloadDataUrl(a.dataUrl, a.name);
+        chip.appendChild(link);
+      }
+      const rm = document.createElement('span'); rm.textContent = '✕'; rm.className = 'event-modal-attachment-remove';
+      rm.onclick = (e) => { e.stopPropagation(); attachments.splice(idx, 1); renderAttachments(); };
+      chip.appendChild(rm);
+      attachmentsList.appendChild(chip);
+    });
+  }
+  renderAttachments();
+  notesWrap.appendChild(attachmentsList);
+
+  const attachFileInput = document.createElement('input');
+  attachFileInput.type = 'file'; attachFileInput.style.display = 'none';
+  attachFileInput.onchange = async () => {
+    const file = attachFileInput.files[0];
+    attachFileInput.value = '';
+    if(!file) return;
+    try{
+      if(file.type.startsWith('image/')){
+        const dataUrl = await compressImageToDataUrl(file);
+        attachments.push({ type: 'image', name: file.name, dataUrl });
+      } else {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        attachments.push({ type: 'file', name: file.name, dataUrl });
+      }
+      renderAttachments();
+    }catch(e){ console.error('event attachment failed', e); showToast('Не удалось прикрепить файл'); }
+  };
+  const attachBtnRow = el('div','event-modal-attach-row');
+  const attachToggleBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.attach);
+  attachToggleBtn.type = 'button';
+  attachToggleBtn.title = 'Прикрепить фото или файл';
+  attachToggleBtn.onclick = (e) => {
+    e.stopPropagation();
+    closeContextMenu();
+    const menu = el('div','context-menu');
+    const photoItem = el('div','context-menu-item','🖼️ Фото');
+    photoItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); attachFileInput.accept = 'image/*'; attachFileInput.click(); };
+    const fileItem = el('div','context-menu-item','📄 Документ');
+    fileItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); attachFileInput.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip'; attachFileInput.click(); };
+    menu.appendChild(photoItem); menu.appendChild(fileItem);
+    document.body.appendChild(menu);
+    const rect = attachToggleBtn.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = (rect.bottom + 4) + 'px';
+    menu.style.left = rect.left + 'px';
+    setTimeout(() => document.addEventListener('click', closeContextMenu, { once: true }), 0);
+  };
+  attachBtnRow.appendChild(attachToggleBtn);
+  attachBtnRow.appendChild(attachFileInput);
+  notesWrap.appendChild(attachBtnRow);
   box.appendChild(notesWrap);
 
   const errEl = el('div','err','');
@@ -5956,14 +6210,14 @@ function openEventModal(opts){
           title, startTs, endTs, allDay: allDayCheckbox.checked,
           recurrence: 'none', groupId: opts.groupId || null,
           reminderMinutesList: reminderSelect.value.length ? reminderSelect.value : null,
-          description: notesInput.value.trim() || null,
-          participants, color: 'var(--gold)',
+          description: notesInput.value.trim() || null, attachments,
+          participants, color: colorPicker.value,
         });
       } else if(editing){
         const patch = {
           title, start_ts: startTs, end_ts: endTs, all_day: allDayCheckbox.checked,
           reminder_minutes_list: reminderSelect.value.length ? reminderSelect.value : null,
-          description: notesInput.value.trim() || null,
+          description: notesInput.value.trim() || null, attachments, color: colorPicker.value,
         };
         if(scheduleCheckbox.checked){
           patch.recurrence = 'none'; patch.kind = 'work_schedule'; patch.schedule_pattern = patternSelect.value;
@@ -5988,8 +6242,8 @@ function openEventModal(opts){
           title, startTs, endTs, allDay: allDayCheckbox.checked,
           recurrence: recurrenceSelect.value, groupId: opts.groupId || null,
           reminderMinutesList: reminderSelect.value.length ? reminderSelect.value : null,
-          description: notesInput.value.trim() || null,
-          participants, color: 'var(--gold)',
+          description: notesInput.value.trim() || null, attachments,
+          participants, color: colorPicker.value,
         });
       }
       invalidateCalendarCache();
@@ -13549,6 +13803,7 @@ if(supabaseReady){
         state.isAdmin = profileRow?.is_admin === true;
         applyTheme(profileRow?.theme || 'dark');
         applyBgMotion(state.profile?.bgMotion === true);
+        checkOwnBirthdayToday();
         if(state.screen === 'landing'){
           const restored = restoreScreenState();
           if(!restored) openMessagesTab();
