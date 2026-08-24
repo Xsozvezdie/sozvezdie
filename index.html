@@ -1138,17 +1138,18 @@
   }
   .image-preview-edit-btn:hover{ background: rgba(255,255,255,0.18); }
   .image-preview-edit-btn svg{ width: 16px; height: 16px; }
-  .image-preview-download-btn, .image-preview-more-btn{
+  .image-preview-download-btn, .image-preview-more-btn, .image-preview-back-btn{
     position: absolute; top: 20px; z-index: 10;
     display:flex; align-items:center; justify-content:center;
     width: 38px; height: 38px; border-radius: 50%;
     background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
     color: #fff; cursor: pointer; font-size: 18px;
   }
-  .image-preview-download-btn:hover, .image-preview-more-btn:hover{ background: rgba(255,255,255,0.18); }
+  .image-preview-download-btn:hover, .image-preview-more-btn:hover, .image-preview-back-btn:hover{ background: rgba(255,255,255,0.18); }
   .image-preview-download-btn svg{ width: 17px; height: 17px; }
   .image-preview-download-btn{ right: 20px; }
   .image-preview-more-btn{ right: 68px; }
+  .image-preview-back-btn{ left: 20px; font-size: 20px; }
 
   .send-preview-overlay{
     position: fixed; inset: 0; z-index: 985;
@@ -1281,7 +1282,7 @@
   .calendar-day-panel-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 15px; margin-bottom: 0; }
   .calendar-day-panel-add{ width: 30px; height: 30px; min-width: 30px; font-size: 16px; flex-shrink: 0; }
 
-  .calendar-event-detail-box{ background: color-mix(in srgb, var(--panel) 50%, transparent) !important; }
+  .calendar-event-detail-box{ background: color-mix(in srgb, var(--panel) 4%, transparent) !important; border-color: color-mix(in srgb, var(--line) 40%, transparent) !important; }
   .calendar-event-detail-participants{ margin: 10px 0; }
   .calendar-event-detail-avatars{ display:flex; margin-bottom: 4px; }
   .calendar-event-detail-avatars .avatar-circle{
@@ -3539,7 +3540,7 @@ async function pollCalendarForChanges(){
     }
     state.calendarEvents = fresh;
     state.calendarEventsLoaded = true;
-    if(state.screen === 'calendar') render();
+    if(state.screen === 'calendar') renderCalendarPreservingScroll();
   }catch(e){ console.error('calendar poll failed', e); }
 }
 
@@ -3566,6 +3567,18 @@ async function canInviteToCalendar(targetUid){
 function invalidateCalendarCache(){
   state.calendarEvents = null;
   state.calendarEventsLoaded = false;
+}
+
+// Фоновый опрос обновляет календарь каждые несколько секунд — без этого прокрутка
+// списка событий выбранного дня всё время сбрасывалась бы наверх при каждом обновлении.
+function renderCalendarPreservingScroll(){
+  const panel = document.querySelector('.calendar-day-panel');
+  const savedScroll = panel ? panel.scrollTop : 0;
+  render();
+  requestAnimationFrame(() => {
+    const newPanel = document.querySelector('.calendar-day-panel');
+    if(newPanel) newPanel.scrollTop = savedScroll;
+  });
 }
 
 async function pushCalendarNotification(text){
@@ -3621,7 +3634,7 @@ function startCalendarRealtime(){
         if(mine) pushCalendarNotification(`${row.owner_name || 'Кто-то'} пригласил(а) вас: «${row.title}»`);
       }
       invalidateCalendarCache();
-      if(state.screen === 'calendar') render();
+      if(state.screen === 'calendar') renderCalendarPreservingScroll();
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calendar_events' }, (payload) => {
       const oldRow = payload.old, newRow = payload.new;
@@ -3634,7 +3647,7 @@ function startCalendarRealtime(){
         });
       }
       invalidateCalendarCache();
-      if(state.screen === 'calendar') render();
+      if(state.screen === 'calendar') renderCalendarPreservingScroll();
     })
     .subscribe();
 }
@@ -3732,7 +3745,7 @@ function openNotificationPanel(){
       if(!popup.contains(ev.target) && ev.target.id !== 'notif-bell-btn'){
         popup.remove();
         document.removeEventListener('click', closeNotif);
-        if(state.screen === 'calendar') render(); else refreshGlobalNav();
+        if(state.screen === 'calendar') renderCalendarPreservingScroll(); else refreshGlobalNav();
       }
     });
   }, 0);
@@ -5292,7 +5305,7 @@ function renderCalendarScreen(){
       state.calendarBirthdays = birthdays;
       state.calendarEventsLoaded = true;
       state.calendarLoading = false;
-      if(state.screen === 'calendar') render();
+      if(state.screen === 'calendar') renderCalendarPreservingScroll();
     }).catch(e => {
       console.error('calendar load failed', e);
       state.calendarLoading = false;
@@ -5348,12 +5361,25 @@ function openDayDetail(year, month, day, items){
   box.appendChild(closeBtn);
 
   const timeStr = item.start ? formatClockTime(item.start) + (item.end ? '–'+formatClockTime(item.end) : '') : '';
-  box.appendChild(el('div','', item.detailTitle || item.title)).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:16px;';
-  if(timeStr) box.appendChild(el('div','meta', timeStr));
+  box.appendChild(el('div','', item.detailTitle || item.title)).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:20px;';
+  if(timeStr){
+    const durMin = item.end ? Math.round((item.end - item.start)/60000) : null;
+    let durStr = '';
+    if(durMin){
+      const h = Math.floor(durMin/60), m = durMin%60;
+      durStr = h && m ? `${h} ч ${m} мин` : h ? `${h} ч` : `${m} мин`;
+    }
+    const timeWrap = el('div','');
+    timeWrap.style.marginTop = '8px';
+    timeWrap.appendChild(el('div','top-tag','Время'));
+    timeWrap.appendChild(el('div','meta', timeStr + (durStr ? ` (${durStr})` : '')));
+    box.appendChild(timeWrap);
+  }
 
   if(item.event && !item.isBirthday){
     const participants = item.event.participants || [];
     const partWrap = el('div','calendar-event-detail-participants');
+    partWrap.appendChild(el('div','top-tag','Участники'));
     if(participants.length <= 1){
       partWrap.appendChild(el('div','meta','Только вы'));
     } else {
@@ -5903,6 +5929,7 @@ function openParticipantPicker(currentParticipants, onSave){
       return;
     }
     for(const t of threads){
+      if(!t.isGroup && t.otherUid === state.user.uid) continue;
       const row = el('div','participant-picker-row');
       const name = t.isGroup ? (t.groupName || 'Группа') : (t.otherName || '');
       const av = el('div','avatar-circle', (name||'?')[0].toUpperCase());
@@ -6298,8 +6325,14 @@ function openEventModal(opts){
         });
       }
       invalidateCalendarCache();
+      try{
+        const [freshEvents, freshBirthdays] = await Promise.all([listMyCalendarEvents(), loadCalendarBirthdays()]);
+        state.calendarEvents = freshEvents;
+        state.calendarBirthdays = freshBirthdays;
+        state.calendarEventsLoaded = true;
+      }catch(err){ console.error('calendar refresh after save failed', err); }
       ov.remove();
-      if(state.screen === 'calendar') render();
+      if(state.screen === 'calendar') renderCalendarPreservingScroll();
       else showToast(editing ? 'Сохранено ✓' : 'Событие создано ✓');
     }catch(e){
       console.error('save event failed', e);
@@ -7515,6 +7548,13 @@ function openImagePreview(src, msgContext){
   img.src = src;
   img.className = 'image-preview-img';
   overlay.appendChild(img);
+
+  const backBtn = document.createElement('button');
+  backBtn.className = 'image-preview-back-btn';
+  backBtn.title = 'Назад';
+  backBtn.textContent = '←';
+  backBtn.onclick = (e) => { e.stopPropagation(); overlay.remove(); };
+  overlay.appendChild(backBtn);
 
   // Приближение колёсиком мыши (и щипком на тачскрине через тот же wheel-жест в браузере) —
   // раньше это не работало вообще. Двойной клик — сброс масштаба.
