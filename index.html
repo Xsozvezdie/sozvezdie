@@ -1292,6 +1292,70 @@
   .event-modal-box{ max-width: 420px; }
   .event-modal-row{ display:flex; gap: 8px; }
   .event-modal-row select, .event-modal-row input{ margin-bottom: 0 !important; }
+  .event-modal-time-row{ margin-top: 4px; }
+  .event-modal-time-col{ flex: 1; min-width: 0; }
+  .event-modal-time-col .footer-note{ margin-bottom: 4px; }
+
+  /* ---------------- собственные тематизированные виджеты (дата/время/список) ---------------- */
+  .custom-select-wrap{ position: relative; width: 100%; margin-bottom: 10px; }
+  .custom-select-btn{
+    width: 100%; text-align: left; display:flex; align-items:center; justify-content:space-between;
+    background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; font-size: 14px; color: var(--ink); font-family:'Inter',sans-serif;
+    cursor: pointer; box-sizing: border-box;
+  }
+  .custom-select-btn:hover{ border-color: var(--gold); }
+  .custom-select-caret{ color: var(--ink-dim); font-size: 11px; margin-left: 8px; }
+  .custom-select-panel, .custom-datepicker-panel, .custom-timepicker-panel{
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 60;
+    background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px;
+    padding: 6px; box-shadow: 0 12px 28px rgba(0,0,0,0.35);
+    max-height: 260px; overflow-y: auto;
+  }
+  .custom-select-item{
+    padding: 9px 10px; border-radius: 8px; font-size: 13.5px; color: var(--ink);
+    cursor: pointer;
+  }
+  .custom-select-item:hover{ background: rgba(255,255,255,0.06); }
+  .custom-select-item.active{ background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); font-weight: 600; }
+
+  .custom-datepicker-panel{ width: 280px; max-height: none; }
+  .custom-datepicker-nav{ display:flex; align-items:center; justify-content:space-between; padding: 4px 6px 10px; font-size: 13.5px; font-weight: 600; text-transform: capitalize; }
+  .custom-datepicker-nav button{ background:none; border:none; color: var(--ink-dim); font-size: 18px; cursor:pointer; padding: 0 8px; }
+  .custom-datepicker-nav button:hover{ color: var(--gold); }
+  .custom-datepicker-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .custom-datepicker-dow{ text-align:center; font-size: 11px; color: var(--ink-dim); padding: 4px 0; }
+  .custom-datepicker-day{
+    background:none; border:none; color: var(--ink); font-size: 13px; padding: 8px 0;
+    border-radius: 8px; cursor: pointer; font-family:'Inter',sans-serif;
+  }
+  .custom-datepicker-day:hover{ background: rgba(255,255,255,0.08); }
+  .custom-datepicker-day.today{ color: var(--gold); font-weight: 700; }
+  .custom-datepicker-day.selected{ background: var(--gold); color: #16130a; font-weight: 700; }
+
+  .custom-timepicker-panel{ width: 180px; max-height: none; }
+  .wheel-picker-wrap{ position: relative; }
+  .wheel-picker-highlight-bar{
+    position: absolute; top: 40px; left: 0; right: 0; height: 40px;
+    background: color-mix(in srgb, var(--gold) 12%, transparent);
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    pointer-events: none; border-radius: 6px;
+  }
+  .wheel-picker-row{ display:flex; align-items:center; justify-content:center; gap: 4px; }
+  .wheel-picker-col{
+    width: 60px; overflow-y: scroll; scroll-snap-type: y mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .wheel-picker-col::-webkit-scrollbar{ display:none; }
+  .wheel-picker-inner{ display:flex; flex-direction:column; }
+  .wheel-picker-item{
+    display:flex; align-items:center; justify-content:center;
+    font-size: 18px; color: var(--ink-dim); scroll-snap-align: center; cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }
+  .wheel-picker-item.center{ color: var(--gold); font-weight: 700; font-size: 20px; }
+  .wheel-picker-sep{ font-size: 20px; font-weight: 700; color: var(--ink-dim); padding-bottom: 2px; }
+
   .event-modal-checkbox-label{ display:flex; align-items:center; gap: 8px; font-size: 13px; color: var(--ink-dim); cursor:pointer; margin: -4px 0 4px; }
   .event-modal-checkbox-label input{ width:auto; margin-bottom:0 !important; }
   .event-modal-schedule-options{ background: var(--bg-soft); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
@@ -5200,6 +5264,213 @@ function formatTimeInputValue(d){
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// ---------------- собственные тематизированные виджеты вместо системных ----------------
+// Общий принцип: возвращаем не DOM-элемент напрямую, а объект-обёртку с теми же
+// свойствами, что у обычного <input>/<select> (.value, .addEventListener, .element),
+// чтобы остальной код мог работать с ним почти так же, как раньше.
+function closeAllCustomPopups(except){
+  document.querySelectorAll('.custom-datepicker-panel, .custom-timepicker-panel, .custom-select-panel')
+    .forEach(p => { if(p !== except) p.style.display = 'none'; });
+}
+document.addEventListener('click', (e) => {
+  if(e.target.closest && (e.target.closest('.custom-select-wrap'))) return;
+  closeAllCustomPopups(null);
+});
+
+function createCustomSelect(options, initialValue){
+  const wrap = document.createElement('div');
+  wrap.className = 'custom-select-wrap';
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'custom-select-btn';
+  let currentValue = initialValue;
+  function labelFor(v){ const o = options.find(o => o[0] === v); return o ? o[1] : (options[0] ? options[0][1] : ''); }
+  btn.innerHTML = labelFor(currentValue) + '<span class="custom-select-caret">▾</span>';
+  wrap.appendChild(btn);
+  const panel = document.createElement('div');
+  panel.className = 'custom-select-panel';
+  panel.style.display = 'none';
+  options.forEach(([val,label]) => {
+    const item = document.createElement('div');
+    item.className = 'custom-select-item' + (val === currentValue ? ' active' : '');
+    item.textContent = label;
+    item.onclick = (e) => {
+      e.stopPropagation();
+      currentValue = val;
+      btn.innerHTML = label + '<span class="custom-select-caret">▾</span>';
+      panel.querySelectorAll('.custom-select-item').forEach(x => x.classList.remove('active'));
+      item.classList.add('active');
+      panel.style.display = 'none';
+      wrap.dispatchEvent(new Event('change'));
+    };
+    panel.appendChild(item);
+  });
+  wrap.appendChild(panel);
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    const willOpen = panel.style.display === 'none';
+    closeAllCustomPopups(panel);
+    panel.style.display = willOpen ? 'block' : 'none';
+  };
+  return {
+    element: wrap,
+    get value(){ return currentValue; },
+    set value(v){
+      currentValue = v;
+      btn.innerHTML = labelFor(v) + '<span class="custom-select-caret">▾</span>';
+      panel.querySelectorAll('.custom-select-item').forEach(x => x.classList.toggle('active', x.textContent === labelFor(v)));
+    },
+    addEventListener: (ev,fn) => wrap.addEventListener(ev,fn),
+  };
+}
+
+function createCustomDatePicker(initialDate){
+  const wrap = document.createElement('div');
+  wrap.className = 'custom-select-wrap';
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'custom-select-btn';
+  let current = new Date(initialDate);
+  let viewMonth = new Date(current.getFullYear(), current.getMonth(), 1);
+  function fmt(d){ return d.toLocaleDateString('ru-RU', { day:'numeric', month:'long', year:'numeric' }); }
+  btn.innerHTML = fmt(current) + '<span class="custom-select-caret">▾</span>';
+  wrap.appendChild(btn);
+  const panel = document.createElement('div');
+  panel.className = 'custom-datepicker-panel';
+  panel.style.display = 'none';
+  wrap.appendChild(panel);
+
+  function renderCalendar(){
+    panel.innerHTML = '';
+    const nav = document.createElement('div'); nav.className = 'custom-datepicker-nav';
+    const prevBtn = document.createElement('button'); prevBtn.type='button'; prevBtn.textContent='‹';
+    const monthLabel = document.createElement('div'); monthLabel.textContent = viewMonth.toLocaleDateString('ru-RU', { month:'long', year:'numeric' });
+    const nextBtn = document.createElement('button'); nextBtn.type='button'; nextBtn.textContent='›';
+    prevBtn.onclick = (e) => { e.stopPropagation(); viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()-1, 1); renderCalendar(); };
+    nextBtn.onclick = (e) => { e.stopPropagation(); viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()+1, 1); renderCalendar(); };
+    nav.appendChild(prevBtn); nav.appendChild(monthLabel); nav.appendChild(nextBtn);
+    panel.appendChild(nav);
+
+    const grid = document.createElement('div'); grid.className = 'custom-datepicker-grid';
+    ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(d => {
+      const cell = document.createElement('div'); cell.className = 'custom-datepicker-dow'; cell.textContent = d;
+      grid.appendChild(cell);
+    });
+    const firstDay = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
+    let startOffset = firstDay.getDay() - 1; if(startOffset < 0) startOffset = 6;
+    const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()+1, 0).getDate();
+    for(let i=0;i<startOffset;i++) grid.appendChild(document.createElement('div'));
+    const today = new Date();
+    for(let d=1; d<=daysInMonth; d++){
+      const cell = document.createElement('button'); cell.type='button'; cell.className = 'custom-datepicker-day'; cell.textContent = String(d);
+      const cellDate = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), d);
+      if(cellDate.toDateString() === current.toDateString()) cell.classList.add('selected');
+      if(cellDate.toDateString() === today.toDateString()) cell.classList.add('today');
+      cell.onclick = (e) => {
+        e.stopPropagation();
+        current = cellDate;
+        btn.innerHTML = fmt(current) + '<span class="custom-select-caret">▾</span>';
+        panel.style.display = 'none';
+        wrap.dispatchEvent(new Event('change'));
+      };
+      grid.appendChild(cell);
+    }
+    panel.appendChild(grid);
+  }
+
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    const willOpen = panel.style.display === 'none';
+    closeAllCustomPopups(panel);
+    if(willOpen){ viewMonth = new Date(current.getFullYear(), current.getMonth(), 1); renderCalendar(); }
+    panel.style.display = willOpen ? 'block' : 'none';
+  };
+
+  return {
+    element: wrap,
+    get value(){ return formatDateInputValue(current); },
+    set value(v){ const [y,m,d] = v.split('-').map(Number); current = new Date(y, m-1, d); btn.innerHTML = fmt(current) + '<span class="custom-select-caret">▾</span>'; },
+    addEventListener: (ev,fn) => wrap.addEventListener(ev,fn),
+  };
+}
+
+function createWheelColumn(max, initialValue, onChange){
+  const ITEM_HEIGHT = 40;
+  const col = document.createElement('div');
+  col.className = 'wheel-picker-col';
+  col.style.height = (ITEM_HEIGHT*3) + 'px';
+  const inner = document.createElement('div');
+  inner.className = 'wheel-picker-inner';
+  inner.style.paddingTop = ITEM_HEIGHT + 'px';
+  inner.style.paddingBottom = ITEM_HEIGHT + 'px';
+  for(let i=0;i<max;i++){
+    const item = document.createElement('div');
+    item.className = 'wheel-picker-item';
+    item.style.height = ITEM_HEIGHT + 'px';
+    item.textContent = String(i).padStart(2,'0');
+    inner.appendChild(item);
+  }
+  col.appendChild(inner);
+  let value = initialValue;
+  function scrollToValue(v, smooth){ col.scrollTo({ top: v*ITEM_HEIGHT, behavior: smooth ? 'smooth' : 'auto' }); }
+  function updateHighlight(){ [...inner.children].forEach((child,i) => child.classList.toggle('center', i === value)); }
+  let scrollTimeout = null;
+  col.addEventListener('scroll', () => {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      const idx = Math.round(col.scrollTop / ITEM_HEIGHT);
+      const clamped = Math.max(0, Math.min(max-1, idx));
+      if(clamped !== value){ value = clamped; onChange(value); }
+      scrollToValue(clamped, true);
+      updateHighlight();
+    }, 100);
+  });
+  inner.addEventListener('click', (e) => {
+    const idx = [...inner.children].indexOf(e.target);
+    if(idx >= 0){ value = idx; scrollToValue(idx, true); onChange(value); updateHighlight(); }
+  });
+  setTimeout(() => { scrollToValue(initialValue, false); updateHighlight(); }, 0);
+  return { element: col, getValue: () => value, setValue: (v) => { value = v; scrollToValue(v, false); updateHighlight(); } };
+}
+
+function createCustomTimePicker(hh, mm){
+  const wrap = document.createElement('div');
+  wrap.className = 'custom-select-wrap';
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'custom-select-btn';
+  let curH = hh, curM = mm;
+  function fmt(){ return String(curH).padStart(2,'0') + ':' + String(curM).padStart(2,'0'); }
+  btn.innerHTML = fmt() + '<span class="custom-select-caret">▾</span>';
+  wrap.appendChild(btn);
+
+  const panel = document.createElement('div');
+  panel.className = 'custom-timepicker-panel';
+  panel.style.display = 'none';
+  const wheelsRow = document.createElement('div'); wheelsRow.className = 'wheel-picker-row';
+  const hourCol = createWheelColumn(24, curH, (v) => { curH = v; btn.innerHTML = fmt() + '<span class="custom-select-caret">▾</span>'; wrap.dispatchEvent(new Event('change')); });
+  const sep = document.createElement('div'); sep.className = 'wheel-picker-sep'; sep.textContent = ':';
+  const minCol = createWheelColumn(60, curM, (v) => { curM = v; btn.innerHTML = fmt() + '<span class="custom-select-caret">▾</span>'; wrap.dispatchEvent(new Event('change')); });
+  wheelsRow.appendChild(hourCol.element); wheelsRow.appendChild(sep); wheelsRow.appendChild(minCol.element);
+  const wheelHighlightBar = document.createElement('div'); wheelHighlightBar.className = 'wheel-picker-highlight-bar';
+  const wheelsWrap = document.createElement('div'); wheelsWrap.className = 'wheel-picker-wrap';
+  wheelsWrap.appendChild(wheelHighlightBar); wheelsWrap.appendChild(wheelsRow);
+  panel.appendChild(wheelsWrap);
+  wrap.appendChild(panel);
+
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    const willOpen = panel.style.display === 'none';
+    closeAllCustomPopups(panel);
+    panel.style.display = willOpen ? 'block' : 'none';
+    if(willOpen){ hourCol.setValue(curH); minCol.setValue(curM); }
+  };
+
+  return {
+    element: wrap,
+    get value(){ return fmt(); },
+    set value(v){ const [h,m] = v.split(':').map(Number); curH=h; curM=m; btn.innerHTML = fmt() + '<span class="custom-select-caret">▾</span>'; hourCol.setValue(h); minCol.setValue(m); },
+    addEventListener: (ev,fn) => wrap.addEventListener(ev,fn),
+  };
+}
+
 // opts: { presetDate, presetParticipant:{uid,name}, groupId, groupMembers:[{uid,name}] }
 function openEventModal(opts){
   opts = opts || {};
@@ -5218,10 +5489,28 @@ function openEventModal(opts){
   box.appendChild(titleInput);
 
   const baseDate = editing ? new Date(ev0.start_ts) : (opts.presetDate || new Date());
-  const dateRow = el('div','event-modal-row');
-  const startDateInput = document.createElement('input'); startDateInput.type='date'; startDateInput.value = formatDateInputValue(baseDate);
-  const startTimeInput = document.createElement('input'); startTimeInput.type='time'; startTimeInput.value = editing ? formatTimeInputValue(new Date(ev0.start_ts)) : '12:00';
-  const endTimeInput = document.createElement('input'); endTimeInput.type='time'; endTimeInput.value = editing ? formatTimeInputValue(new Date(ev0.end_ts)) : '13:00';
+  const dateWrap = el('div','');
+  dateWrap.appendChild(el('div','top-tag','Дата'));
+  const startDateInput = createCustomDatePicker(baseDate);
+  dateWrap.appendChild(startDateInput.element);
+  box.appendChild(dateWrap);
+
+  const startBase = editing ? new Date(ev0.start_ts) : (() => { const d = new Date(); d.setHours(12,0,0,0); return d; })();
+  const endBase = editing ? new Date(ev0.end_ts) : (() => { const d = new Date(); d.setHours(13,0,0,0); return d; })();
+  const timeWrap = el('div','');
+  timeWrap.appendChild(el('div','top-tag','Время'));
+  const timeRow = el('div','event-modal-row event-modal-time-row');
+  const startTimeCol = el('div','event-modal-time-col');
+  startTimeCol.appendChild(el('div','footer-note','Начало'));
+  const startTimeInput = createCustomTimePicker(startBase.getHours(), startBase.getMinutes());
+  startTimeCol.appendChild(startTimeInput.element);
+  const endTimeCol = el('div','event-modal-time-col');
+  endTimeCol.appendChild(el('div','footer-note','Конец'));
+  const endTimeInput = createCustomTimePicker(endBase.getHours(), endBase.getMinutes());
+  endTimeCol.appendChild(endTimeInput.element);
+  timeRow.appendChild(startTimeCol); timeRow.appendChild(endTimeCol);
+  timeWrap.appendChild(timeRow);
+  box.appendChild(timeWrap);
   startTimeInput.addEventListener('change', () => {
     const [sh,sm] = startTimeInput.value.split(':').map(Number);
     if(isNaN(sh) || isNaN(sm)) return;
@@ -5229,34 +5518,30 @@ function openEventModal(opts){
     if(eh > 23) eh = 23;
     endTimeInput.value = String(eh).padStart(2,'0') + ':' + String(em).padStart(2,'0');
   });
-  dateRow.appendChild(startDateInput); dateRow.appendChild(startTimeInput); dateRow.appendChild(endTimeInput);
-  box.appendChild(dateRow);
 
   const allDayLabel = document.createElement('label'); allDayLabel.className = 'event-modal-checkbox-label';
   const allDayCheckbox = document.createElement('input'); allDayCheckbox.type = 'checkbox';
   allDayCheckbox.checked = editing ? !!ev0.all_day : false;
   allDayLabel.appendChild(allDayCheckbox); allDayLabel.appendChild(document.createTextNode(' Весь день'));
   box.appendChild(allDayLabel);
-  if(allDayCheckbox.checked){ startTimeInput.style.display = 'none'; endTimeInput.style.display = 'none'; }
+  if(allDayCheckbox.checked){ timeWrap.style.display = 'none'; }
   allDayCheckbox.onchange = () => {
-    startTimeInput.style.display = allDayCheckbox.checked ? 'none' : '';
-    endTimeInput.style.display = allDayCheckbox.checked ? 'none' : '';
+    timeWrap.style.display = allDayCheckbox.checked ? 'none' : '';
   };
 
   const recurrenceWrap = el('div','');
   recurrenceWrap.appendChild(el('div','top-tag','Повторение'));
-  const recurrenceSelect = document.createElement('select');
-  [['none','Никогда'],['daily','Каждый день'],['weekdays','По будням'],['weekends','По выходным'],['weekly','Раз в неделю'],['monthly','Раз в месяц'],['yearly','Раз в год']]
-    .forEach(([val,label]) => recurrenceSelect.appendChild(new Option(label, val, false, editing && ev0.recurrence === val)));
-  recurrenceWrap.appendChild(recurrenceSelect);
+  const recurrenceOptions = [['none','Никогда'],['daily','Каждый день'],['weekdays','По будням'],['weekends','По выходным'],['weekly','Раз в неделю'],['monthly','Раз в месяц'],['yearly','Раз в год']];
+  const recurrenceSelect = createCustomSelect(recurrenceOptions, editing ? ev0.recurrence : 'none');
+  recurrenceWrap.appendChild(recurrenceSelect.element);
   box.appendChild(recurrenceWrap);
 
   const reminderWrap = el('div','');
   reminderWrap.appendChild(el('div','top-tag','Напомнить'));
-  const reminderSelect = document.createElement('select');
-  [['','Не напоминать'],['10','За 10 минут'],['30','За 30 минут'],['60','За 1 час'],['180','За 3 часа'],['1440','За 1 день']]
-    .forEach(([val,label]) => reminderSelect.appendChild(new Option(label, val, false, editing && String((ev0.reminder_minutes_list && ev0.reminder_minutes_list[0]) ?? ev0.reminder_minutes ?? '') === val)));
-  reminderWrap.appendChild(reminderSelect);
+  const reminderOptions = [['','Не напоминать'],['10','За 10 минут'],['30','За 30 минут'],['60','За 1 час'],['180','За 3 часа'],['1440','За 1 день']];
+  const reminderInitial = editing ? String((ev0.reminder_minutes_list && ev0.reminder_minutes_list[0]) ?? ev0.reminder_minutes ?? '') : '';
+  const reminderSelect = createCustomSelect(reminderOptions, reminderInitial);
+  reminderWrap.appendChild(reminderSelect.element);
   box.appendChild(reminderWrap);
 
   // --- Особый режим: постоянный график занятости (работа 5/2, 2/2 и т.п.) ---
@@ -5269,10 +5554,9 @@ function openEventModal(opts){
   const scheduleOptionsWrap = el('div','event-modal-schedule-options');
   scheduleOptionsWrap.style.display = scheduleCheckbox.checked ? '' : 'none';
   const patternRow = el('div','event-modal-row');
-  const patternSelect = document.createElement('select');
-  [['5/2','5 через 2 (пн–пт)'],['2/2','2 через 2'],['6/1','6 через 1'],['1/1','через день']]
-    .forEach(([val,label]) => patternSelect.appendChild(new Option(label, val, false, editing && ev0.schedule_pattern === val)));
-  patternRow.appendChild(patternSelect);
+  const patternOptions = [['5/2','5 через 2 (пн–пт)'],['2/2','2 через 2'],['6/1','6 через 1'],['1/1','через день']];
+  const patternSelect = createCustomSelect(patternOptions, editing ? ev0.schedule_pattern : '5/2');
+  patternRow.appendChild(patternSelect.element);
   scheduleOptionsWrap.appendChild(el('div','footer-note','Друзья и контакты будут видеть, что ты занят(а) в это время каждый цикл, начиная с выбранной даты.'));
   scheduleOptionsWrap.appendChild(patternRow);
   box.appendChild(scheduleOptionsWrap);
