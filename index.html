@@ -1292,12 +1292,16 @@
   .event-modal-box{ max-width: 420px; }
   .event-modal-row{ display:flex; gap: 8px; }
   .event-modal-row select, .event-modal-row input{ margin-bottom: 0 !important; }
-  .event-modal-time-row{ margin-top: 4px; }
+  .event-modal-time-row{ margin-top: 4px; align-items: flex-start; }
   .event-modal-time-col{ flex: 1; min-width: 0; }
   .event-modal-time-col .footer-note{ margin-bottom: 4px; }
+  .event-modal-time-arrow-col{ display:flex; flex-direction:column; align-items:center; padding-top: 26px; flex-shrink:0; width: 40px; }
+  .event-modal-time-arrow{ color: var(--gold); font-size: 16px; }
+  .event-modal-time-duration{ color: var(--ink-dim); font-size: 10px; margin-top: 2px; white-space: nowrap; }
 
   /* ---------------- собственные тематизированные виджеты (дата/время/список) ---------------- */
-  .custom-select-wrap{ position: relative; width: 100%; margin-bottom: 10px; }
+  .custom-select-wrap{ position: relative; width: 100%; margin-bottom: 4px; }
+  .event-modal-box > div{ margin-bottom: 2px; }
   .custom-select-btn{
     width: 100%; text-align: left; display:flex; align-items:center; justify-content:space-between;
     background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px;
@@ -1307,10 +1311,13 @@
   .custom-select-btn:hover{ border-color: var(--gold); }
   .custom-select-caret{ color: var(--ink-dim); font-size: 11px; margin-left: 8px; }
   .custom-select-panel, .custom-datepicker-panel, .custom-timepicker-panel{
-    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 60;
-    background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px;
-    padding: 6px; box-shadow: 0 12px 28px rgba(0,0,0,0.35);
-    max-height: 260px; overflow-y: auto;
+    position: fixed; z-index: 200;
+    top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 6px; box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+    max-height: min(320px, 70vh); overflow-y: auto;
+    max-width: min(320px, 90vw);
+    width: max-content;
   }
   .custom-select-item{
     padding: 9px 10px; border-radius: 8px; font-size: 13.5px; color: var(--ink);
@@ -1319,7 +1326,7 @@
   .custom-select-item:hover{ background: rgba(255,255,255,0.06); }
   .custom-select-item.active{ background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); font-weight: 600; }
 
-  .custom-datepicker-panel{ width: 280px; max-height: none; }
+  .custom-datepicker-panel{ width: min(280px, 90vw); max-height: none; }
   .custom-datepicker-nav{ display:flex; align-items:center; justify-content:space-between; padding: 4px 6px 10px; font-size: 13.5px; font-weight: 600; text-transform: capitalize; }
   .custom-datepicker-nav button{ background:none; border:none; color: var(--ink-dim); font-size: 18px; cursor:pointer; padding: 0 8px; }
   .custom-datepicker-nav button:hover{ color: var(--gold); }
@@ -1333,7 +1340,7 @@
   .custom-datepicker-day.today{ color: var(--gold); font-weight: 700; }
   .custom-datepicker-day.selected{ background: var(--gold); color: #16130a; font-weight: 700; }
 
-  .custom-timepicker-panel{ width: 180px; max-height: none; }
+  .custom-timepicker-panel{ width: min(180px, 90vw); max-height: none; }
   .wheel-picker-wrap{ position: relative; }
   .wheel-picker-highlight-bar{
     position: absolute; top: 40px; left: 0; right: 0; height: 40px;
@@ -1361,11 +1368,18 @@
   .event-modal-schedule-options{ background: var(--bg-soft); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
   .event-modal-participants{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom: 8px; }
   .event-modal-search-results{
-    position: absolute; top: calc(100% - 10px); left: 0; right: 0; z-index: 20;
+    position: static; margin-top: 6px;
     background: color-mix(in srgb, var(--panel) 92%, transparent);
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--line); border-radius: 10px;
-    max-height: 180px; overflow-y: auto;
+    max-height: 220px; overflow-y: auto;
+  }
+  .event-modal-search-results.docked-top{
+    position: fixed; z-index: 250;
+    top: calc(env(safe-area-inset-top, 0px) + 16px);
+    left: 50%; transform: translateX(-50%);
+    width: min(360px, 92vw); max-height: 40vh;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.45);
   }
   .event-modal-search-result-item{
     padding: 9px 12px; font-size: 13.5px; cursor: pointer;
@@ -5394,6 +5408,8 @@ function createCustomDatePicker(initialDate){
 
 function createWheelColumn(max, initialValue, onChange){
   const ITEM_HEIGHT = 40;
+  const REPEATS = 9;
+  const MID = Math.floor(REPEATS/2);
   const col = document.createElement('div');
   col.className = 'wheel-picker-col';
   col.style.height = (ITEM_HEIGHT*3) + 'px';
@@ -5401,34 +5417,67 @@ function createWheelColumn(max, initialValue, onChange){
   inner.className = 'wheel-picker-inner';
   inner.style.paddingTop = ITEM_HEIGHT + 'px';
   inner.style.paddingBottom = ITEM_HEIGHT + 'px';
-  for(let i=0;i<max;i++){
-    const item = document.createElement('div');
-    item.className = 'wheel-picker-item';
-    item.style.height = ITEM_HEIGHT + 'px';
-    item.textContent = String(i).padStart(2,'0');
-    inner.appendChild(item);
+  const items = [];
+  for(let r=0;r<REPEATS;r++){
+    for(let i=0;i<max;i++){
+      const item = document.createElement('div');
+      item.className = 'wheel-picker-item';
+      item.style.height = ITEM_HEIGHT + 'px';
+      item.textContent = String(i).padStart(2,'0');
+      inner.appendChild(item);
+      items.push(item);
+    }
   }
   col.appendChild(inner);
   let value = initialValue;
-  function scrollToValue(v, smooth){ col.scrollTo({ top: v*ITEM_HEIGHT, behavior: smooth ? 'smooth' : 'auto' }); }
-  function updateHighlight(){ [...inner.children].forEach((child,i) => child.classList.toggle('center', i === value)); }
+  const indexForValue = (v, repeat) => repeat*max + v;
+  function scrollToIndex(idx, smooth){ col.scrollTo({ top: idx*ITEM_HEIGHT, behavior: smooth ? 'smooth' : 'auto' }); }
+  function updateHighlight(centerIdx){ items.forEach((child,i) => child.classList.toggle('center', i === centerIdx)); }
+
   let scrollTimeout = null;
+  let ignoreScroll = false;
   col.addEventListener('scroll', () => {
+    if(ignoreScroll) return;
     clearTimeout(scrollTimeout);
     scrollTimeout = setTimeout(() => {
-      const idx = Math.round(col.scrollTop / ITEM_HEIGHT);
-      const clamped = Math.max(0, Math.min(max-1, idx));
-      if(clamped !== value){ value = clamped; onChange(value); }
-      scrollToValue(clamped, true);
-      updateHighlight();
+      let idx = Math.round(col.scrollTop / ITEM_HEIGHT);
+      idx = Math.max(0, Math.min(items.length-1, idx));
+      const v = idx % max;
+      if(v !== value){ value = v; onChange(value); }
+      // Незаметно переносим на такую же позицию в среднем блоке, если ушли близко
+      // к самому началу/концу списка — так прокрутку можно продолжать бесконечно.
+      const repeat = Math.floor(idx / max);
+      let targetIdx = idx;
+      if(repeat < 2 || repeat > REPEATS - 3){
+        targetIdx = indexForValue(v, MID);
+        ignoreScroll = true;
+        scrollToIndex(targetIdx, false);
+        requestAnimationFrame(() => { ignoreScroll = false; });
+      } else {
+        scrollToIndex(idx, true);
+      }
+      updateHighlight(targetIdx);
     }, 100);
   });
   inner.addEventListener('click', (e) => {
-    const idx = [...inner.children].indexOf(e.target);
-    if(idx >= 0){ value = idx; scrollToValue(idx, true); onChange(value); updateHighlight(); }
+    const idx = items.indexOf(e.target);
+    if(idx >= 0){
+      const v = idx % max;
+      value = v; onChange(value);
+      scrollToIndex(idx, true);
+      updateHighlight(idx);
+    }
   });
-  setTimeout(() => { scrollToValue(initialValue, false); updateHighlight(); }, 0);
-  return { element: col, getValue: () => value, setValue: (v) => { value = v; scrollToValue(v, false); updateHighlight(); } };
+  setTimeout(() => {
+    const startIdx = indexForValue(initialValue, MID);
+    scrollToIndex(startIdx, false);
+    updateHighlight(startIdx);
+  }, 0);
+  return {
+    element: col,
+    getValue: () => value,
+    setValue: (v) => { value = v; const idx = indexForValue(v, MID); scrollToIndex(idx, false); updateHighlight(idx); },
+  };
 }
 
 function createCustomTimePicker(hh, mm){
@@ -5504,20 +5553,35 @@ function openEventModal(opts){
   startTimeCol.appendChild(el('div','footer-note','Начало'));
   const startTimeInput = createCustomTimePicker(startBase.getHours(), startBase.getMinutes());
   startTimeCol.appendChild(startTimeInput.element);
+  const timeArrowCol = el('div','event-modal-time-arrow-col');
+  timeArrowCol.appendChild(el('div','event-modal-time-arrow','→'));
+  const durationLabel = el('div','event-modal-time-duration','');
+  timeArrowCol.appendChild(durationLabel);
   const endTimeCol = el('div','event-modal-time-col');
   endTimeCol.appendChild(el('div','footer-note','Конец'));
   const endTimeInput = createCustomTimePicker(endBase.getHours(), endBase.getMinutes());
   endTimeCol.appendChild(endTimeInput.element);
-  timeRow.appendChild(startTimeCol); timeRow.appendChild(endTimeCol);
+  timeRow.appendChild(startTimeCol); timeRow.appendChild(timeArrowCol); timeRow.appendChild(endTimeCol);
   timeWrap.appendChild(timeRow);
   box.appendChild(timeWrap);
+  function updateDurationLabel(){
+    const [sh,sm] = startTimeInput.value.split(':').map(Number);
+    const [eh,em] = endTimeInput.value.split(':').map(Number);
+    let diff = (eh*60+em) - (sh*60+sm);
+    if(diff < 0) diff += 24*60;
+    const h = Math.floor(diff/60), m = diff%60;
+    durationLabel.textContent = h && m ? `${h} ч ${m} мин` : h ? `${h} ч` : `${m} мин`;
+  }
+  updateDurationLabel();
   startTimeInput.addEventListener('change', () => {
     const [sh,sm] = startTimeInput.value.split(':').map(Number);
     if(isNaN(sh) || isNaN(sm)) return;
     let eh = sh + 1, em = sm;
     if(eh > 23) eh = 23;
     endTimeInput.value = String(eh).padStart(2,'0') + ':' + String(em).padStart(2,'0');
+    updateDurationLabel();
   });
+  endTimeInput.addEventListener('change', updateDurationLabel);
 
   const allDayLabel = document.createElement('label'); allDayLabel.className = 'event-modal-checkbox-label';
   const allDayCheckbox = document.createElement('input'); allDayCheckbox.type = 'checkbox';
@@ -5544,33 +5608,12 @@ function openEventModal(opts){
   reminderWrap.appendChild(reminderSelect.element);
   box.appendChild(reminderWrap);
 
-  // --- Особый режим: постоянный график занятости (работа 5/2, 2/2 и т.п.) ---
-  const scheduleLabel = document.createElement('label'); scheduleLabel.className = 'event-modal-checkbox-label';
-  const scheduleCheckbox = document.createElement('input'); scheduleCheckbox.type = 'checkbox';
-  scheduleCheckbox.checked = editing && ev0.kind === 'work_schedule';
-  scheduleLabel.appendChild(scheduleCheckbox); scheduleLabel.appendChild(document.createTextNode(' Это мой постоянный график занятости (работа/учёба)'));
-  box.appendChild(scheduleLabel);
-
-  const scheduleOptionsWrap = el('div','event-modal-schedule-options');
-  scheduleOptionsWrap.style.display = scheduleCheckbox.checked ? '' : 'none';
-  const patternRow = el('div','event-modal-row');
+  // "Постоянный график занятости" убран из интерфейса создания/редактирования по просьбе
+  // пользователя — но код ниже (и уже существующие события такого типа) по-прежнему
+  // ожидает scheduleCheckbox/patternSelect, поэтому оставляем их как неактивную заглушку.
+  const scheduleCheckbox = { checked: false };
   const patternOptions = [['5/2','5 через 2 (пн–пт)'],['2/2','2 через 2'],['6/1','6 через 1'],['1/1','через день']];
   const patternSelect = createCustomSelect(patternOptions, editing ? ev0.schedule_pattern : '5/2');
-  patternRow.appendChild(patternSelect.element);
-  scheduleOptionsWrap.appendChild(el('div','footer-note','Друзья и контакты будут видеть, что ты занят(а) в это время каждый цикл, начиная с выбранной даты.'));
-  scheduleOptionsWrap.appendChild(patternRow);
-  box.appendChild(scheduleOptionsWrap);
-
-  scheduleCheckbox.onchange = () => {
-    scheduleOptionsWrap.style.display = scheduleCheckbox.checked ? '' : 'none';
-    recurrenceWrap.style.display = scheduleCheckbox.checked ? 'none' : '';
-    reminderWrap.style.display = scheduleCheckbox.checked ? 'none' : '';
-    participantsSection.style.display = scheduleCheckbox.checked ? 'none' : '';
-  };
-  if(scheduleCheckbox.checked){
-    recurrenceWrap.style.display = 'none';
-    reminderWrap.style.display = 'none';
-  }
 
   // --- Участники ---
   const participantsSection = document.createElement('div');
@@ -5601,12 +5644,19 @@ function openEventModal(opts){
 
   const addParticipantRow = el('div','');
   addParticipantRow.style.position = 'relative';
+  const addParticipantToggleBtn = el('button','btn ghost','+ Добавить участника');
+  addParticipantToggleBtn.type = 'button';
+  addParticipantRow.appendChild(addParticipantToggleBtn);
+
   const friendSearchInput = document.createElement('input');
   friendSearchInput.type = 'text'; friendSearchInput.placeholder = '🔍 Найти контакт…';
+  friendSearchInput.style.display = 'none';
+  addParticipantRow.appendChild(friendSearchInput);
   const friendResultsList = el('div','event-modal-search-results');
   friendResultsList.style.display = 'none';
   let allFriendsForSearch = [];
-  listFriends().then(friends => { allFriendsForSearch = friends; if(document.activeElement === friendSearchInput) renderFriendSearchResults(); }).catch(()=>{});
+  let resultsOpen = false;
+  listFriends().then(friends => { allFriendsForSearch = friends; if(resultsOpen) renderFriendSearchResults(); }).catch(()=>{});
   function renderFriendSearchResults(){
     const q = friendSearchInput.value.trim().toLowerCase();
     friendResultsList.innerHTML = '';
@@ -5614,8 +5664,10 @@ function openEventModal(opts){
     if(q) candidates = candidates.filter(f => f.name.toLowerCase().includes(q));
     // Подсказки: сначала те, кого чаще всего зовёшь на встречи, при равенстве — по алфавиту.
     candidates = sortFriendsBySuggestion(candidates).slice(0, 8);
-    if(!candidates.length){ friendResultsList.style.display = 'none'; return; }
-    friendResultsList.style.display = '';
+    if(!candidates.length){
+      friendResultsList.appendChild(el('div','footer-note','Никого не нашлось.'));
+      return;
+    }
     candidates.forEach(f => {
       const item = el('div','event-modal-search-result-item','');
       item.style.display = 'flex'; item.style.alignItems = 'center'; item.style.gap = '8px';
@@ -5629,15 +5681,36 @@ function openEventModal(opts){
         incrementParticipantAddCount(f.uid);
         renderParticipants();
         friendSearchInput.value = '';
-        friendResultsList.style.display = 'none';
+        renderFriendSearchResults();
       };
       friendResultsList.appendChild(item);
     });
   }
+  // Первый тап по кнопке — сразу показываем подсказки снизу, без клавиатуры.
+  addParticipantToggleBtn.onclick = (e) => {
+    e.stopPropagation();
+    if(resultsOpen){
+      resultsOpen = false;
+      friendResultsList.style.display = 'none';
+      friendSearchInput.style.display = 'none';
+      friendResultsList.classList.remove('docked-top');
+      return;
+    }
+    resultsOpen = true;
+    friendResultsList.style.display = '';
+    friendSearchInput.style.display = '';
+    renderFriendSearchResults();
+  };
+  // Повторный тап именно в строку ввода — переключаемся в режим печати: список
+  // "уезжает" наверх экрана (над клавиатурой), а снизу открывается сама клавиатура.
+  friendSearchInput.addEventListener('focus', () => {
+    friendResultsList.classList.add('docked-top');
+    renderFriendSearchResults();
+  });
   friendSearchInput.addEventListener('input', renderFriendSearchResults);
-  friendSearchInput.addEventListener('focus', renderFriendSearchResults);
-  friendSearchInput.addEventListener('blur', () => { setTimeout(() => { friendResultsList.style.display = 'none'; }, 150); });
-  addParticipantRow.appendChild(friendSearchInput);
+  friendSearchInput.addEventListener('blur', () => {
+    setTimeout(() => { friendResultsList.classList.remove('docked-top'); }, 150);
+  });
   addParticipantRow.appendChild(friendResultsList);
   participantsSection.appendChild(addParticipantRow);
   box.appendChild(participantsSection);
