@@ -1275,14 +1275,35 @@
   .calendar-event-more{ font-size: 10px; color: var(--ink-dim); padding-left: 4px; }
   .calendar-cell-selected{ border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
 
-  .calendar-body-row{ display:flex; gap: 16px; align-items: flex-start; }
-  .calendar-body-row .calendar-card{ flex: 1.4; min-width: 0; }
-  .calendar-day-panel{ flex: 1; min-width: 0; padding: 16px; max-height: 560px; overflow-y: auto; }
+  .calendar-body-row{ display:block; }
+  .calendar-day-panel{ padding: 16px; margin-top: 16px; }
   .calendar-day-panel-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 15px; margin-bottom: 10px; }
   .calendar-day-panel-items{ display:flex; flex-direction:column; gap: 4px; }
+  .calendar-day-simple-row{
+    display:flex; align-items:center; gap: 10px; padding: 8px 4px; cursor: pointer;
+    background: transparent; border-radius: 8px; transition: background .12s ease;
+  }
+  .calendar-day-simple-row:hover{ background: rgba(255,255,255,0.05); }
+  .calendar-day-simple-dot{ width: 8px; height: 8px; border-radius: 50%; background: var(--chip-color, var(--gold)); flex-shrink: 0; }
+  .calendar-day-simple-info{ flex: 1; min-width: 0; }
+  .calendar-day-simple-title{ font-size: 13.5px; color: var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  @media (min-width: 781px){
+    .calendar-body-row{ display:flex; gap: 16px; align-items: flex-start; }
+    .calendar-body-row .calendar-card{ flex: 1.4; min-width: 0; }
+    .calendar-day-panel{ flex: 1; min-width: 0; margin-top: 0; max-height: 560px; overflow-y: auto; }
+  }
   @media (max-width: 780px){
-    .calendar-body-row{ flex-direction: column; }
-    .calendar-day-panel{ max-height: none; width: 100%; }
+    /* На телефоне вся шапка и сама сетка календаря остаются на месте (не уезжают
+       вверх/вниз при прокрутке) — прокручивается только список событий выбранного
+       дня, если он не помещается на экране. */
+    .wrap.calendar-page{
+      height: var(--app-vh, 100dvh) !important;
+      overflow: hidden !important;
+      display: flex !important; flex-direction: column !important;
+    }
+    .calendar-page .calendar-body-row{ flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .calendar-page .calendar-card{ flex-shrink: 0; }
+    .calendar-page .calendar-day-panel{ flex: 1; min-height: 0; overflow-y: auto; margin-top: 12px; }
   }
   @media (max-width: 640px){
     /* На узком экране время+название не помещаются в клетку дня и вылезают наружу —
@@ -5046,10 +5067,10 @@ function openMonthPicker(currentYear, currentMonth){
 
   const yearRow = document.createElement('div');
   yearRow.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:16px;';
-  const yPrev = el('button','btn ghost icon-only-btn','←');
+  const yPrev = el('button','btn ghost icon-only-btn calendar-arrow-btn calendar-arrow-flip','→');
   const yLabel = el('div','', String(pickerYear));
   yLabel.style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;min-width:60px;text-align:center;';
-  const yNext = el('button','btn ghost icon-only-btn','→');
+  const yNext = el('button','btn ghost icon-only-btn calendar-arrow-btn','→');
   yearRow.appendChild(yPrev); yearRow.appendChild(yLabel); yearRow.appendChild(yNext);
   box.appendChild(yearRow);
 
@@ -5073,6 +5094,18 @@ function openMonthPicker(currentYear, currentMonth){
   yPrev.onclick = () => { pickerYear--; yLabel.textContent = String(pickerYear); renderMonths(); };
   yNext.onclick = () => { pickerYear++; yLabel.textContent = String(pickerYear); renderMonths(); };
   renderMonths();
+
+  // Свайп влево/вправо по этому окну тоже листает год — та же логика, что у стрелок.
+  let pickerSwipeX = null, pickerSwipeY = null;
+  box.addEventListener('touchstart', (e) => { pickerSwipeX = e.touches[0].clientX; pickerSwipeY = e.touches[0].clientY; }, { passive: true });
+  box.addEventListener('touchend', (e) => {
+    if(pickerSwipeX === null) return;
+    const dx = e.changedTouches[0].clientX - pickerSwipeX;
+    const dy = e.changedTouches[0].clientY - pickerSwipeY;
+    pickerSwipeX = null; pickerSwipeY = null;
+    if(Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)*1.5) return;
+    if(dx < 0) yNext.onclick(); else yPrev.onclick();
+  }, { passive: true });
 
   ov.appendChild(box);
   ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
@@ -5162,8 +5195,8 @@ function renderCalendarScreen(){
     if(b.month !== month) return;
     const bucket = dayBuckets[b.day];
     if(bucket) bucket.unshift({
-      title: '🎁 ' + b.name,
-      detailTitle: `🎁 У ${b.name} сегодня день рождения, не забудьте поздравить!`,
+      title: b.isMine ? '🎉 Ваш день рождения' : '🎁 ' + b.name,
+      detailTitle: b.isMine ? '🎉 Сегодня твой день рождения! Поздравляем!' : `🎁 У ${b.name} сегодня день рождения, не забудьте поздравить!`,
       color: '#e0559c', isBirthday: true,
     });
   });
@@ -5211,12 +5244,23 @@ function renderCalendarScreen(){
   const isSelToday = selDayDate.toDateString() === new Date().toDateString();
   dayPanel.appendChild(el('div','calendar-day-panel-title', (isSelToday ? 'Сегодня, ' : '') + `${selDay.day} ${dayPanelMonthNames[selDay.month]}`));
   const dayPanelItems = el('div','calendar-day-panel-items');
-  renderDayDetailItems(dayPanelItems, selDay.year, selDay.month, selDay.day, dayBuckets[selDay.day] || [], () => {});
+  const selDayItems = dayBuckets[selDay.day] || [];
+  if(!selDayItems.length){
+    dayPanelItems.appendChild(el('div','footer-note','Пока ничего не запланировано'));
+  } else {
+    selDayItems.forEach(item => {
+      const row = el('div','calendar-day-simple-row');
+      const timeStr = item.start ? formatClockTime(item.start) + (item.end ? '–'+formatClockTime(item.end) : '') : '';
+      row.appendChild(el('div','calendar-day-simple-dot')).style.setProperty('--chip-color', item.color);
+      const info = el('div','calendar-day-simple-info');
+      info.appendChild(el('div','calendar-day-simple-title', item.detailTitle || item.title));
+      if(timeStr) info.appendChild(el('div','meta', timeStr));
+      row.appendChild(info);
+      row.onclick = () => openDayDetail(selDay.year, selDay.month, selDay.day, [item]);
+      dayPanelItems.appendChild(row);
+    });
+  }
   dayPanel.appendChild(dayPanelItems);
-  const dayPanelAddBtn = el('button','btn ghost btn-compact','+ Добавить событие на этот день');
-  dayPanelAddBtn.style.marginTop = '8px';
-  dayPanelAddBtn.onclick = () => openEventModal({ presetDate: selDayDate });
-  dayPanel.appendChild(dayPanelAddBtn);
   bodyRow.appendChild(dayPanel);
 
   w.appendChild(bodyRow);
@@ -5242,22 +5286,31 @@ function renderCalendarScreen(){
 
 async function loadCalendarBirthdays(){
   if(!supabaseReady) return [];
+  const result = [];
+  function parseBirthday(bday){
+    const full = bday.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const noYear = bday.match(/^--(\d{2})-(\d{2})$/);
+    if(full) return { month: parseInt(full[2],10)-1, day: parseInt(full[3],10) };
+    if(noYear) return { month: parseInt(noYear[1],10)-1, day: parseInt(noYear[2],10) };
+    return null;
+  }
+  // Свой собственный день рождения тоже показываем в сетке календаря, не только у друзей.
+  const myBday = state.profile?.birthday;
+  if(myBday){
+    const parsed = parseBirthday(myBday);
+    if(parsed) result.push({ name: state.user?.name || 'Вы', month: parsed.month, day: parsed.day, isMine: true });
+  }
   const friends = await listFriends();
-  if(!friends.length) return [];
+  if(!friends.length) return result;
   const uids = friends.map(f => f.uid);
   const { data, error } = await sb.from('profiles').select('id, name, profile').in('id', uids);
-  if(error){ console.error('load birthdays failed', error); return []; }
-  const result = [];
+  if(error){ console.error('load birthdays failed', error); return result; }
   (data||[]).forEach(row => {
     const bday = row.profile?.birthday;
     if(!bday) return;
-    const full = bday.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    const noYear = bday.match(/^--(\d{2})-(\d{2})$/);
-    let mm, dd;
-    if(full){ mm = parseInt(full[2],10)-1; dd = parseInt(full[3],10); }
-    else if(noYear){ mm = parseInt(noYear[1],10)-1; dd = parseInt(noYear[2],10); }
-    else return;
-    result.push({ name: row.name, month: mm, day: dd });
+    const parsed = parseBirthday(bday);
+    if(!parsed) return;
+    result.push({ name: row.name, month: parsed.month, day: parsed.day });
   });
   return result;
 }
@@ -6118,6 +6171,7 @@ function openEventModal(opts){
     e.stopPropagation();
     closeContextMenu();
     const menu = el('div','context-menu');
+    menu.id = 'msg-context-menu';
     const photoItem = el('div','context-menu-item','🖼️ Фото');
     photoItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); attachFileInput.accept = 'image/*'; attachFileInput.click(); };
     const fileItem = el('div','context-menu-item','📄 Документ');
@@ -13756,7 +13810,7 @@ registerBackButtonHandler();
 (function(){
   let touchStartX = null, touchStartY = null, touchStartTarget = null;
   const SWIPE_THRESHOLD = 70;
-  const IGNORE_SELECTOR = 'input, textarea, .folder-tabs-row, .graph-card-full, .chat-panel-card, .send-preview-overlay, .context-menu';
+  const IGNORE_SELECTOR = 'input, textarea, .folder-tabs-row, .graph-card-full, .chat-panel-card, .send-preview-overlay, .context-menu, .calendar-page';
 
   document.addEventListener('touchstart', (e) => {
     if(e.touches.length !== 1) return;
