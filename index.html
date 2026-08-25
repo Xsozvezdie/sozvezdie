@@ -1301,7 +1301,7 @@
   .calendar-day-panel-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 15px; margin-bottom: 0; }
   .calendar-day-panel-add{ width: 30px; height: 30px; min-width: 30px; font-size: 16px; flex-shrink: 0; }
 
-  .calendar-event-detail-box{ background: color-mix(in srgb, var(--panel) 10%, transparent) !important; border-color: color-mix(in srgb, var(--line) 25%, transparent) !important; }
+  .calendar-event-detail-box{ background: color-mix(in srgb, var(--panel) 10%, transparent) !important; border-color: color-mix(in srgb, var(--line) 25%, transparent) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
   .calendar-event-detail-participants{ margin: 10px 0; }
   .calendar-event-detail-avatars{ display:flex; margin-bottom: 4px; }
   .calendar-event-detail-avatars .avatar-circle{
@@ -1324,6 +1324,12 @@
   .calendar-day-simple-dot{ width: 8px; height: 8px; border-radius: 50%; background: var(--chip-color, #7c9eff); flex-shrink: 0; }
   .calendar-day-simple-info{ flex: 1; min-width: 0; }
   .calendar-day-simple-title{ font-size: 13.5px; color: var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wrap.calendar-page{
+    height: var(--app-vh, 100dvh) !important;
+    overflow: hidden !important;
+    display: flex !important; flex-direction: column !important;
+  }
+  .calendar-page .calendar-body-row{ flex: 1; min-height: 0; overflow: hidden; }
   @media (min-width: 781px){
     .calendar-body-row{ display:flex; gap: 16px; align-items: flex-start; }
     .calendar-body-row .calendar-card{ flex: 1.4; min-width: 0; }
@@ -1333,12 +1339,7 @@
     /* На телефоне вся шапка и сама сетка календаря остаются на месте (не уезжают
        вверх/вниз при прокрутке) — прокручивается только список событий выбранного
        дня, если он не помещается на экране. */
-    .wrap.calendar-page{
-      height: var(--app-vh, 100dvh) !important;
-      overflow: hidden !important;
-      display: flex !important; flex-direction: column !important;
-    }
-    .calendar-page .calendar-body-row{ flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .calendar-page .calendar-body-row{ display: flex; flex-direction: column; }
     .calendar-page .calendar-card{ flex-shrink: 0; }
     .calendar-page .calendar-day-panel{ flex: 1; min-height: 0; overflow-y: auto; margin-top: 12px; }
   }
