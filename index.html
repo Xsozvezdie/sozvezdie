@@ -68,14 +68,16 @@
       -webkit-overflow-scrolling: touch;
       overscroll-behavior: contain;
     }
-    .wrap:has(> .screen-scroll-body){
-      overflow: hidden !important;
-      display: flex !important; flex-direction: column !important;
-    }
-    .screen-scroll-body{
-      flex: 1; min-height: 0; overflow-y: auto;
-      -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
-    }
+  }
+  .wrap:has(> .screen-scroll-body){
+    height: var(--app-vh, 100dvh);
+    min-height: 0;
+    overflow: hidden !important;
+    display: flex !important; flex-direction: column !important;
+  }
+  .screen-scroll-body{
+    flex: 1; min-height: 0; overflow-y: auto;
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   }
   .wrap.wide{ max-width: 760px; }
   @media (min-width: 780px){
@@ -1299,7 +1301,7 @@
   .calendar-day-panel-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 15px; margin-bottom: 0; }
   .calendar-day-panel-add{ width: 30px; height: 30px; min-width: 30px; font-size: 16px; flex-shrink: 0; }
 
-  .calendar-event-detail-box{ background: color-mix(in srgb, var(--panel) 2%, transparent) !important; border-color: color-mix(in srgb, var(--line) 25%, transparent) !important; }
+  .calendar-event-detail-box{ background: color-mix(in srgb, var(--panel) 10%, transparent) !important; border-color: color-mix(in srgb, var(--line) 25%, transparent) !important; }
   .calendar-event-detail-participants{ margin: 10px 0; }
   .calendar-event-detail-avatars{ display:flex; margin-bottom: 4px; }
   .calendar-event-detail-avatars .avatar-circle{
