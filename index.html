@@ -1148,26 +1148,15 @@
     cursor: zoom-in;
     position: relative; z-index: 1;
   }
-  .image-preview-edit-btn{
-    position: absolute; top: 20px; right: 116px; z-index: 10;
-    display:flex; align-items:center; justify-content:center;
-    width: 38px; height: 38px; border-radius: 50%;
-    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
-    color: #fff; cursor: pointer;
-  }
-  .image-preview-edit-btn:hover{ background: rgba(255,255,255,0.18); }
-  .image-preview-edit-btn svg{ width: 16px; height: 16px; }
   .image-preview-download-btn, .image-preview-more-btn, .image-preview-back-btn{
     position: absolute; top: 20px; z-index: 10;
     display:flex; align-items:center; justify-content:center;
     width: 38px; height: 38px; border-radius: 50%;
     background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
-    color: #fff; cursor: pointer; font-size: 18px;
+    color: #fff; cursor: pointer; font-size: 20px;
   }
   .image-preview-download-btn:hover, .image-preview-more-btn:hover, .image-preview-back-btn:hover{ background: rgba(255,255,255,0.18); }
-  .image-preview-download-btn svg{ width: 17px; height: 17px; }
-  .image-preview-download-btn{ right: 20px; }
-  .image-preview-more-btn{ right: 68px; }
+  .image-preview-more-btn{ right: 20px; }
   .image-preview-back-btn{ left: 20px; font-size: 20px; }
 
   .send-preview-overlay{
@@ -5942,6 +5931,120 @@ function createCustomTimePicker(hh, mm){
 // opts: { presetDate, presetParticipant:{uid,name}, groupId, groupMembers:[{uid,name}] }
 // Виджет выбора участников события — выглядит как список чатов (личные + группы),
 // с галочками; отметив группу, добавляются сразу все её участники.
+// Виджет выбора чатов для пересылки фото — тот же внешний вид, что у выбора участников
+// события в календаре, но проще: тут просто список чатов (люди + группы) с галочками,
+// без "разворачивания" группы в список её участников — пересылка в группу это одно
+// сообщение в общий чат группы, а не рассылка каждому лично.
+function openForwardPicker(onConfirm){
+  const ov = document.createElement('div');
+  ov.className = 'send-preview-overlay';
+  const box = document.createElement('div');
+  box.className = 'send-preview-box participant-picker-box';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'send-preview-close'; closeBtn.textContent = '✕';
+  closeBtn.onclick = () => ov.remove();
+  box.appendChild(closeBtn);
+
+  box.appendChild(el('div','','Переслать')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
+
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text'; searchInput.placeholder = '🔍 Найти по имени…';
+  searchInput.style.marginBottom = '8px';
+  box.appendChild(searchInput);
+
+  const listEl = el('div','participant-picker-list');
+  listEl.appendChild(el('div','footer-note','Загрузка…'));
+  box.appendChild(listEl);
+
+  const selected = new Map();
+  const allRows = [];
+  function applyFilter(){
+    const q = searchInput.value.trim().toLowerCase();
+    allRows.forEach(({row, name}) => { row.style.display = !q || name.toLowerCase().includes(q) ? '' : 'none'; });
+  }
+  searchInput.addEventListener('input', applyFilter);
+
+  listChatThreads().then(threads => {
+    listEl.innerHTML = '';
+    if(!threads.length){ listEl.appendChild(el('div','footer-note','Пока нет ни одного чата.')); return; }
+    threads.forEach(t => {
+      const row = el('div','participant-picker-row');
+      const name = t.isGroup ? (t.groupName || 'Группа') : (t.otherName || '');
+      const av = el('div','avatar-circle', (name||'?')[0].toUpperCase());
+      row.appendChild(av);
+      if(!t.isGroup) fillAvatarAsync(av, t.otherUid);
+      row.appendChild(el('div','participant-picker-name', name + (t.isGroup ? ' (группа)' : '')));
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      row.appendChild(checkbox);
+      allRows.push({ row, name });
+      const key = t.isGroup ? 'g:'+t.groupId : 'u:'+t.otherUid;
+      row.onclick = (e) => { if(e.target === checkbox) return; checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event('change')); };
+      checkbox.onchange = () => { if(checkbox.checked) selected.set(key, t); else selected.delete(key); };
+      listEl.appendChild(row);
+    });
+    applyFilter();
+  }).catch(e => {
+    listEl.innerHTML = '';
+    listEl.appendChild(el('div','footer-note','Не удалось загрузить список чатов.'));
+    console.error('forward picker load failed', e);
+  });
+
+  const saveBtn = el('button','btn','Переслать');
+  saveBtn.style.marginTop = '10px';
+  saveBtn.onclick = async () => {
+    if(!selected.size) return;
+    saveBtn.disabled = true; saveBtn.textContent = 'Отправляем…';
+    try{
+      await onConfirm(Array.from(selected.values()));
+      ov.remove();
+    }catch(e){
+      console.error('forward send failed', e);
+      showToast('Не удалось переслать');
+      saveBtn.disabled = false; saveBtn.textContent = 'Переслать';
+    }
+  };
+  box.appendChild(saveBtn);
+
+  ov.appendChild(box);
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
+// Настоящее сохранение фото в галерею телефона (не через системное окно "Поделиться" —
+// это отдельное действие, доступное через плагин @capacitor-community/media). Если этот
+// плагин ещё не установлен нативно, аккуратно откатываемся на "Поделиться" как запасной
+// вариант, чтобы кнопка не была совсем нерабочей до пересборки приложения.
+async function saveImageToGallery(src){
+  try{
+    const isNative = window.Capacitor && window.Capacitor.isNativePlatform();
+    let dataUrl;
+    if(src.startsWith('data:')){
+      dataUrl = src;
+    } else {
+      const resp = await fetch(src);
+      const blob = await resp.blob();
+      dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+    if(isNative && window.Capacitor.Plugins.Media){
+      await window.Capacitor.Plugins.Media.savePhoto({ path: dataUrl });
+      showToast('Фото сохранено в галерею ✓');
+      return;
+    }
+    // Запасной вариант — через "Поделиться" (плагин Media ещё не установлен нативно).
+    await downloadDataUrl(src, 'photo-' + Date.now() + '.jpg');
+  }catch(e){
+    console.error('save to gallery failed', e);
+    showToast('Не удалось сохранить фото');
+  }
+}
+
 function openParticipantPicker(currentParticipants, onSave){
   const ov = document.createElement('div');
   ov.className = 'send-preview-overlay';
@@ -7629,61 +7732,73 @@ function openImagePreview(src, msgContext){
   // "Копировать картинку", так что лучше не перекрывать его.
 
   const downloadBtn = document.createElement('button');
-  downloadBtn.className = 'image-preview-download-btn';
-  downloadBtn.title = 'Скачать';
-  downloadBtn.innerHTML = CHAT_ICONS.download || '⬇️';
+  downloadBtn.className = 'image-preview-more-btn';
+  downloadBtn.title = 'Ещё';
+  downloadBtn.textContent = '⋮';
   downloadBtn.onclick = (e) => {
     e.stopPropagation();
-    downloadDataUrl(src, 'photo-' + Date.now() + '.jpg');
-  };
-  overlay.appendChild(downloadBtn);
+    closeContextMenu();
+    const menu = el('div','context-menu');
+    menu.id = 'msg-context-menu';
 
-  if(msgContext && msgContext.id){
-    const moreBtn = document.createElement('button');
-    moreBtn.className = 'image-preview-more-btn';
-    moreBtn.title = 'Ещё';
-    moreBtn.textContent = '⋯';
-    moreBtn.onclick = (e) => {
-      e.stopPropagation();
-      const menu = el('div','context-menu');
-      menu.id = 'msg-context-menu';
+    const saveItem = el('div','context-menu-item','💾 Сохранить');
+    saveItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); saveImageToGallery(src); };
+    menu.appendChild(saveItem);
+
+    if(msgContext && msgContext.mine){
+      const editItem = el('div','context-menu-item','✏️ Изменить');
+      editItem.onclick = (ev) => {
+        ev.stopPropagation(); closeContextMenu();
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file'; fileInput.accept = 'image/*';
+        fileInput.onchange = async () => {
+          const file = fileInput.files[0];
+          if(!file) return;
+          try{
+            const dataUrl = await compressImageToDataUrl(file);
+            await editMessageImage(msgContext.id, dataUrl);
+            overlay.remove();
+          }catch(err){
+            console.error('edit photo message failed', err);
+            showToast('Не удалось заменить фото');
+          }
+        };
+        fileInput.click();
+      };
+      menu.appendChild(editItem);
+    }
+
+    const forwardItem = el('div','context-menu-item','↪️ Переслать');
+    forwardItem.onclick = (ev) => {
+      ev.stopPropagation(); closeContextMenu();
+      openForwardPicker(async (targets) => {
+        for(const t of targets){
+          const row = { from_uid: state.user.uid, from_name: state.user.name, image_url: src, ts: Date.now() };
+          if(t.isGroup){ row.chat_id = 'g_' + t.groupId; row.group_id = t.groupId; }
+          else { row.chat_id = pairId(state.user.uid, t.otherUid); row.to_uid = t.otherUid; row.to_name = t.otherName; }
+          const { error } = await sb.from('messages').insert(row);
+          if(error) throw new Error(error.message);
+        }
+        showToast('Переслано ✓');
+      });
+    };
+    menu.appendChild(forwardItem);
+
+    const shareItem = el('div','context-menu-item','📤 Поделиться');
+    shareItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); downloadDataUrl(src, 'photo-' + Date.now() + '.jpg'); };
+    menu.appendChild(shareItem);
+
+    if(msgContext && msgContext.mine){
       const delItem = el('div','context-menu-item','🗑 Удалить');
       delItem.onclick = (ev) => { ev.stopPropagation(); closeContextMenu(); openDeleteMessageModal(msgContext); overlay.remove(); };
       menu.appendChild(delItem);
-      document.body.appendChild(menu);
-      positionFloatingMenu(menu, moreBtn.getBoundingClientRect());
-      setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
-    };
-    overlay.appendChild(moreBtn);
-  }
+    }
 
-  if(msgContext && msgContext.mine){
-    const editBtn = document.createElement('button');
-    editBtn.className = 'image-preview-edit-btn';
-    editBtn.title = 'Редактировать';
-    editBtn.innerHTML = CHAT_ICONS.edit;
-    editBtn.onclick = (e) => {
-      e.stopPropagation();
-      const fileInput = document.createElement('input');
-      fileInput.type = 'file'; fileInput.accept = 'image/*';
-      fileInput.onchange = async () => {
-        const file = fileInput.files[0];
-        if(!file) return;
-        editBtn.disabled = true;
-        try{
-          const dataUrl = await compressImageToDataUrl(file);
-          await editMessageImage(msgContext.id, dataUrl);
-          overlay.remove();
-        }catch(err){
-          console.error('edit photo message failed', err);
-          showToast('Не удалось заменить фото');
-          editBtn.disabled = false;
-        }
-      };
-      fileInput.click();
-    };
-    overlay.appendChild(editBtn);
-  }
+    document.body.appendChild(menu);
+    positionFloatingMenu(menu, downloadBtn.getBoundingClientRect());
+    setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
+  };
+  overlay.appendChild(downloadBtn);
 
   overlay.onclick = (e) => { if(e.target === overlay || (e.target === img && scale <= 1)) overlay.remove(); };
   document.body.appendChild(overlay);
