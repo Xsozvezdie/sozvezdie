@@ -9640,8 +9640,8 @@ async function downloadDataUrl(url, filename){
     // просто игнорирует) — вместо этого пишем файл через нативный плагин и открываем
     // системное меню "Поделиться", откуда уже можно сохранить его куда угодно.
     if(isNative && window.Capacitor.Plugins.Filesystem){
-      const { Filesystem, Directory } = window.Capacitor.Plugins;
-      const result = await Filesystem.writeFile({ path: filename, data: base64Data, directory: Directory.Cache });
+      const { Filesystem } = window.Capacitor.Plugins;
+      const result = await Filesystem.writeFile({ path: filename, data: base64Data, directory: 'CACHE' });
       if(window.Capacitor.Plugins.Share){
         try{ await window.Capacitor.Plugins.Share.share({ url: result.uri, title: filename }); }
         catch(e){ /* человек мог просто закрыть окно "Поделиться" без выбора — не ошибка */ }
