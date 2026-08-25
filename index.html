@@ -1304,7 +1304,7 @@
   .calendar-day-panel-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 15px; margin-bottom: 0; }
   .calendar-day-panel-add{ width: 30px; height: 30px; min-width: 30px; font-size: 16px; flex-shrink: 0; }
 
-  .calendar-event-detail-box{ background: color-mix(in srgb, var(--panel) 10%, transparent) !important; border-color: color-mix(in srgb, var(--line) 25%, transparent) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  .calendar-event-detail-box{ background: color-mix(in srgb, var(--panel) 55%, transparent) !important; border-color: color-mix(in srgb, var(--line) 55%, transparent) !important; backdrop-filter: blur(20px) !important; -webkit-backdrop-filter: blur(20px) !important; }
   .calendar-event-detail-overlay{ background: rgba(4,4,8,0.06) !important; }
   .calendar-event-detail-participants{ margin: 10px 0; }
   .calendar-event-detail-avatars{ display:flex; margin-bottom: 4px; }
@@ -1709,10 +1709,10 @@
     .graph-body-row{ flex-direction: column; }
     .legend-side{
       width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px;
-      max-height: none; overflow: visible; flex-shrink: 0;
+      max-height: 22vh; overflow-y: auto; flex-shrink: 0;
     }
     .legend-side .legend-item{ font-size: 11.5px; padding: 4px 9px; }
-    .graph-card-full{ min-height: 60vh; }
+    .graph-card-full{ min-height: 68vh; flex-shrink: 0; }
   }
   .graph-card-full{
     flex: 1;
