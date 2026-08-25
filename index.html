@@ -1302,6 +1302,7 @@
   .calendar-day-panel-add{ width: 30px; height: 30px; min-width: 30px; font-size: 16px; flex-shrink: 0; }
 
   .calendar-event-detail-box{ background: color-mix(in srgb, var(--panel) 10%, transparent) !important; border-color: color-mix(in srgb, var(--line) 25%, transparent) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  .calendar-event-detail-overlay{ background: rgba(4,4,8,0.06) !important; }
   .calendar-event-detail-participants{ margin: 10px 0; }
   .calendar-event-detail-avatars{ display:flex; margin-bottom: 4px; }
   .calendar-event-detail-avatars .avatar-circle{
@@ -5401,7 +5402,7 @@ async function loadCalendarBirthdays(){
 function openDayDetail(year, month, day, items){
   const item = items[0];
   const ov = document.createElement('div');
-  ov.className = 'send-preview-overlay';
+  ov.className = 'send-preview-overlay calendar-event-detail-overlay';
   const box = document.createElement('div');
   box.className = 'send-preview-box calendar-event-detail-box';
 
@@ -8086,8 +8087,7 @@ function isAppInstalled(){
 
 const NAV_DEFAULT_ORDER = ['messages','friends','calendar','goals','mine','account'];
 function getNavOrder(){
-  const savedOrder = (state.profile?.navOrder || []).filter(k => NAV_DEFAULT_ORDER.includes(k));
-  return [...savedOrder, ...NAV_DEFAULT_ORDER.filter(k => !savedOrder.includes(k))];
+  return NAV_DEFAULT_ORDER;
 }
 function navigateToTabByKey(key){
   if(key === 'messages') openMessagesTab();
@@ -8188,7 +8188,6 @@ function renderNav(active){
       btn.dataset.navKey = key;
       links.appendChild(btn);
     });
-    makeNavSortable(links);
   } else {
     const loginLink = el('button','nav-link','Войти');
     loginLink.onclick = () => { state.authMode = 'login'; state.error=''; state.screen='auth'; render(); };
