@@ -1553,7 +1553,7 @@
     position: fixed; top: 40%; left: 50%; transform: translate(-50%,-50%);
     font-family:'Space Grotesk',sans-serif; font-weight: 800; font-size: 26px; color: var(--gold);
     text-shadow: 0 2px 12px rgba(0,0,0,0.5); text-align: center; white-space: nowrap;
-    animation: goal-celebration-pop 2.2s ease-out forwards;
+    animation: goal-celebration-pop 6.6s ease-out forwards;
   }
 
   .goal-week-row-wrap{ width: 100%; margin: 10px 0; }
@@ -3569,6 +3569,27 @@ async function pollCalendarForChanges(){
   }catch(e){ console.error('calendar poll failed', e); }
 }
 
+async function pollGoalsForChanges(){
+  if(!supabaseReady || !state.user) return;
+  try{
+    const fresh = await listMyGoals();
+    const prev = state.goals;
+    if(prev){
+      const prevById = new Map(prev.map(g => [g.id, g]));
+      fresh.forEach(g => {
+        const old = prevById.get(g.id);
+        if(!old && g.owner_uid !== state.user.uid){
+          const mine = (g.participants||[]).find(p => p.uid === state.user.uid);
+          if(mine) pushCalendarNotification(`${g.owner_name || 'Кто-то'} пригласил(а) вас: в задачу «${g.title}»`);
+        }
+      });
+    }
+    state.goals = fresh;
+    state.goalsLoaded = true;
+    if(state.screen === 'goals') render();
+  }catch(e){ console.error('goals poll failed', e); }
+}
+
 async function canInviteToCalendar(targetUid){
   try{
     const { data } = await sb.from('profiles').select('profile').eq('id', targetUid).single();
@@ -3980,27 +4001,101 @@ function checkOwnBirthdayToday(){
   else if(noYear){ mm = parseInt(noYear[1],10); dd = parseInt(noYear[2],10); }
   else return;
   const today = new Date();
-  if(today.getMonth()+1 === mm && today.getDate() === dd){
-    playBirthdayConfetti();
-  }
+  if(today.getMonth()+1 !== mm || today.getDate() !== dd) return;
+  const todayKey = formatDateInputValue(today);
+  if(state.profile?.lastBirthdayConfettiDate === todayKey) return; // уже показывали сегодня
+  playBirthdayConfetti();
+  updateProfileFields({ lastBirthdayConfettiDate: todayKey }).catch(e => console.error('save birthday confetti date failed', e));
 }
 function playBirthdayConfetti(){
   const wrap = document.createElement('div');
   wrap.className = 'birthday-confetti-wrap';
   const colors = ['#e0559c','#4a9eda','#e0b04d','#5cb85c','#9b6fd1','#e08a3c'];
+  let maxEnd = 0;
   for(let i=0; i<40; i++){
     const piece = document.createElement('div');
     piece.className = 'birthday-confetti-piece';
     piece.style.left = (Math.random()*100) + 'vw';
     piece.style.background = colors[Math.floor(Math.random()*colors.length)];
-    piece.style.animationDelay = (Math.random()*0.6) + 's';
-    piece.style.animationDuration = (2.2 + Math.random()*1.4) + 's';
+    const delay = Math.random()*1.8;
+    const duration = (2.2 + Math.random()*1.4) * 3;
+    piece.style.animationDelay = delay + 's';
+    piece.style.animationDuration = duration + 's';
+    maxEnd = Math.max(maxEnd, delay + duration);
     wrap.appendChild(piece);
   }
   const banner = el('div','birthday-confetti-banner','🎉 С днём рождения! 🎉');
   wrap.appendChild(banner);
   document.body.appendChild(wrap);
-  setTimeout(() => wrap.remove(), 4200);
+  // Ждём чуть дольше, чем самая долгая отдельная "конфетти-пикселька" — иначе часть из них
+  // срезалась бы на середине анимации и зависала бы внизу экрана после удаления обёртки.
+  setTimeout(() => wrap.remove(), (maxEnd + 0.4) * 1000);
+}
+
+// Общий виджет строк списка дел — используется и при создании нового плана, и при
+// редактировании готового, чтобы они выглядели и вели себя одинаково. Каждая строка
+// редактируется "живьём" — пункт засчитывается сам по себе, если в нём есть текст, без
+// отдельного подтверждения. Кнопка "+ Добавить" просто добавляет ещё одну пустую строку.
+function buildChecklistItemsEditor(initialItems){
+  const wrap = document.createElement('div');
+  let rows = (initialItems && initialItems.length) ? initialItems.map(it => ({ text: it.text, target: it.target || null })) : [{ text: '', target: null }];
+  const rowsEl = el('div','goal-checklist-editor-rows');
+  wrap.appendChild(rowsEl);
+
+  function renderRows(){
+    rowsEl.innerHTML = '';
+    rows.forEach((row, idx) => {
+      const rowEl = el('div','goal-add-item-text-row');
+      const textInput = document.createElement('input');
+      textInput.type = 'text'; textInput.placeholder = 'Задача';
+      textInput.value = row.text;
+      textInput.addEventListener('input', () => { row.text = textInput.value; });
+
+      const qtyCol = el('div','goal-add-item-qty-col');
+      qtyCol.appendChild(el('div','goal-add-item-qty-label','Кол-во'));
+      const qtyStepper = el('div','goal-add-item-qty-stepper');
+      function renderQty(){
+        qtyStepper.innerHTML = '';
+        if(row.target == null){
+          const plusBtn = el('button','btn ghost icon-only-btn','+');
+          plusBtn.type = 'button';
+          plusBtn.onclick = () => { row.target = 1; renderQty(); };
+          qtyStepper.appendChild(plusBtn);
+        } else {
+          const minusBtn = el('button','btn ghost icon-only-btn','−');
+          minusBtn.type = 'button';
+          minusBtn.onclick = () => { row.target = row.target > 1 ? row.target - 1 : null; renderQty(); };
+          const num = el('div','goal-add-item-qty-num', String(row.target));
+          const plusBtn = el('button','btn ghost icon-only-btn','+');
+          plusBtn.type = 'button';
+          plusBtn.onclick = () => { row.target++; renderQty(); };
+          qtyStepper.appendChild(minusBtn); qtyStepper.appendChild(num); qtyStepper.appendChild(plusBtn);
+        }
+      }
+      renderQty();
+      qtyCol.appendChild(qtyStepper);
+
+      const rmBtn = el('button','btn ghost icon-only-btn','✕');
+      rmBtn.type = 'button';
+      rmBtn.onclick = () => { rows.splice(idx,1); if(!rows.length) rows.push({ text:'', target:null }); renderRows(); };
+
+      rowEl.appendChild(textInput); rowEl.appendChild(qtyCol); rowEl.appendChild(rmBtn);
+      rowsEl.appendChild(rowEl);
+    });
+  }
+  renderRows();
+
+  const addBtn = el('button','btn ghost goal-add-item-btn','+ Добавить');
+  addBtn.type = 'button';
+  addBtn.onclick = () => { rows.push({ text: '', target: null }); renderRows(); };
+  wrap.appendChild(addBtn);
+
+  return {
+    element: wrap,
+    // Строка засчитывается сама по себе, если в ней есть текст — даже если человек
+    // просто напечатал и не нажимал "Добавить" ни разу.
+    getItems: () => rows.filter(r => r.text.trim()).map(r => ({ id: 'i'+Date.now()+Math.random()+Math.random(), text: r.text.trim(), target: r.target })),
+  };
 }
 
 function openGoalModal(presetKind){
@@ -4013,12 +4108,12 @@ function openGoalModal(presetKind){
   const titleWrap = el('div','');
   titleWrap.appendChild(el('div','top-tag','Задание'));
   const titleInput = document.createElement('input');
-  titleInput.type = 'text'; titleInput.placeholder = 'Например: сыграть 20 партий';
+  titleInput.type = 'text'; titleInput.placeholder = 'Название';
   titleWrap.appendChild(titleInput);
   box.appendChild(titleWrap);
 
   const kindWrap = el('div','');
-  kindWrap.style.display = presetKind ? 'none' : '';
+  kindWrap.style.display = 'none';
   kindWrap.appendChild(el('div','top-tag','Тип плана'));
   const kindOptions = [['checklist','Список дел (несколько задач со своими галочками)'],['numeric','Число (набрать цифру)'],['habit','Привычка (стрик по дням)']];
   const kindSelect = createCustomSelect(kindOptions, presetKind || 'checklist');
@@ -4034,62 +4129,11 @@ function openGoalModal(presetKind){
   // Чек-лист — список из нескольких дел, каждое со своей галочкой. У каждого дела можно
   // задать количество (по умолчанию "-" — просто галочка, но можно поставить любое число —
   // тогда дело отслеживается как "20/100" и т.п.).
-  let checklistItems = [];
   const itemsWrap = el('div','');
   itemsWrap.style.display = 'none';
   itemsWrap.appendChild(el('div','top-tag','Список дел'));
-  const itemsListEl = el('div','');
-  itemsWrap.appendChild(itemsListEl);
-  function renderChecklistItems(){
-    itemsListEl.innerHTML = '';
-    checklistItems.forEach((it, idx) => {
-      const row = el('div','goal-item-edit-row');
-      row.appendChild(el('span','goal-item-edit-text', it.text));
-      row.appendChild(el('span','goal-item-edit-target', it.target ? `× ${it.target}` : '—'));
-      const rm = el('button','btn ghost icon-only-btn','✕');
-      rm.onclick = () => { checklistItems.splice(idx,1); renderChecklistItems(); };
-      row.appendChild(rm);
-      itemsListEl.appendChild(row);
-    });
-  }
-  const addItemTextRow = el('div','goal-add-item-text-row');
-  const newItemInput = document.createElement('input'); newItemInput.type='text'; newItemInput.placeholder='Например: прочитать книгу';
-  const qtyCol = el('div','goal-add-item-qty-col');
-  qtyCol.appendChild(el('div','goal-add-item-qty-label','Кол-во'));
-  let newItemQty = null;
-  const qtyStepper = el('div','goal-add-item-qty-stepper');
-  function renderQtyStepper(){
-    qtyStepper.innerHTML = '';
-    if(newItemQty == null){
-      const plusBtn = el('button','btn ghost icon-only-btn','+');
-      plusBtn.type = 'button';
-      plusBtn.onclick = () => { newItemQty = 1; renderQtyStepper(); };
-      qtyStepper.appendChild(plusBtn);
-    } else {
-      const minusBtn = el('button','btn ghost icon-only-btn','−');
-      minusBtn.type = 'button';
-      minusBtn.onclick = () => { newItemQty = newItemQty > 1 ? newItemQty - 1 : null; renderQtyStepper(); };
-      const qtyNum = el('div','goal-add-item-qty-num', String(newItemQty));
-      const plusBtn = el('button','btn ghost icon-only-btn','+');
-      plusBtn.type = 'button';
-      plusBtn.onclick = () => { newItemQty++; renderQtyStepper(); };
-      qtyStepper.appendChild(minusBtn); qtyStepper.appendChild(qtyNum); qtyStepper.appendChild(plusBtn);
-    }
-  }
-  renderQtyStepper();
-  qtyCol.appendChild(qtyStepper);
-  addItemTextRow.appendChild(newItemInput); addItemTextRow.appendChild(qtyCol);
-  itemsWrap.appendChild(addItemTextRow);
-  const addItemBtn = el('button','btn ghost goal-add-item-btn','+ Добавить');
-  addItemBtn.onclick = () => {
-    const text = newItemInput.value.trim();
-    if(!text) return;
-    checklistItems.push({ id: 'i'+Date.now()+Math.random(), text, target: newItemQty });
-    newItemInput.value = ''; newItemQty = null; renderQtyStepper();
-    renderChecklistItems();
-  };
-  newItemInput.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); addItemBtn.onclick(); } });
-  itemsWrap.appendChild(addItemBtn);
+  const checklistEditor = buildChecklistItemsEditor(null);
+  itemsWrap.appendChild(checklistEditor.element);
   box.appendChild(itemsWrap);
 
   const periodWrap = el('div','');
@@ -4190,7 +4234,7 @@ function openGoalModal(presetKind){
         unit: unitInput.value.trim() || null,
         period: periodSelect.value, startTs, endTs,
         mode: modeSelect.value, participants,
-        items: kindSelect.value === 'checklist' ? checklistItems : [],
+        items: kindSelect.value === 'checklist' ? checklistEditor.getItems() : [],
         isPublic: kindSelect.value === 'habit' && publicCheckbox.checked,
       });
       state.goalsLoaded = false;
@@ -4216,50 +4260,8 @@ function openEditChecklistModal(goal, onDone){
   box.className = 'send-preview-box';
   box.appendChild(el('div','','Редактировать список')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:15px;';
 
-  let items = [...(goal.items||[])];
-  const listEl = el('div','');
-  function renderList(){
-    listEl.innerHTML = '';
-    items.forEach((it, idx) => {
-      const row = el('div','goal-item-edit-row');
-      row.appendChild(el('span','goal-item-edit-text', it.text));
-      row.appendChild(el('span','goal-item-edit-target', it.target ? `× ${it.target}` : '—'));
-      const editItemBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.edit);
-      editItemBtn.onclick = () => {
-        const newText = prompt('Название дела', it.text);
-        if(newText === null) return;
-        const newTargetRaw = prompt('Количество (оставь пустым, если просто галочка)', it.target || '');
-        if(newTargetRaw === null) return;
-        it.text = newText.trim() || it.text;
-        it.target = parseFloat(newTargetRaw) || null;
-        renderList();
-      };
-      const rm = el('button','btn ghost icon-only-btn','✕');
-      rm.onclick = () => { items.splice(idx,1); renderList(); };
-      row.appendChild(editItemBtn);
-      row.appendChild(rm);
-      listEl.appendChild(row);
-    });
-  }
-  renderList();
-  box.appendChild(listEl);
-
-  const addRow = el('div','event-modal-row');
-  const newInput = document.createElement('input'); newInput.type='text'; newInput.placeholder='Новое дело…';
-  const newTarget = document.createElement('input'); newTarget.type='number'; newTarget.placeholder='Кол-во (необязательно)'; newTarget.min='1';
-  newTarget.style.maxWidth = '160px';
-  const addBtn = el('button','btn ghost','+ Добавить');
-  addBtn.onclick = () => {
-    const text = newInput.value.trim();
-    if(!text) return;
-    const target = parseFloat(newTarget.value) || null;
-    items.push({ id: 'i'+Date.now()+Math.random(), text, target });
-    newInput.value = ''; newTarget.value = '';
-    renderList();
-  };
-  newInput.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); addBtn.onclick(); } });
-  addRow.appendChild(newInput); addRow.appendChild(newTarget); addRow.appendChild(addBtn);
-  box.appendChild(addRow);
+  const checklistEditor = buildChecklistItemsEditor(goal.items || []);
+  box.appendChild(checklistEditor.element);
 
   const btnRow = document.createElement('div');
   btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:8px;';
@@ -4269,7 +4271,7 @@ function openEditChecklistModal(goal, onDone){
   saveBtn.onclick = async () => {
     saveBtn.disabled = true;
     try{
-      await updateGoal(goal.id, { items });
+      await updateGoal(goal.id, { items: checklistEditor.getItems() });
       state.goalsLoaded = false;
       ov.remove();
       onDone();
@@ -4999,6 +5001,23 @@ function buildFeaturedChecklistCard(checklists, index){
     nextBtn.onclick = () => { state.goalsFeaturedIndex = (index + 1) % checklists.length; render(); };
     pageRow.appendChild(prevBtn); pageRow.appendChild(nextBtn);
     card.appendChild(pageRow);
+
+    // Свайп влево/вправо по самой карточке — то же самое, что нажатие на стрелочки.
+    // Не срабатывает, если жест начался на кнопке/чекбоксе — чтобы не мешать
+    // обычным нажатиям внутри карточки.
+    let cardSwipeX = null, cardSwipeY = null;
+    card.addEventListener('touchstart', (e) => {
+      if(e.target.closest && e.target.closest('button, input, .goal-pager-icon')) { cardSwipeX = null; return; }
+      cardSwipeX = e.touches[0].clientX; cardSwipeY = e.touches[0].clientY;
+    }, { passive: true });
+    card.addEventListener('touchend', (e) => {
+      if(cardSwipeX === null) return;
+      const dx = e.changedTouches[0].clientX - cardSwipeX;
+      const dy = e.changedTouches[0].clientY - cardSwipeY;
+      cardSwipeX = null; cardSwipeY = null;
+      if(Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)*1.5) return;
+      if(dx < 0) nextBtn.onclick(); else prevBtn.onclick();
+    }, { passive: true });
   }
 
   let itemProgress = [];
@@ -9288,6 +9307,7 @@ function startNotificationPolling(){
     updateLastActive();
     checkCalendarReminders();
     pollCalendarForChanges();
+    if(state.screen === 'goals') pollGoalsForChanges();
     if(state.screen === 'messages' && !state.chatWith){
       listChatThreads().then(applyThreadsUpdate).catch(()=>{});
     }
