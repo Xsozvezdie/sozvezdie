@@ -1578,6 +1578,14 @@
   .goal-checklist-row .goal-week-box{ width: 22px; height: 22px; border-radius: 6px; font-size: 12px; flex-shrink: 0; }
 
   .goal-item-edit-row{ display:flex; align-items:center; gap: 10px; padding: 6px 0; }
+  .goal-add-item-text-row{ display:flex; align-items:flex-end; gap: 8px; }
+  .goal-add-item-text-row input[type=text]{ flex: 1; margin-bottom: 0; }
+  .goal-add-item-qty-col{ flex-shrink: 0; display:flex; flex-direction:column; align-items:center; }
+  .goal-add-item-qty-label{ font-size: 10px; color: var(--ink-dim); margin-bottom: 4px; }
+  .goal-add-item-qty-stepper{ display:flex; align-items:center; gap: 4px; }
+  .goal-add-item-qty-stepper .icon-only-btn{ width: 32px; height: 32px; flex-shrink: 0; }
+  .goal-add-item-qty-num{ min-width: 20px; text-align:center; font-size: 14px; font-weight: 600; }
+  .goal-add-item-btn{ width: 100%; margin-top: 8px; }
   .goal-item-edit-text{ flex: 1; }
   .goal-item-edit-target{ color: var(--ink-dim); font-size: 13px; }
   .goal-item-amount{ font-weight: 700; color: var(--gold); margin: 0 6px; }
@@ -4002,16 +4010,19 @@ function openGoalModal(presetKind){
   box.className = 'send-preview-box';
   box.appendChild(el('div','','Новый план')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
 
+  const titleWrap = el('div','');
+  titleWrap.appendChild(el('div','top-tag','Задание'));
   const titleInput = document.createElement('input');
   titleInput.type = 'text'; titleInput.placeholder = 'Например: сыграть 20 партий';
-  box.appendChild(titleInput);
+  titleWrap.appendChild(titleInput);
+  box.appendChild(titleWrap);
 
   const kindWrap = el('div','');
+  kindWrap.style.display = presetKind ? 'none' : '';
   kindWrap.appendChild(el('div','top-tag','Тип плана'));
-  const kindSelect = document.createElement('select');
-  [['checklist','Список дел (несколько задач со своими галочками)'],['numeric','Число (набрать цифру)'],['habit','Привычка (стрик по дням)']]
-    .forEach(([v,l]) => kindSelect.appendChild(new Option(l, v, false, presetKind === v)));
-  kindWrap.appendChild(kindSelect);
+  const kindOptions = [['checklist','Список дел (несколько задач со своими галочками)'],['numeric','Число (набрать цифру)'],['habit','Привычка (стрик по дням)']];
+  const kindSelect = createCustomSelect(kindOptions, presetKind || 'checklist');
+  kindWrap.appendChild(kindSelect.element);
   box.appendChild(kindWrap);
 
   const numericWrap = el('div','event-modal-row');
@@ -4041,49 +4052,72 @@ function openGoalModal(presetKind){
       itemsListEl.appendChild(row);
     });
   }
-  const addItemRow = el('div','event-modal-row');
+  const addItemTextRow = el('div','goal-add-item-text-row');
   const newItemInput = document.createElement('input'); newItemInput.type='text'; newItemInput.placeholder='Например: прочитать книгу';
-  const newItemTarget = document.createElement('input'); newItemTarget.type='number'; newItemTarget.placeholder='Кол-во (необязательно)'; newItemTarget.min='1';
-  newItemTarget.style.maxWidth = '160px';
-  const addItemBtn = el('button','btn ghost','+ Добавить дело');
+  const qtyCol = el('div','goal-add-item-qty-col');
+  qtyCol.appendChild(el('div','goal-add-item-qty-label','Кол-во'));
+  let newItemQty = null;
+  const qtyStepper = el('div','goal-add-item-qty-stepper');
+  function renderQtyStepper(){
+    qtyStepper.innerHTML = '';
+    if(newItemQty == null){
+      const plusBtn = el('button','btn ghost icon-only-btn','+');
+      plusBtn.type = 'button';
+      plusBtn.onclick = () => { newItemQty = 1; renderQtyStepper(); };
+      qtyStepper.appendChild(plusBtn);
+    } else {
+      const minusBtn = el('button','btn ghost icon-only-btn','−');
+      minusBtn.type = 'button';
+      minusBtn.onclick = () => { newItemQty = newItemQty > 1 ? newItemQty - 1 : null; renderQtyStepper(); };
+      const qtyNum = el('div','goal-add-item-qty-num', String(newItemQty));
+      const plusBtn = el('button','btn ghost icon-only-btn','+');
+      plusBtn.type = 'button';
+      plusBtn.onclick = () => { newItemQty++; renderQtyStepper(); };
+      qtyStepper.appendChild(minusBtn); qtyStepper.appendChild(qtyNum); qtyStepper.appendChild(plusBtn);
+    }
+  }
+  renderQtyStepper();
+  qtyCol.appendChild(qtyStepper);
+  addItemTextRow.appendChild(newItemInput); addItemTextRow.appendChild(qtyCol);
+  itemsWrap.appendChild(addItemTextRow);
+  const addItemBtn = el('button','btn ghost goal-add-item-btn','+ Добавить');
   addItemBtn.onclick = () => {
     const text = newItemInput.value.trim();
     if(!text) return;
-    const target = parseFloat(newItemTarget.value) || null;
-    checklistItems.push({ id: 'i'+Date.now()+Math.random(), text, target });
-    newItemInput.value = ''; newItemTarget.value = '';
+    checklistItems.push({ id: 'i'+Date.now()+Math.random(), text, target: newItemQty });
+    newItemInput.value = ''; newItemQty = null; renderQtyStepper();
     renderChecklistItems();
   };
   newItemInput.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); addItemBtn.onclick(); } });
-  addItemRow.appendChild(newItemInput); addItemRow.appendChild(newItemTarget); addItemRow.appendChild(addItemBtn);
-  itemsWrap.appendChild(addItemRow);
+  itemsWrap.appendChild(addItemBtn);
   box.appendChild(itemsWrap);
 
   const periodWrap = el('div','');
   periodWrap.appendChild(el('div','top-tag','Период'));
-  const periodSelect = document.createElement('select');
-  [['day','День'],['week','Неделя'],['month','Месяц'],['custom','Свой период']].forEach(([v,l]) => periodSelect.appendChild(new Option(l, v, false, v==='week')));
-  periodWrap.appendChild(periodSelect);
+  const periodOptions = [['day','День'],['week','Неделя'],['month','Месяц'],['custom','Свой период']];
+  const periodSelect = createCustomSelect(periodOptions, 'week');
+  periodWrap.appendChild(periodSelect.element);
   box.appendChild(periodWrap);
 
   const customDatesRow = el('div','event-modal-row');
   customDatesRow.style.display = 'none';
-  const customStart = document.createElement('input'); customStart.type='date'; customStart.value = formatDateInputValue(new Date());
-  const customEnd = document.createElement('input'); customEnd.type='date'; customEnd.value = formatDateInputValue(new Date(Date.now()+7*24*60*60*1000));
-  customDatesRow.appendChild(customStart); customDatesRow.appendChild(customEnd);
+  const customStart = createCustomDatePicker(new Date());
+  const customEnd = createCustomDatePicker(new Date(Date.now()+7*24*60*60*1000));
+  customDatesRow.appendChild(customStart.element); customDatesRow.appendChild(customEnd.element);
   box.appendChild(customDatesRow);
-  periodSelect.onchange = () => { customDatesRow.style.display = periodSelect.value === 'custom' ? '' : 'none'; };
+  periodSelect.addEventListener('change', () => { customDatesRow.style.display = periodSelect.value === 'custom' ? '' : 'none'; });
 
   const modeWrap = el('div','');
   modeWrap.appendChild(el('div','top-tag','Режим'));
-  const modeSelect = document.createElement('select');
-  [['solo','Один(а)'],['shared','Вместе (общий прогресс)'],['competition','Соревнование (у каждого своя цель)']].forEach(([v,l]) => modeSelect.appendChild(new Option(l, v)));
-  modeWrap.appendChild(modeSelect);
+  const modeOptions = [['solo','Один(а)'],['shared','Совместный – Общее выполнение'],['competition','Совместный – Раздельное выполнение']];
+  const modeSelect = createCustomSelect(modeOptions, 'solo');
+  modeWrap.appendChild(modeSelect.element);
   box.appendChild(modeWrap);
 
   let participants = [];
   const participantsSection = el('div','');
   participantsSection.style.display = 'none';
+  participantsSection.appendChild(el('div','top-tag','Участники'));
   const participantsListEl = el('div','event-modal-participants');
   function renderGoalParticipants(){
     participantsListEl.innerHTML = '';
@@ -4100,13 +4134,18 @@ function openGoalModal(presetKind){
     });
   }
   participantsSection.appendChild(participantsListEl);
-  const picker = buildContactSearchPicker({
-    excludeUids: () => participants.map(p=>p.uid),
-    onSelect: (f) => { participants.push(f); incrementParticipantAddCount(f.uid); renderGoalParticipants(); },
-  });
-  participantsSection.appendChild(picker);
+  const addGoalParticipantBtn = el('button','btn ghost','+ Добавить участников');
+  addGoalParticipantBtn.type = 'button';
+  addGoalParticipantBtn.onclick = (e) => {
+    e.stopPropagation();
+    openParticipantPicker(participants, (newParticipants) => {
+      participants = newParticipants;
+      renderGoalParticipants();
+    });
+  };
+  participantsSection.appendChild(addGoalParticipantBtn);
   box.appendChild(participantsSection);
-  modeSelect.onchange = () => { participantsSection.style.display = modeSelect.value === 'solo' ? 'none' : ''; };
+  modeSelect.addEventListener('change', () => { participantsSection.style.display = modeSelect.value === 'solo' ? 'none' : ''; });
 
   const publicWrap = el('label','event-modal-checkbox-label');
   publicWrap.style.display = 'none';
@@ -4114,12 +4153,13 @@ function openGoalModal(presetKind){
   publicWrap.appendChild(publicCheckbox);
   publicWrap.appendChild(document.createTextNode(' Сделать комнату публичной — другие смогут найти её по названию и присоединиться'));
   box.appendChild(publicWrap);
-  kindSelect.onchange = () => {
+  function updateKindVisibility(){
     numericWrap.style.display = kindSelect.value === 'numeric' ? '' : 'none';
     itemsWrap.style.display = kindSelect.value === 'checklist' ? '' : 'none';
     publicWrap.style.display = kindSelect.value === 'habit' ? '' : 'none';
-  };
-  kindSelect.onchange();
+  }
+  kindSelect.addEventListener('change', updateKindVisibility);
+  updateKindVisibility();
 
   const errEl = el('div','err',''); errEl.style.display='none';
   box.appendChild(errEl);
