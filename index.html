@@ -379,7 +379,7 @@
   .theme-swatch.active{ color: var(--ink); font-weight:600; }
 
   @media (max-width: 640px){
-    .wrap{ padding: 16px 16px 60px; }
+    .wrap{ padding: 26px 16px 60px; }
     .card{ padding: 20px; }
     h1{ font-size: clamp(26px, 8vw, 36px); }
     .nav{ padding: 8px; }
@@ -1527,6 +1527,8 @@
   .goal-leaderboard-row span:nth-child(2){ flex: 1; }
   .goal-leaderboard-pct{ font-weight: 700; color: var(--gold); }
   .goal-room-row{ display:flex; align-items:center; justify-content:space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .goal-room-row.goal-archive-row{ justify-content:flex-start; gap: 14px; }
+  .goal-archive-info{ flex: 1; min-width: 0; }
 
   .goal-celebration{
     position: fixed; top: 40%; left: 50%; transform: translate(-50%,-50%) scale(1);
@@ -1713,7 +1715,7 @@
     padding-top: 4px;
   }
   @media (max-width: 720px){
-    .graph-page{ height: 100dvh; max-height: 100dvh; }
+    .graph-page{ height: 100dvh; max-height: 100dvh; padding-top: 26px; }
     .graph-body-row{ flex-direction: column; }
     .legend-side{
       width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px;
@@ -1749,6 +1751,9 @@
   }
   @media (min-width: 780px){
     .wrap.shell-page{ padding-left: 40px; padding-right: 40px; }
+  }
+  @media (max-width: 780px){
+    .wrap.shell-page{ padding-top: 26px; }
   }
   .app-shell{
     display: flex;
@@ -1802,6 +1807,7 @@
     overflow: hidden;
   }
   #chat-messages{
+    padding: 14px 4px;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--gold) 45%, transparent) transparent;
   }
@@ -3595,9 +3601,13 @@ async function pollGoalsForChanges(){
         }
       });
     }
+    // Перерисовываем экран, только если данные реально поменялись — иначе каждые 8 секунд
+    // весь экран заново собирался бы с нуля, а виджеты (трекер, прогресс) заново запрашивали
+    // бы данные асинхронно, что и выглядело как "мигание"/исчезновение значений на миг.
+    const changed = !prev || JSON.stringify(fresh) !== JSON.stringify(prev);
     state.goals = fresh;
     state.goalsLoaded = true;
-    if(state.screen === 'goals') renderPreservingScroll();
+    if(changed && state.screen === 'goals') renderPreservingScroll();
   }catch(e){ console.error('goals poll failed', e); }
 }
 
@@ -4584,24 +4594,33 @@ function openArchiveModal(){
     box.appendChild(el('div','footer-note','Архив пуст.'));
   } else {
     archived.forEach(goal => {
-      const row = el('div','goal-room-row');
-      const infoCol = el('div','');
+      const row = el('div','goal-room-row goal-archive-row');
+      const infoCol = el('div','goal-archive-info');
       infoCol.appendChild(el('div','', goal.title));
       if(goal.archived_at){
         infoCol.appendChild(el('div','meta', 'В архиве с ' + timeAgoShort(new Date(goal.archived_at).getTime())));
       }
       row.appendChild(infoCol);
       const btnRow = el('div','');
-      btnRow.style.cssText = 'display:flex;gap:8px;flex-shrink:0;';
-      const showBtn = el('button','btn ghost','Показать');
+      btnRow.style.cssText = 'display:flex;gap:6px;flex-shrink:0;';
+      const showBtn = el('button','btn ghost icon-only-btn','🔍');
+      showBtn.title = 'Показать';
       showBtn.onclick = () => openGoalDetail(goal);
       btnRow.appendChild(showBtn);
-      const restoreBtn = el('button','btn ghost','Вернуть');
+      const restoreBtn = el('button','btn ghost icon-only-btn','↩️');
+      restoreBtn.title = 'Вернуть из архива';
       restoreBtn.onclick = async () => {
         try{ await updateGoal(goal.id, { archived: false }); state.goalsLoaded = false; ov.remove(); render(); }
         catch(e){ showToast('Не удалось вернуть: '+e.message); }
       };
       btnRow.appendChild(restoreBtn);
+      const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
+      delBtn.title = 'Удалить навсегда';
+      delBtn.onclick = () => showConfirmModal('Удалить эту задачу навсегда? Это нельзя отменить.', async () => {
+        try{ await deleteGoal(goal.id); state.goalsLoaded = false; ov.remove(); render(); openArchiveModal(); }
+        catch(e){ showToast('Не удалось удалить: '+e.message); }
+      }, 'Удалить');
+      btnRow.appendChild(delBtn);
       row.appendChild(btnRow);
       box.appendChild(row);
     });
@@ -13971,13 +13990,13 @@ function renderResult(){
   w.appendChild(renderNav('mine'));
 
   const headerBlock = el('div','graph-page-header');
-  const headerTopRow = el('div','graph-page-header-top');
-  headerTopRow.appendChild(el('div','eyebrow', `Граф — ${state.user.name}`));
-  headerBlock.appendChild(headerTopRow);
   headerBlock.appendChild(el('h1','graph-page-title', 'Вот из чего ты состоишь.'));
+  const headerTopRow = el('div','graph-page-header-top');
   const addInfoBtn = el('button','btn ghost graph-add-info-btn','+ Добавить информацию');
   addInfoBtn.onclick = () => { state.screen='story'; render(); };
-  headerBlock.appendChild(addInfoBtn);
+  headerTopRow.appendChild(addInfoBtn);
+  headerTopRow.appendChild(el('div','eyebrow', `Граф — ${state.user.name}`));
+  headerBlock.appendChild(headerTopRow);
 
   if(state.saveStatus === 'saving'){
     headerBlock.appendChild(el('div','footer-note','Сохраняем…'));
