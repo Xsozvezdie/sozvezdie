@@ -1736,7 +1736,7 @@
     flex-direction: column;
   }
   @media (min-width: 780px){
-    .wrap.shell-page{ padding-left: 32px; padding-right: 32px; }
+    .wrap.shell-page{ padding-left: 40px; padding-right: 40px; }
   }
   .app-shell{
     display: flex;
@@ -1744,9 +1744,6 @@
     align-items: stretch;
     flex: 1;
     min-height: 0;
-    max-width: 1100px;
-    margin: 0 auto;
-    width: 100%;
   }
   .shell-sidebar{
     width: 320px;
@@ -4727,7 +4724,7 @@ function buildGoalGridCard(goal){
 }
 
 function buildTrackerPanel(habits){
-  const panel = el('div','card card-translucent goal-panel-50 goal-tracker-panel');
+  const panel = el('div','card card-translucent goal-tracker-panel');
 
   const addHabitBtn = el('button','btn ghost icon-only-btn goal-tracker-add-btn','+');
   addHabitBtn.title = 'Добавить трекер';
@@ -4882,7 +4879,7 @@ function openEditPeriodModal(goal){
 
 function buildFeaturedChecklistCard(checklists, index){
   const goal = checklists[index];
-  const card = el('div','card card-translucent goal-panel-50 goal-featured-card');
+  const card = el('div','card card-translucent goal-featured-card');
 
   const topRow = el('div','goal-featured-top');
   const helpBtn = el('button','btn ghost goal-help-btn','+ Позвать на помощь');
