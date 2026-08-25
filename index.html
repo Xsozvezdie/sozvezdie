@@ -68,6 +68,14 @@
       -webkit-overflow-scrolling: touch;
       overscroll-behavior: contain;
     }
+    .wrap:has(> .screen-scroll-body){
+      overflow: hidden !important;
+      display: flex !important; flex-direction: column !important;
+    }
+    .screen-scroll-body{
+      flex: 1; min-height: 0; overflow-y: auto;
+      -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    }
   }
   .wrap.wide{ max-width: 760px; }
   @media (min-width: 780px){
@@ -7917,6 +7925,27 @@ function render(){
   else if(state.screen === 'account') renderAccountScreen();
   else if(state.screen === 'calendar') renderCalendarScreen();
   else if(state.screen === 'goals') renderGoalsScreen();
+  normalizeScreenScroll();
+}
+
+// На телефоне шапка (логотип+иконки навигации) не должна вообще участвовать в прокрутке —
+// у Сообщений и Календаря это уже устроено по-своему (свой отдельный внутренний скролл),
+// а для всех остальных экранов делаем то же самое одним общим шагом: всё, что идёт после
+// шапки, переносим во внутреннюю обёртку с собственной прокруткой, а сама шапка остаётся
+// неподвижной частью общего (не скроллящегося) контейнера.
+function normalizeScreenScroll(){
+  const w = root.querySelector(':scope > .wrap');
+  if(!w) return;
+  if(w.classList.contains('shell-page') || w.classList.contains('calendar-page')) return;
+  const navEl = w.querySelector(':scope > .nav-wrapper');
+  if(!navEl) return;
+  if(w.querySelector(':scope > .screen-scroll-body')) return;
+  const scrollBody = document.createElement('div');
+  scrollBody.className = 'screen-scroll-body';
+  Array.from(w.children).forEach(child => {
+    if(child !== navEl) scrollBody.appendChild(child);
+  });
+  w.appendChild(scrollBody);
 }
 
 function buildSpinner(label){
