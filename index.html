@@ -368,6 +368,11 @@
   }
 
   .theme-grid{ display:flex; flex-wrap:wrap; gap:12px; margin-top: 10px; }
+  @media (max-width: 420px){
+    .theme-grid{ flex-wrap: nowrap; gap: 6px; justify-content: space-between; }
+    .theme-swatch{ width: auto; flex: 1; min-width: 0; font-size: 9.5px; }
+    .theme-swatch-circle{ width: 42px; height: 42px; margin-bottom: 4px; }
+  }
   .theme-swatch{
     width: 74px; cursor:pointer; text-align:center; font-size:11px; color: var(--ink-dim);
   }
@@ -1596,6 +1601,8 @@
   .goal-day-strip-dow{ font-size: 9px; color: var(--ink-dim); text-transform: uppercase; }
 
   .goal-stats-bar-wrap{ margin-top: 8px; }
+  .goal-elapsed-bar-track{ width: 100%; height: 5px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--line) 60%, transparent); margin-top: 4px; }
+  .goal-elapsed-bar-fill{ height: 100%; background: var(--gold); border-radius: 999px; }
   .goal-stats-bar-track{ display:flex; width: 100%; height: 6px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--line) 60%, transparent); }
   .goal-stats-bar-seg{ height: 100%; }
   .goal-stats-seg-success{ background: #5cb85c; }
@@ -1699,7 +1706,7 @@
   .goal-period-edit{ background:none; border:none; color: var(--ink-dim); cursor:pointer; font-size: 13.5px; padding: 0; text-decoration: underline dotted; }
   .goal-period-edit:hover{ color: var(--gold); }
   .goal-featured-body{ display:flex; gap: 20px; align-items:flex-start; flex-wrap: wrap; }
-  .goal-featured-list{ flex: 1; min-width: 220px; max-height: 320px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .goal-featured-list{ flex: 1; min-width: 220px; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
   .goal-featured-list.dense .goal-featured-item{ padding: 4px 0; font-size: 12.5px; }
   .goal-featured-item{
     display:flex; align-items:center; gap: 10px; padding: 8px 0;
@@ -4439,7 +4446,7 @@ async function openGoalDetail(goal){
     }
 
     if(goal.kind === 'habit'){
-      const streak = computeGoalStreak(progress, goal.mode === 'competition' ? state.user.uid : null);
+      const streak = computeGoalStreak(progress, state.user.uid);
       box.appendChild(el('div','goal-streak-big', `🔥 ${streak} ${streak===1?'день':(streak>=2&&streak<=4?'дня':'дней')} подряд`));
 
       box.appendChild(buildGoalDayStrip(progress, state.user.uid, goal.id, true, () => { listGoalProgress(goal.id).then(p => { progress = p; draw(); }); }));
@@ -4466,7 +4473,7 @@ async function openGoalDetail(goal){
         try{
           await logGoalProgress(goal.id, todayKey, 1);
           progress = await listGoalProgress(goal.id);
-          const newStreak = computeGoalStreak(progress, goal.mode === 'competition' ? state.user.uid : null);
+          const newStreak = computeGoalStreak(progress, state.user.uid);
           if(GOAL_MILESTONES.includes(newStreak)) playGoalCelebration();
           draw();
         }catch(e){ showToast('Не получилось сохранить: '+e.message); okBtn.disabled=false; }
@@ -4848,7 +4855,7 @@ function buildGoalGridCard(goal){
   topRow.appendChild(titleCol);
   listGoalProgress(goal.id).then(progress => {
     if(goal.kind === 'habit'){
-      const streak = computeGoalStreak(progress, goal.mode === 'competition' ? state.user.uid : null);
+      const streak = computeGoalStreak(progress, state.user.uid);
       topRow.appendChild(el('div','goal-streak-badge', `🔥 ${streak}`));
     } else {
       const pct = computeGoalPercent(goal, progress, goal.mode === 'competition' ? state.user.uid : null);
@@ -4875,32 +4882,123 @@ function buildGoalGridCard(goal){
 function buildTrackerPanel(habits){
   const panel = el('div','card card-translucent goal-tracker-panel');
 
-  const addHabitBtn = el('button','btn ghost icon-only-btn goal-tracker-add-btn','+');
-  addHabitBtn.title = 'Добавить трекер';
+  const topRow = el('div','goal-featured-top');
+  const addHabitBtn = el('button','btn ghost goal-add-new-btn','+ Добавить новый трекер');
   addHabitBtn.onclick = () => openGoalModal('habit');
-  panel.appendChild(addHabitBtn);
+  topRow.appendChild(addHabitBtn);
+  panel.appendChild(topRow);
 
-  // Общая привычка занимает больше места (нужно место под строки всех участников),
-  // поэтому если первая привычка на двоих — показываем только её; для одиночных
-  // привычек в карточку помещается две.
-  let shown = [];
-  if(habits.length){
-    shown = habits[0].mode !== 'solo' ? habits.slice(0,1) : habits.slice(0,2);
+  if(!habits.length){
+    panel.appendChild(el('div','footer-note','Пока нет ни одного трекера привычек.'));
+    return panel;
   }
 
-  shown.forEach(goal => panel.appendChild(buildInlineHabitRow(goal)));
+  if(state.goalsTrackerIndex == null || state.goalsTrackerIndex >= habits.length) state.goalsTrackerIndex = 0;
+  const idx = state.goalsTrackerIndex;
+  const goal = habits[idx];
+  const mineTracker = goal.owner_uid === state.user.uid;
 
-  if(shown.length <= 1){
-    const btnRow = el('div','goal-tracker-empty-actions');
-    if(shown.length === 1){
-      const inviteBtn = el('button','btn ghost','Пригласить друга');
-      inviteBtn.onclick = (e) => openInviteFriendPopover(shown[0], inviteBtn);
-      btnRow.appendChild(inviteBtn);
-    }
-    const addBtn = el('button','btn ghost','+ добавить трекер');
-    addBtn.onclick = () => openGoalModal('habit');
-    btnRow.appendChild(addBtn);
-    panel.appendChild(btnRow);
+  panel.appendChild(el('div','goal-featured-title-centered', goal.title));
+
+  const metaRow = el('div','goal-featured-meta');
+  metaRow.appendChild(el('div','goal-period-edit', goalPeriodLabel(goal)));
+  const streakBadgeTop = el('div','goal-streak-badge','🔥 …');
+  metaRow.appendChild(streakBadgeTop);
+  panel.appendChild(metaRow);
+
+  const stripsWrap = el('div','');
+  panel.appendChild(stripsWrap);
+  const barsWrap = el('div','goal-featured-bars');
+  panel.appendChild(barsWrap);
+
+  const allPeople = [{ uid: goal.owner_uid, name: goal.owner_name }, ...(goal.participants||[])];
+  const seen = new Set(); const uniquePeople = allPeople.filter(p => !seen.has(p.uid) && seen.add(p.uid));
+  const showNames = uniquePeople.length > 1;
+  const relevantPeople = goal.mode === 'solo' ? [uniquePeople[0]] : uniquePeople;
+
+  function refresh(){
+    listGoalProgress(goal.id).then(progress => {
+      const streak = computeGoalStreak(progress, state.user.uid);
+      streakBadgeTop.textContent = `🔥 ${streak} ${streak===1?'день':(streak>=2&&streak<=4?'дня':'дней')} подряд`;
+      stripsWrap.innerHTML = '';
+      relevantPeople.forEach(p => {
+        const personWrap = el('div','goal-week-row-wrap');
+        if(showNames){
+          const labelRow = el('div','goal-week-row-label');
+          const av = el('div','avatar-circle', (p.uid===state.user.uid?'Вы':p.name||'?')[0].toUpperCase());
+          av.style.width = '18px'; av.style.height = '18px'; av.style.fontSize = '9px'; av.style.marginRight = '5px';
+          fillAvatarAsync(av, p.uid);
+          labelRow.appendChild(av);
+          labelRow.appendChild(el('span','meta', p.uid === state.user.uid ? 'Вы' : p.name));
+          personWrap.appendChild(labelRow);
+        }
+        personWrap.appendChild(buildGoalDayStrip(progress, p.uid, goal.id, true, refresh));
+        stripsWrap.appendChild(personWrap);
+      });
+      barsWrap.innerHTML = '';
+      barsWrap.appendChild(buildGoalStatsBar(goal, progress));
+    }).catch(()=>{});
+  }
+  refresh();
+
+  const actionsRow = el('div','goal-featured-actions-row');
+  const helpBtn = el('button','btn ghost goal-help-btn','+ Позвать на помощь');
+  helpBtn.onclick = (e) => {
+    e.stopPropagation();
+    openParticipantPicker((goal.participants||[]), async (newParticipants) => {
+      try{
+        await updateGoal(goal.id, { participants: newParticipants, mode: goal.mode === 'solo' ? 'shared' : goal.mode });
+        state.goalsLoaded = false; render();
+      }catch(err){ showToast('Не удалось добавить: '+err.message); }
+    });
+  };
+  actionsRow.appendChild(helpBtn);
+  if(mineTracker){
+    const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
+    delBtn.title = 'Удалить трекер';
+    delBtn.onclick = () => showConfirmModal('Удалить этот трекер целиком?', async () => {
+      try{ await deleteGoal(goal.id); state.goalsLoaded = false; state.goalsTrackerIndex = 0; render(); }
+      catch(e){ showToast('Не удалось удалить: '+e.message); }
+    }, 'Удалить');
+    actionsRow.appendChild(delBtn);
+  } else {
+    const leaveBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
+    leaveBtn.title = 'Удалить у себя';
+    leaveBtn.onclick = () => showConfirmModal('Удалить этот трекер у себя? Он пропадёт из вашего списка, но ваш прогресс сохранится.', async () => {
+      try{
+        const newParticipants = (goal.participants||[]).filter(p => p.uid !== state.user.uid);
+        await updateGoal(goal.id, { participants: newParticipants });
+        state.goalsLoaded = false; state.goalsTrackerIndex = 0; render();
+      }catch(e){ showToast('Не удалось удалить: '+e.message); }
+    }, 'Удалить у себя');
+    actionsRow.appendChild(leaveBtn);
+  }
+  panel.appendChild(actionsRow);
+
+  if(habits.length > 1){
+    const pageRow = el('div','goal-featured-pager');
+    const prevBtn = el('button','goal-pager-icon','«');
+    prevBtn.onclick = () => { state.goalsTrackerIndex = (idx - 1 + habits.length) % habits.length; render(); };
+    const nextBtn = el('button','goal-pager-icon','»');
+    nextBtn.onclick = () => { state.goalsTrackerIndex = (idx + 1) % habits.length; render(); };
+    pageRow.appendChild(prevBtn); pageRow.appendChild(nextBtn);
+    panel.appendChild(pageRow);
+
+    // Свайп по трекеру тоже листает трекеры — но не когда жест начался на самой ленте
+    // дней (там свой горизонтальный скролл) или на кнопке/поле.
+    let trackerSwipeX = null, trackerSwipeY = null;
+    panel.addEventListener('touchstart', (e) => {
+      if(e.target.closest && e.target.closest('button, input, .goal-pager-icon, .goal-day-strip-outer')) { trackerSwipeX = null; return; }
+      trackerSwipeX = e.touches[0].clientX; trackerSwipeY = e.touches[0].clientY;
+    }, { passive: true });
+    panel.addEventListener('touchend', (e) => {
+      if(trackerSwipeX === null) return;
+      const dx = e.changedTouches[0].clientX - trackerSwipeX;
+      const dy = e.changedTouches[0].clientY - trackerSwipeY;
+      trackerSwipeX = null; trackerSwipeY = null;
+      if(Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)*1.5) return;
+      if(dx < 0) nextBtn.onclick(); else prevBtn.onclick();
+    }, { passive: true });
   }
 
   return panel;
@@ -5022,10 +5120,27 @@ function buildGoalDayStrip(progress, uid, goalId, editable, onToggle){
     cell.appendChild(el('div','goal-day-strip-dow', dayNames[d.getDay()]));
     if(editable && !isFuture && uid === state.user.uid){
       cell.classList.add('clickable');
-      cell.onclick = async () => {
-        const done = entry && Number(entry.value) > 0;
-        try{ await logGoalProgress(goalId, key, done ? 0 : 1); onToggle(); }
-        catch(err){ showToast('Не получилось сохранить: '+err.message); }
+      cell.onclick = (e) => {
+        e.stopPropagation();
+        closeContextMenu();
+        const menu = el('div','context-menu');
+        menu.id = 'msg-context-menu';
+        const doneItem = el('div','context-menu-item','✅ Выполнено');
+        doneItem.onclick = async (ev) => {
+          ev.stopPropagation(); closeContextMenu();
+          try{ await logGoalProgress(goalId, key, 1); onToggle(); }
+          catch(err){ showToast('Не получилось сохранить: '+err.message); }
+        };
+        const failItem = el('div','context-menu-item','❌ Сорвался(-лась)');
+        failItem.onclick = async (ev) => {
+          ev.stopPropagation(); closeContextMenu();
+          try{ await logGoalProgress(goalId, key, 0); onToggle(); }
+          catch(err){ showToast('Не получилось сохранить: '+err.message); }
+        };
+        menu.appendChild(doneItem); menu.appendChild(failItem);
+        document.body.appendChild(menu);
+        positionFloatingMenu(menu, cell.getBoundingClientRect());
+        setTimeout(() => document.addEventListener('click', closeContextMenu), 0);
       };
     }
     scroller.appendChild(cell);
@@ -5045,6 +5160,7 @@ function buildGoalStatsBar(goal, progress){
   const start = new Date(goal.start_ts); start.setHours(0,0,0,0);
   const end = new Date(goal.end_ts); end.setHours(0,0,0,0);
   const totalDays = Math.max(1, Math.round((end - start) / 86400000) + 1);
+  const elapsedDays = Math.max(1, Math.min(totalDays, Math.round((Math.min(now,end) - start) / 86400000) + 1));
   let success = 0, failed = 0;
   for(let d = new Date(start); d <= end && d <= now; d.setDate(d.getDate()+1)){
     const key = goalDayKey(d);
@@ -5052,18 +5168,28 @@ function buildGoalStatsBar(goal, progress){
     if(entry && Number(entry.value) > 0) success++;
     else if(entry && Number(entry.value) <= 0) failed++;
   }
-  const pctS = Math.round(success/totalDays*100);
-  const pctF = Math.round(failed/totalDays*100);
-  const pctR = Math.max(0, 100 - pctS - pctF);
+  const pctS = Math.round(success/elapsedDays*100);
+  const pctF = Math.round(failed/elapsedDays*100);
+  const pctU = Math.max(0, 100 - pctS - pctF);
+  const overallPct = Math.round(elapsedDays/totalDays*100);
 
   const wrap = el('div','goal-stats-bar-wrap');
+
+  // Верхняя полоска — сколько всего срока уже прошло.
+  const elapsedTrack = el('div','goal-elapsed-bar-track');
+  const elapsedFill = el('div','goal-elapsed-bar-fill'); elapsedFill.style.width = overallPct+'%';
+  elapsedTrack.appendChild(elapsedFill);
+  wrap.appendChild(elapsedTrack);
+  wrap.appendChild(el('div','goal-stats-bar-label', `Пройдено ${overallPct}% срока`));
+
+  // Нижняя полоска — разбивка именно по уже прошедшим дням (не по всему периоду целиком).
   const track = el('div','goal-stats-bar-track');
   const segS = el('div','goal-stats-bar-seg goal-stats-seg-success'); segS.style.width = pctS+'%';
   const segF = el('div','goal-stats-bar-seg goal-stats-seg-failed'); segF.style.width = pctF+'%';
-  const segR = el('div','goal-stats-bar-seg goal-stats-seg-remaining'); segR.style.width = pctR+'%';
+  const segR = el('div','goal-stats-bar-seg goal-stats-seg-remaining'); segR.style.width = pctU+'%';
   track.appendChild(segS); track.appendChild(segF); track.appendChild(segR);
   wrap.appendChild(track);
-  wrap.appendChild(el('div','goal-stats-bar-label', `${pctS}% выполнено · ${pctF}% сорвано · ${pctR}% осталось`));
+  wrap.appendChild(el('div','goal-stats-bar-label', `Из прошедшего: ${pctS}% выполнено · ${pctF}% сорвано · ${pctU}% не отмечено`));
   return wrap;
 }
 
@@ -5089,7 +5215,7 @@ function buildInlineHabitRow(goal){
 
   function refresh(){
     listGoalProgress(goal.id).then(progress => {
-      const streak = computeGoalStreak(progress, goal.mode === 'competition' ? state.user.uid : null);
+      const streak = computeGoalStreak(progress, state.user.uid);
       streakBadge.textContent = `🔥 ${streak} ${streak===1?'день':(streak>=2&&streak<=4?'дня':'дней')} подряд`;
       stripsWrap.innerHTML = '';
       relevantPeople.forEach(p => {
@@ -5229,16 +5355,30 @@ function buildFeaturedChecklistCard(checklists, index){
 
   const actionsRow = el('div','goal-featured-actions-row');
   actionsRow.appendChild(helpBtn);
-  const editBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.edit);
-  editBtn.onclick = () => openEditChecklistModal(goal, () => render());
-  actionsRow.appendChild(editBtn);
-  const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
-  delBtn.title = 'Удалить список';
-  delBtn.onclick = () => showConfirmModal('Удалить этот список целиком?', async () => {
-    try{ await deleteGoal(goal.id); state.goalsLoaded = false; state.goalsFeaturedIndex = 0; render(); }
-    catch(e){ showToast('Не удалось удалить: '+e.message); }
-  }, 'Удалить');
-  actionsRow.appendChild(delBtn);
+  const mineCard = goal.owner_uid === state.user.uid;
+  if(mineCard){
+    const editBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.edit);
+    editBtn.onclick = () => openEditChecklistModal(goal, () => render());
+    actionsRow.appendChild(editBtn);
+    const delBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
+    delBtn.title = 'Удалить список';
+    delBtn.onclick = () => showConfirmModal('Удалить этот список целиком?', async () => {
+      try{ await deleteGoal(goal.id); state.goalsLoaded = false; state.goalsFeaturedIndex = 0; render(); }
+      catch(e){ showToast('Не удалось удалить: '+e.message); }
+    }, 'Удалить');
+    actionsRow.appendChild(delBtn);
+  } else {
+    const leaveBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
+    leaveBtn.title = 'Удалить у себя';
+    leaveBtn.onclick = () => showConfirmModal('Удалить этот план у себя? Он пропадёт из вашего списка, но ваш прогресс сохранится.', async () => {
+      try{
+        const newParticipants = (goal.participants||[]).filter(p => p.uid !== state.user.uid);
+        await updateGoal(goal.id, { participants: newParticipants });
+        state.goalsLoaded = false; state.goalsFeaturedIndex = 0; render();
+      }catch(e){ showToast('Не удалось удалить: '+e.message); }
+    }, 'Удалить у себя');
+    actionsRow.appendChild(leaveBtn);
+  }
   card.appendChild(actionsRow);
 
   if(checklists.length > 1){
