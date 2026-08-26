@@ -10196,7 +10196,7 @@ function testVideoPlayable(dataUrl){
     vid.muted = true; vid.playsInline = true; vid.preload = 'auto';
     vid.style.cssText = 'position:fixed; left:-9999px; top:-9999px; width:2px; height:2px; opacity:0;';
     document.body.appendChild(vid);
-    const timeout = setTimeout(() => { cleanup(); resolve({ ok:false, code:'timeout' }); }, 4000);
+    const timeout = setTimeout(() => { cleanup(); resolve({ ok:false, code:'timeout' }); }, 15000);
     function cleanup(){ clearTimeout(timeout); URL.revokeObjectURL(url); vid.remove(); }
     vid.addEventListener('loadeddata', () => { cleanup(); resolve({ ok:true }); }, { once:true });
     vid.addEventListener('error', () => { const code = vid.error ? vid.error.code : '?'; cleanup(); resolve({ ok:false, code }); }, { once:true });
@@ -11242,7 +11242,7 @@ function buildChatPanel(container){
 
   const inputRow = el('div','');
   inputRow.style.display='flex'; inputRow.style.gap='10px'; inputRow.style.marginTop='14px'; inputRow.style.alignItems='center'; inputRow.style.flexShrink='0';
-  inputRow.style.paddingBottom = 'calc(env(safe-area-inset-bottom) + 10px)';
+  inputRow.style.paddingBottom = 'calc(env(safe-area-inset-bottom) + 20px)';
   const fileInput = document.createElement('input');
   fileInput.type = 'file'; fileInput.accept = 'image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip'; fileInput.style.display = 'none';
   const attachBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.attach);
@@ -11642,15 +11642,17 @@ function buildChatPanel(container){
 
   const videoMime = pickSupportedMimeType(['video/webm;codecs=vp8,opus','video/webm','video/mp4']);
   const voiceBtn = makeRecordButton(CHAT_ICONS.mic, { audio: true }, 300, doSendVoice, {
-    title: 'На телефоне — зажми; на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 5 минут)',
+    title: 'На телефоне — зажми (смахни вверх, чтобы зафиксировать и отпустить, влево — чтобы отменить); на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 5 минут)',
     transcribe: true,
     cancelable: true,
+    lockable: true,
     recorderOptions: { audioBitsPerSecond: 12000 },
     onQuickTap: () => { chatMediaMode = 'video'; refreshComposeActionSlot(); },
   });
   const videoCircleBtn = makeRecordButton(CHAT_ICONS.video, { video: { width: {ideal: 240}, height: {ideal: 240}, facingMode: 'user' }, audio: true }, 60, doSendVideo, {
-    title: 'На телефоне — зажми (смахни вверх, чтобы зафиксировать и отпустить); на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 1 минуты)',
+    title: 'На телефоне — зажми (смахни вверх, чтобы зафиксировать и отпустить, влево — чтобы отменить); на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 1 минуты)',
     livePreview: true,
+    cancelable: true,
     lockable: true,
     cameraSwitchable: true,
     recorderOptions: videoMime ? { mimeType: videoMime, videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 },
