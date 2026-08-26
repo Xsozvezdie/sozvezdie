@@ -6501,6 +6501,29 @@ function openForwardPicker(onConfirm){
 // это отдельное действие, доступное через плагин @capacitor-community/media). Если этот
 // плагин ещё не установлен нативно, аккуратно откатываемся на "Поделиться" как запасной
 // вариант, чтобы кнопка не была совсем нерабочей до пересборки приложения.
+// Android (начиная с 5 версии плагина) требует указывать альбом при сохранении — просто
+// "сохранить куда-нибудь" больше не работает. Получаем или создаём свой альбом один раз
+// и запоминаем его id, чтобы не делать это при каждом сохранении заново.
+let sozvezdieAlbumId = null;
+async function ensureSozvezdieAlbumId(){
+  if(sozvezdieAlbumId) return sozvezdieAlbumId;
+  const Media = window.Capacitor.Plugins.Media;
+  const ALBUM_NAME = 'Sozvezdie';
+  try{
+    const { albums } = await Media.getAlbums();
+    let album = (albums||[]).find(a => a.name === ALBUM_NAME);
+    if(!album){
+      await Media.createAlbum({ name: ALBUM_NAME });
+      const fresh = await Media.getAlbums();
+      album = (fresh.albums||[]).find(a => a.name === ALBUM_NAME);
+    }
+    sozvezdieAlbumId = album ? album.identifier : null;
+  }catch(e){
+    console.error('get/create album failed', e);
+  }
+  return sozvezdieAlbumId;
+}
+
 async function saveImageToGallery(src){
   try{
     const isNative = window.Capacitor && window.Capacitor.isNativePlatform();
@@ -6518,7 +6541,8 @@ async function saveImageToGallery(src){
       });
     }
     if(isNative && window.Capacitor.Plugins.Media){
-      await window.Capacitor.Plugins.Media.savePhoto({ path: dataUrl });
+      const albumIdentifier = await ensureSozvezdieAlbumId();
+      await window.Capacitor.Plugins.Media.savePhoto({ path: dataUrl, albumIdentifier: albumIdentifier || undefined });
       showToast('Фото сохранено в галерею ✓');
       return;
     }
@@ -11242,7 +11266,7 @@ function buildChatPanel(container){
 
   const inputRow = el('div','');
   inputRow.style.display='flex'; inputRow.style.gap='10px'; inputRow.style.marginTop='14px'; inputRow.style.alignItems='center'; inputRow.style.flexShrink='0';
-  inputRow.style.paddingBottom = 'calc(env(safe-area-inset-bottom) + 20px)';
+  inputRow.style.paddingBottom = 'calc(env(safe-area-inset-bottom) + 32px)';
   const fileInput = document.createElement('input');
   fileInput.type = 'file'; fileInput.accept = 'image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip'; fileInput.style.display = 'none';
   const attachBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.attach);
@@ -11640,7 +11664,6 @@ function buildChatPanel(container){
     return wrap;
   }
 
-  const videoMime = pickSupportedMimeType(['video/webm;codecs=vp8,opus','video/webm','video/mp4']);
   const voiceBtn = makeRecordButton(CHAT_ICONS.mic, { audio: true }, 300, doSendVoice, {
     title: 'На телефоне — зажми (смахни вверх, чтобы зафиксировать и отпустить, влево — чтобы отменить); на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 5 минут)',
     transcribe: true,
@@ -11655,7 +11678,7 @@ function buildChatPanel(container){
     cancelable: true,
     lockable: true,
     cameraSwitchable: true,
-    recorderOptions: videoMime ? { mimeType: videoMime, videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 },
+    recorderOptions: { videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 },
     onQuickTap: () => { chatMediaMode = 'voice'; refreshComposeActionSlot(); },
   });
   let chatMediaMode = 'voice'; // 'voice' | 'video' — на телефоне переключается коротким тапом
