@@ -7137,7 +7137,9 @@ async function listFriends(){
 // именно это и было вероятной причиной, что видео-кружочки не проигрывались на части устройств.
 async function uploadMediaToStorage(dataUrl, kind){
   if(!supabaseReady) throw backendNotConfiguredError();
-  const [header, base64] = dataUrl.split(',');
+  const commaIdx = dataUrl.indexOf(',');
+  const header = dataUrl.slice(0, commaIdx);
+  const base64 = dataUrl.slice(commaIdx + 1);
   const mimeMatch = header.match(/data:(.*?);base64/);
   const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
   const bin = atob(base64);
@@ -10231,7 +10233,9 @@ function testVideoPlayable(dataUrl){
 function dataUrlToObjectUrl(dataUrl){
   if(!dataUrl || !dataUrl.startsWith('data:')) return dataUrl; // уже обычная ссылка (например, из Storage) — декодировать нечего
   try{
-    const [header, base64] = dataUrl.split(',');
+    const commaIdx = dataUrl.indexOf(',');
+    const header = dataUrl.slice(0, commaIdx);
+    const base64 = dataUrl.slice(commaIdx + 1);
     const mimeMatch = header.match(/data:(.*?);base64/);
     const mime = mimeMatch ? mimeMatch[1] : '';
     const bin = atob(base64);
@@ -10251,14 +10255,14 @@ async function downloadDataUrl(url, filename){
     let base64Data = null;
     let blobUrl = url;
     if(url.startsWith('data:')){
-      base64Data = url.split(',')[1];
+      base64Data = url.slice(url.indexOf(',') + 1);
     } else {
       const resp = await fetch(url);
       const blob = await resp.blob();
       if(isNative){
         base64Data = await new Promise((resolve, reject) => {
           const reader = new FileReader();
-          reader.onloadend = () => resolve(String(reader.result).split(',')[1]);
+          reader.onloadend = () => { const r = String(reader.result); resolve(r.slice(r.indexOf(',') + 1)); };
           reader.onerror = reject;
           reader.readAsDataURL(blob);
         });
@@ -11266,7 +11270,7 @@ function buildChatPanel(container){
 
   const inputRow = el('div','');
   inputRow.style.display='flex'; inputRow.style.gap='10px'; inputRow.style.marginTop='14px'; inputRow.style.alignItems='center'; inputRow.style.flexShrink='0';
-  inputRow.style.paddingBottom = 'calc(env(safe-area-inset-bottom) + 32px)';
+  inputRow.style.paddingBottom = 'calc(env(safe-area-inset-bottom) + 40px)';
   const fileInput = document.createElement('input');
   fileInput.type = 'file'; fileInput.accept = 'image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip'; fileInput.style.display = 'none';
   const attachBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.attach);
