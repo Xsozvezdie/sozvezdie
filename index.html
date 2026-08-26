@@ -1356,6 +1356,7 @@
   }
 
   .event-modal-box{ max-width: 420px; max-height: 85vh; overflow-y: auto; }
+  .goal-create-box{ max-height: 85vh; overflow-y: auto; }
   .event-modal-row{ display:flex; gap: 8px; }
   .event-modal-row select, .event-modal-row input{ margin-bottom: 0 !important; }
   .event-modal-time-row{ margin-top: 2px; align-items: center; gap: 20px; justify-content: center; }
@@ -1574,6 +1575,39 @@
   .goal-week-box.failed{ background: color-mix(in srgb, #e0555a 22%, transparent); border-color: #e0555a; color: #c23b40; }
   .goal-week-box.today{ border-color: var(--gold); border-width: 2px; }
 
+  .goal-day-strip-outer{
+    width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity; padding: 4px 0;
+    -webkit-mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+    mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+  }
+  .goal-day-strip-outer::-webkit-scrollbar{ display: none; }
+  .goal-day-strip-scroller{ display:flex; gap: 4px; padding: 0 50%; width: max-content; }
+  .goal-day-strip-cell{
+    flex-shrink: 0; width: 34px; scroll-snap-align: center;
+    display:flex; flex-direction:column; align-items:center; gap: 3px;
+    padding: 6px 2px; border-radius: 10px; opacity: 0.5;
+  }
+  .goal-day-strip-cell.is-today{ opacity: 1; border: 1px solid var(--gold); }
+  .goal-day-strip-cell.done{ background: color-mix(in srgb, #7fe0a0 28%, transparent); opacity: 1; }
+  .goal-day-strip-cell.failed{ background: color-mix(in srgb, #e0555a 22%, transparent); opacity: 1; }
+  .goal-day-strip-cell.clickable{ cursor: pointer; }
+  .goal-day-strip-num{ font-size: 14px; font-weight: 700; }
+  .goal-day-strip-dow{ font-size: 9px; color: var(--ink-dim); text-transform: uppercase; }
+
+  .goal-stats-bar-wrap{ margin-top: 8px; }
+  .goal-stats-bar-track{ display:flex; width: 100%; height: 6px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--line) 60%, transparent); }
+  .goal-stats-bar-seg{ height: 100%; }
+  .goal-stats-seg-success{ background: #5cb85c; }
+  .goal-stats-seg-failed{ background: #e0555a; }
+  .goal-stats-seg-remaining{ background: rgba(255,255,255,0.15); }
+  .goal-stats-bar-label{ font-size: 10px; color: var(--ink-dim); margin-top: 4px; text-align: center; }
+
+  .goal-tracker-row-title-centered{
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 18px;
+    text-align: center; flex: 1;
+  }
+
   .goal-checklist-wrap{ width: 100%; margin: 8px 0; text-align: left; }
   .goal-checklist-row{
     display:flex; align-items:center; gap: 10px; padding: 6px 4px; border-radius: 8px;
@@ -1595,6 +1629,8 @@
   .goal-item-edit-target{ color: var(--ink-dim); font-size: 13px; }
   .goal-item-amount{ font-weight: 700; color: var(--gold); margin: 0 6px; }
   .goal-item-slider{ flex: 1; min-width: 80px; max-width: 140px; accent-color: var(--gold); cursor: pointer; }
+  .goal-numeric-slider-row{ display:flex; align-items:center; gap: 10px; }
+  .goal-numeric-slider-row .goal-item-slider{ max-width: none; }
   .goal-week-row-label{ display:flex; align-items:center; }
   .goal-item-avatars{ display:flex; gap: 3px; margin-left: 8px; }
   .goal-progress-bar-wrap{
@@ -1616,6 +1652,10 @@
   }
   .goal-featured-top{ display:flex; align-items:center; }
   .goal-add-new-btn{ font-size: 12.5px; }
+  @media (max-width: 640px){
+    .goal-featured-top{ width: 100%; }
+    .goal-add-new-btn{ width: 100%; }
+  }
   .goal-help-btn{ font-size: 12.5px; opacity: 0.85; }
   .goal-featured-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size: 19px; color: var(--gold); }
   .goal-featured-title-centered{
@@ -1659,7 +1699,7 @@
   .goal-period-edit{ background:none; border:none; color: var(--ink-dim); cursor:pointer; font-size: 13.5px; padding: 0; text-decoration: underline dotted; }
   .goal-period-edit:hover{ color: var(--gold); }
   .goal-featured-body{ display:flex; gap: 20px; align-items:flex-start; flex-wrap: wrap; }
-  .goal-featured-list{ flex: 1; min-width: 220px; max-height: 320px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+  .goal-featured-list{ flex: 1; min-width: 220px; max-height: 320px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
   .goal-featured-list.dense .goal-featured-item{ padding: 4px 0; font-size: 12.5px; }
   .goal-featured-item{
     display:flex; align-items:center; gap: 10px; padding: 8px 0;
@@ -3886,7 +3926,7 @@ async function listGoalItemProgress(goalId){
 // участника должно писаться в ОДНУ и ту же общую запись (привязанную к владельцу цели),
 // а не в свою отдельную. В режиме "Соревнование" у каждого по-прежнему своя запись.
 function goalProgressUid(goal){
-  return goal.mode === 'shared' ? goal.owner_uid : state.user.uid;
+  return state.user.uid;
 }
 
 async function toggleGoalItemDone(goal, itemId, itemProgress){
@@ -3963,16 +4003,26 @@ function computeGoalPercent(goal, progressEntries, forUid, itemProgress){
   if(goal.kind === 'checklist'){
     const items = goal.items || [];
     if(!items.length) return 0;
-    const uid = goal.mode === 'shared' ? goal.owner_uid : (forUid || state.user.uid);
-    const mine = (itemProgress||[]).filter(p => p.uid === uid);
     let doneShare = 0;
     items.forEach(it => {
-      const rec = mine.find(p => p.item_id === it.id);
-      const val = rec ? Number(rec.value) : 0;
-      if(it.target){
-        doneShare += Math.min(1, val / it.target);
+      if(goal.mode === 'shared'){
+        // Совместный режим — считаем общий вклад всех участников на этот пункт.
+        const allForItem = (itemProgress||[]).filter(p => p.item_id === it.id);
+        if(it.target){
+          const sum = allForItem.reduce((s,p) => s + Number(p.value||0), 0);
+          doneShare += Math.min(1, sum / it.target);
+        } else {
+          doneShare += allForItem.some(p => Number(p.value) > 0) ? 1 : 0;
+        }
       } else {
-        doneShare += val > 0 ? 1 : 0;
+        const uid = forUid || state.user.uid;
+        const rec = (itemProgress||[]).find(p => p.uid === uid && p.item_id === it.id);
+        const val = rec ? Number(rec.value) : 0;
+        if(it.target){
+          doneShare += Math.min(1, val / it.target);
+        } else {
+          doneShare += val > 0 ? 1 : 0;
+        }
       }
     });
     return Math.min(100, (doneShare/items.length)*100);
@@ -4141,7 +4191,7 @@ function openGoalModal(presetKind){
   const ov = document.createElement('div');
   ov.className = 'send-preview-overlay';
   const box = document.createElement('div');
-  box.className = 'send-preview-box';
+  box.className = 'send-preview-box goal-create-box';
   box.appendChild(el('div','','Новый план')).style.cssText = 'font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:17px;';
 
   const titleWrap = el('div','');
@@ -4333,7 +4383,9 @@ async function openGoalDetail(goal){
   document.body.appendChild(ov);
 
   let progress = [];
+  let itemProgress = [];
   try{ progress = await listGoalProgress(goal.id); }catch(e){ console.error('load goal progress failed', e); }
+  try{ itemProgress = await listGoalItemProgress(goal.id); }catch(e){ console.error('load goal item progress failed', e); }
 
   const mine = goal.owner_uid === state.user.uid;
   const allPeople = [{ uid: goal.owner_uid, name: goal.owner_name }, ...(goal.participants||[])];
@@ -4361,6 +4413,17 @@ async function openGoalDetail(goal){
         catch(e){ showToast('Не удалось удалить: '+e.message); }
       }, 'Удалить');
       titleRow.appendChild(delBtn);
+    } else {
+      const leaveBtn = el('button','btn ghost icon-only-btn', CHAT_ICONS.trash);
+      leaveBtn.title = 'Удалить у себя';
+      leaveBtn.onclick = () => showConfirmModal('Удалить этот план у себя? Он пропадёт из вашего списка, но ваш прогресс сохранится.', async () => {
+        try{
+          const newParticipants = (goal.participants||[]).filter(p => p.uid !== state.user.uid);
+          await updateGoal(goal.id, { participants: newParticipants });
+          state.goalsLoaded = false; ov.remove(); render();
+        }catch(e){ showToast('Не удалось удалить: '+e.message); }
+      }, 'Удалить у себя');
+      titleRow.appendChild(leaveBtn);
     }
     box.appendChild(titleRow);
 
@@ -4377,13 +4440,21 @@ async function openGoalDetail(goal){
 
     if(goal.kind === 'habit'){
       const streak = computeGoalStreak(progress, goal.mode === 'competition' ? state.user.uid : null);
-      box.appendChild(el('div','goal-streak-big', `🔥 ${streak} ${streak===1?'день':'дней'} подряд`));
+      box.appendChild(el('div','goal-streak-big', `🔥 ${streak} ${streak===1?'день':(streak>=2&&streak<=4?'дня':'дней')} подряд`));
 
-      box.appendChild(buildGoalWeekRow(progress, state.user.uid, uniquePeople.length > 1 ? 'Вы' : null, goal.id, () => { listGoalProgress(goal.id).then(p => { progress = p; draw(); }); }));
+      box.appendChild(buildGoalDayStrip(progress, state.user.uid, goal.id, true, () => { listGoalProgress(goal.id).then(p => { progress = p; draw(); }); }));
       uniquePeople.filter(p => p.uid !== state.user.uid).forEach(p => {
-        box.appendChild(buildGoalWeekRow(progress, p.uid, p.name, null, null));
+        const otherWrap = el('div','goal-week-row-wrap');
+        const labelRow = el('div','goal-week-row-label');
+        const av = el('div','avatar-circle', (p.name||'?')[0].toUpperCase());
+        av.style.width='18px'; av.style.height='18px'; av.style.fontSize='9px'; av.style.marginRight='5px';
+        fillAvatarAsync(av, p.uid);
+        labelRow.appendChild(av); labelRow.appendChild(el('span','meta', p.name));
+        otherWrap.appendChild(labelRow);
+        otherWrap.appendChild(buildGoalDayStrip(progress, p.uid, null, false, null));
+        box.appendChild(otherWrap);
       });
-      box.appendChild(buildGoalTimeElapsedBar(goal));
+      box.appendChild(buildGoalStatsBar(goal, progress));
 
       const todayKey = goalDayKey();
       const doneToday = progress.some(p => p.uid === state.user.uid && p.day === todayKey && Number(p.value) > 0);
@@ -4414,29 +4485,39 @@ async function openGoalDetail(goal){
       const total = progress.filter(p => !forUid || p.uid === forUid).reduce((s,p)=>s+Number(p.value||0),0);
       box.appendChild(el('div','meta', `${total} из ${goal.target_value||'?'} ${goal.unit||''}`));
       const todayKey = goalDayKey();
-      const logRow = el('div','event-modal-row');
-      const amountInput = document.createElement('input'); amountInput.type='number'; amountInput.placeholder='Добавить за сегодня';
-      const logBtn = el('button','btn','Добавить');
-      logBtn.onclick = async () => {
-        const v = parseFloat(amountInput.value);
-        if(!v && v !== 0) return;
-        const existing = progress.find(p => p.uid===state.user.uid && p.day===todayKey);
-        const newVal = (existing ? Number(existing.value) : 0) + v;
-        try{ await logGoalProgress(goal.id, todayKey, newVal); progress = await listGoalProgress(goal.id); draw(); }
-        catch(e){ showToast('Не получилось сохранить: '+e.message); }
-      };
-      logRow.appendChild(amountInput); logRow.appendChild(logBtn);
+      const existingToday = progress.find(p => p.uid===state.user.uid && p.day===todayKey);
+      const todayVal = existingToday ? Number(existingToday.value) : 0;
+      const logRow = el('div','');
+      logRow.appendChild(el('div','top-tag','Сегодня'));
+      const sliderRow = el('div','goal-numeric-slider-row');
+      const numSlider = document.createElement('input');
+      numSlider.type = 'range'; numSlider.min = '0';
+      numSlider.max = String(Math.max(Number(goal.target_value)||10, todayVal, 10));
+      numSlider.step = '1'; numSlider.value = String(todayVal);
+      numSlider.className = 'goal-item-slider';
+      const numAmt = el('span','goal-item-amount', String(todayVal));
+      numSlider.addEventListener('input', () => { numAmt.textContent = numSlider.value; });
+      numSlider.addEventListener('change', async () => {
+        try{
+          await logGoalProgress(goal.id, todayKey, parseInt(numSlider.value, 10));
+          progress = await listGoalProgress(goal.id);
+          draw();
+        }catch(e){ showToast('Не получилось сохранить: '+e.message); }
+      });
+      sliderRow.appendChild(numSlider); sliderRow.appendChild(numAmt);
+      logRow.appendChild(sliderRow);
       box.appendChild(logRow);
     } else {
       // Чек-лист: список из нескольких дел. У дела может быть количество ("20/100" с +/-)
       // или просто галочка. В общем режиме — один список, у каждого дела мини-аватарки
       // тех, кто его выполнил. В режиме соревнования — у каждого свой список, ниже.
-      const pct = computeGoalPercent(goal, progress, state.user.uid);
+      const pct = computeGoalPercent(goal, progress, state.user.uid, itemProgress);
       box.appendChild(buildProgressRing(pct, 84, goal.color || 'var(--gold)'));
 
       function itemRow(item, uid, interactive){
         const row = el('div','goal-checklist-row' + (interactive ? ' interactive' : ''));
-        const myVal = (goal.done_by||{})[uid]?.[item.id];
+        const myRec = itemProgress.find(p => p.uid === uid && p.item_id === item.id);
+        const myVal = myRec ? myRec.value : null;
         if(item.target){
           const cur = Number(myVal) || 0;
           row.appendChild(el('span','', item.text));
@@ -4450,8 +4531,11 @@ async function openGoalDetail(goal){
             slider.addEventListener('click', (e) => e.stopPropagation());
             slider.addEventListener('input', () => { amt.textContent = `${slider.value}/${item.target}`; });
             slider.addEventListener('change', async () => {
-              try{ await logGoalItemProgress(goal.id, item.id, parseInt(slider.value, 10), goalProgressUid(goal)); draw(); }
-              catch(err){ showToast('Ошибка: '+err.message); }
+              try{
+                await logGoalItemProgress(goal.id, item.id, parseInt(slider.value, 10), goalProgressUid(goal));
+                itemProgress = await listGoalItemProgress(goal.id);
+                draw();
+              }catch(err){ showToast('Ошибка: '+err.message); }
             });
             row.appendChild(slider);
           }
@@ -4462,8 +4546,11 @@ async function openGoalDetail(goal){
           row.appendChild(el('span','', item.text));
           if(interactive){
             row.onclick = async () => {
-              try{ await toggleGoalItemDone(goal, item.id); draw(); }
-              catch(e){ showToast('Не получилось сохранить: '+e.message); }
+              try{
+                await toggleGoalItemDone(goal, item.id, itemProgress);
+                itemProgress = await listGoalItemProgress(goal.id);
+                draw();
+              }catch(e){ showToast('Не получилось сохранить: '+e.message); }
             };
           }
         }
@@ -4490,10 +4577,10 @@ async function openGoalDetail(goal){
         (goal.items||[]).forEach(item => {
           const row = itemRow(item, state.user.uid, true);
           if(uniquePeople.length > 1){
-            const doneBy = goal.done_by || {};
             const completers = uniquePeople.filter(p => {
-              const v = doneBy[p.uid]?.[item.id];
-              return item.target ? (Number(v)||0) >= item.target : !!v;
+              const rec = itemProgress.find(rp => rp.uid === p.uid && rp.item_id === item.id);
+              const v = rec ? Number(rec.value) : 0;
+              return item.target ? v >= item.target : v > 0;
             });
             if(completers.length){
               const avGroup = el('div','goal-item-avatars');
@@ -4909,17 +4996,89 @@ function buildGoalTimeElapsedBar(goal){
   return wrap;
 }
 
+// Горизонтальная лента дней трекера — сегодня по центру, прошедшие дни слева, будущие
+// справа, листается свайпом, по краям эффект "тумана" (плавно исчезают). У каждого дня —
+// число месяца. Можно отмечать/исправлять любой день, кроме будущих.
+function buildGoalDayStrip(progress, uid, goalId, editable, onToggle){
+  const DAYS_BEFORE = 20, DAYS_AFTER = 10;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dayNames = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+
+  const outer = el('div','goal-day-strip-outer');
+  const scroller = el('div','goal-day-strip-scroller');
+  let todayCellEl = null;
+  for(let i = -DAYS_BEFORE; i <= DAYS_AFTER; i++){
+    const d = new Date(today); d.setDate(today.getDate() + i);
+    const key = goalDayKey(d);
+    const entry = progress.find(p => p.uid === uid && p.day === key);
+    const isFuture = i > 0;
+    const cell = el('div','goal-day-strip-cell');
+    if(i === 0){ cell.classList.add('is-today'); todayCellEl = cell; }
+    if(!isFuture){
+      if(entry && Number(entry.value) > 0) cell.classList.add('done');
+      else if(entry && Number(entry.value) <= 0) cell.classList.add('failed');
+    }
+    cell.appendChild(el('div','goal-day-strip-num', String(d.getDate())));
+    cell.appendChild(el('div','goal-day-strip-dow', dayNames[d.getDay()]));
+    if(editable && !isFuture && uid === state.user.uid){
+      cell.classList.add('clickable');
+      cell.onclick = async () => {
+        const done = entry && Number(entry.value) > 0;
+        try{ await logGoalProgress(goalId, key, done ? 0 : 1); onToggle(); }
+        catch(err){ showToast('Не получилось сохранить: '+err.message); }
+      };
+    }
+    scroller.appendChild(cell);
+  }
+  outer.appendChild(scroller);
+  setTimeout(() => {
+    if(todayCellEl) outer.scrollLeft = Math.max(0, todayCellEl.offsetLeft - outer.clientWidth/2 + todayCellEl.clientWidth/2);
+  }, 0);
+  return outer;
+}
+
+// Полоска статистики трекера: сколько дней подряд выполнялось (зелёным), сколько сорвано
+// (красным), сколько ещё осталось до конца срока (чёрным/нейтральным) — в процентах.
+function buildGoalStatsBar(goal, progress){
+  const uid = state.user.uid;
+  const now = new Date(); now.setHours(0,0,0,0);
+  const start = new Date(goal.start_ts); start.setHours(0,0,0,0);
+  const end = new Date(goal.end_ts); end.setHours(0,0,0,0);
+  const totalDays = Math.max(1, Math.round((end - start) / 86400000) + 1);
+  let success = 0, failed = 0;
+  for(let d = new Date(start); d <= end && d <= now; d.setDate(d.getDate()+1)){
+    const key = goalDayKey(d);
+    const entry = progress.find(p => p.uid === uid && p.day === key);
+    if(entry && Number(entry.value) > 0) success++;
+    else if(entry && Number(entry.value) <= 0) failed++;
+  }
+  const pctS = Math.round(success/totalDays*100);
+  const pctF = Math.round(failed/totalDays*100);
+  const pctR = Math.max(0, 100 - pctS - pctF);
+
+  const wrap = el('div','goal-stats-bar-wrap');
+  const track = el('div','goal-stats-bar-track');
+  const segS = el('div','goal-stats-bar-seg goal-stats-seg-success'); segS.style.width = pctS+'%';
+  const segF = el('div','goal-stats-bar-seg goal-stats-seg-failed'); segF.style.width = pctF+'%';
+  const segR = el('div','goal-stats-bar-seg goal-stats-seg-remaining'); segR.style.width = pctR+'%';
+  track.appendChild(segS); track.appendChild(segF); track.appendChild(segR);
+  wrap.appendChild(track);
+  wrap.appendChild(el('div','goal-stats-bar-label', `${pctS}% выполнено · ${pctF}% сорвано · ${pctR}% осталось`));
+  return wrap;
+}
+
 function buildInlineHabitRow(goal){
   const row = el('div','goal-tracker-row');
-  row.onclick = () => openGoalDetail(goal);
   const topLine = el('div','goal-tracker-row-top');
-  topLine.appendChild(el('div','goal-tracker-row-title', goal.title));
+  topLine.style.cursor = 'pointer';
+  topLine.onclick = () => openGoalDetail(goal);
+  topLine.appendChild(el('div','goal-tracker-row-title-centered', goal.title));
   const streakBadge = el('div','goal-streak-badge','🔥 …');
   topLine.appendChild(streakBadge);
   row.appendChild(topLine);
 
-  const weeksWrap = el('div','');
-  row.appendChild(weeksWrap);
+  const stripsWrap = el('div','');
+  row.appendChild(stripsWrap);
   const barWrap = el('div','');
   row.appendChild(barWrap);
 
@@ -4931,13 +5090,24 @@ function buildInlineHabitRow(goal){
   function refresh(){
     listGoalProgress(goal.id).then(progress => {
       const streak = computeGoalStreak(progress, goal.mode === 'competition' ? state.user.uid : null);
-      streakBadge.textContent = `🔥 ${streak}`;
-      weeksWrap.innerHTML = '';
+      streakBadge.textContent = `🔥 ${streak} ${streak===1?'день':(streak>=2&&streak<=4?'дня':'дней')} подряд`;
+      stripsWrap.innerHTML = '';
       relevantPeople.forEach(p => {
-        weeksWrap.appendChild(buildGoalWeekRow(progress, p.uid, showNames ? (p.uid === state.user.uid ? 'Вы' : p.name) : null, goal.id, refresh));
+        const personWrap = el('div','goal-week-row-wrap');
+        if(showNames){
+          const labelRow = el('div','goal-week-row-label');
+          const av = el('div','avatar-circle', (p.uid===state.user.uid?'Вы':p.name||'?')[0].toUpperCase());
+          av.style.width = '18px'; av.style.height = '18px'; av.style.fontSize = '9px'; av.style.marginRight = '5px';
+          fillAvatarAsync(av, p.uid);
+          labelRow.appendChild(av);
+          labelRow.appendChild(el('span','meta', p.uid === state.user.uid ? 'Вы' : p.name));
+          personWrap.appendChild(labelRow);
+        }
+        personWrap.appendChild(buildGoalDayStrip(progress, p.uid, goal.id, true, refresh));
+        stripsWrap.appendChild(personWrap);
       });
       barWrap.innerHTML = '';
-      barWrap.appendChild(buildGoalTimeElapsedBar(goal));
+      barWrap.appendChild(buildGoalStatsBar(goal, progress));
     }).catch(()=>{});
   }
   refresh();
@@ -5012,27 +5182,12 @@ function buildFeaturedChecklistCard(checklists, index){
   const helpBtn = el('button','btn ghost goal-help-btn','+ Позвать на помощь');
   helpBtn.onclick = (e) => {
     e.stopPropagation();
-    // Открываем мини-поповер с поиском прямо под кнопкой
-    const rect = helpBtn.getBoundingClientRect();
-    const existing = document.getElementById('help-picker-popup'); if(existing) existing.remove();
-    const popup = el('div','emoji-picker'); popup.id = 'help-picker-popup';
-    popup.style.left = rect.left + 'px'; popup.style.top = (rect.bottom + 6) + 'px'; popup.style.width='260px'; popup.style.maxHeight='none';
-    const picker = buildContactSearchPicker({
-      excludeUids: () => [goal.owner_uid, ...(goal.participants||[]).map(p=>p.uid)],
-      onSelect: async (f) => {
-        popup.remove();
-        try{
-          const participants = [...(goal.participants||[]), { uid: f.uid, name: f.name }];
-          await updateGoal(goal.id, { participants, mode: goal.mode === 'solo' ? 'shared' : goal.mode });
-          state.goalsLoaded = false; render();
-        }catch(err){ showToast('Не удалось добавить: '+err.message); }
-      },
+    openParticipantPicker((goal.participants||[]), async (newParticipants) => {
+      try{
+        await updateGoal(goal.id, { participants: newParticipants, mode: goal.mode === 'solo' ? 'shared' : goal.mode });
+        state.goalsLoaded = false; render();
+      }catch(err){ showToast('Не удалось добавить: '+err.message); }
     });
-    popup.appendChild(picker);
-    document.body.appendChild(popup);
-    setTimeout(() => document.addEventListener('click', function closeHelp(ev){
-      if(!popup.contains(ev.target) && ev.target !== helpBtn){ popup.remove(); document.removeEventListener('click', closeHelp); }
-    }), 0);
   };
 
   const metaRow = el('div','goal-featured-meta');
@@ -13066,6 +13221,7 @@ function renderAuth(){
       state.screen = state.graph ? 'result' : 'story';
       render();
       refreshNotificationCounts().then(render);
+      listMyCalendarEvents().then(evts => { state.calendarEvents = evts; state.calendarEventsLoaded = true; }).catch(()=>{});
       startNotificationPolling();
       startCalendarRealtime();
       loadCalendarNotifications();
@@ -14305,6 +14461,7 @@ if(supabaseReady){
           if(!restored) openMessagesTab();
         }
         refreshNotificationCounts().then(render);
+        listMyCalendarEvents().then(evts => { state.calendarEvents = evts; state.calendarEventsLoaded = true; }).catch(()=>{});
         startNotificationPolling();
         startCalendarRealtime();
         loadCalendarNotifications();
