@@ -507,6 +507,7 @@
   }
 
   .people-grid{ display:flex; flex-direction:column; gap:10px; margin-top: 20px; }
+  .shell-sidebar .people-grid{ gap: 5px; margin-top: 8px; }
   .person-row{
     display:flex; justify-content:space-between; align-items:center;
     background: var(--bg-soft); border:1px solid var(--line);
@@ -1314,6 +1315,8 @@
     width: 20px; height: 20px; font-size: 9px; border: 1.5px solid var(--bg); margin-left: -6px;
   }
   .calendar-day-simple-avatars .avatar-circle:first-child{ margin-left: 0; }
+  .calendar-day-simple-actions{ display:flex; gap: 4px; flex-shrink: 0; }
+  .calendar-day-simple-actions .icon-only-btn{ width: 28px; height: 28px; font-size: 13px; }
   .calendar-day-simple-dot{ width: 8px; height: 8px; border-radius: 50%; background: var(--chip-color, #4a9eda); flex-shrink: 0; }
   .calendar-day-simple-info{ flex: 1; min-width: 0; }
   .calendar-day-simple-title{ font-size: 13.5px; color: var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1591,6 +1594,8 @@
   .goal-item-edit-text{ flex: 1; }
   .goal-item-edit-target{ color: var(--ink-dim); font-size: 13px; }
   .goal-item-amount{ font-weight: 700; color: var(--gold); margin: 0 6px; }
+  .goal-item-slider{ flex: 1; min-width: 80px; max-width: 140px; accent-color: var(--gold); cursor: pointer; }
+  .goal-week-row-label{ display:flex; align-items:center; }
   .goal-item-avatars{ display:flex; gap: 3px; margin-left: 8px; }
   .goal-progress-bar-wrap{
     width: 100%; height: 8px; border-radius: 999px; margin-top: 10px;
@@ -1654,7 +1659,7 @@
   .goal-period-edit{ background:none; border:none; color: var(--ink-dim); cursor:pointer; font-size: 13.5px; padding: 0; text-decoration: underline dotted; }
   .goal-period-edit:hover{ color: var(--gold); }
   .goal-featured-body{ display:flex; gap: 20px; align-items:flex-start; flex-wrap: wrap; }
-  .goal-featured-list{ flex: 1; min-width: 220px; max-height: 320px; overflow-y: auto; }
+  .goal-featured-list{ flex: 1; min-width: 220px; max-height: 320px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
   .goal-featured-list.dense .goal-featured-item{ padding: 4px 0; font-size: 12.5px; }
   .goal-featured-item{
     display:flex; align-items:center; gap: 10px; padding: 8px 0;
@@ -4438,11 +4443,17 @@ async function openGoalDetail(goal){
           const amt = el('span','goal-item-amount', `${cur}/${item.target}`);
           row.appendChild(amt);
           if(interactive){
-            const minus = el('button','btn ghost icon-only-btn','−');
-            minus.onclick = async (e) => { e.stopPropagation(); try{ await logGoalItemAmount(goal, item.id, -1); draw(); }catch(err){ showToast('Ошибка: '+err.message); } };
-            const plus = el('button','btn ghost icon-only-btn','+');
-            plus.onclick = async (e) => { e.stopPropagation(); try{ await logGoalItemAmount(goal, item.id, 1); draw(); }catch(err){ showToast('Ошибка: '+err.message); } };
-            row.appendChild(minus); row.appendChild(plus);
+            const slider = document.createElement('input');
+            slider.type = 'range'; slider.min = '0'; slider.max = String(item.target); slider.step = '1';
+            slider.value = String(cur);
+            slider.className = 'goal-item-slider';
+            slider.addEventListener('click', (e) => e.stopPropagation());
+            slider.addEventListener('input', () => { amt.textContent = `${slider.value}/${item.target}`; });
+            slider.addEventListener('change', async () => {
+              try{ await logGoalItemProgress(goal.id, item.id, parseInt(slider.value, 10), goalProgressUid(goal)); draw(); }
+              catch(err){ showToast('Ошибка: '+err.message); }
+            });
+            row.appendChild(slider);
           }
         } else {
           const done = !!myVal;
@@ -4842,7 +4853,15 @@ function buildGoalWeekRow(progress, uid, label, goalId, onToggle){
   const dayLetters = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 
   const wrap = el('div','goal-week-row-wrap');
-  if(label) wrap.appendChild(el('div','meta', label));
+  if(label){
+    const labelRow = el('div','goal-week-row-label');
+    const av = el('div','avatar-circle', (label||'?')[0].toUpperCase());
+    av.style.width = '18px'; av.style.height = '18px'; av.style.fontSize = '9px'; av.style.marginRight = '5px';
+    if(uid) fillAvatarAsync(av, uid);
+    labelRow.appendChild(av);
+    labelRow.appendChild(el('span','meta', label));
+    wrap.appendChild(labelRow);
+  }
   const row = el('div','goal-week-row');
   weekDates.forEach((d, i) => {
     const key = goalDayKey(d);
@@ -5081,7 +5100,7 @@ function buildFeaturedChecklistCard(checklists, index){
     // обычным нажатиям внутри карточки.
     let cardSwipeX = null, cardSwipeY = null;
     card.addEventListener('touchstart', (e) => {
-      if(e.target.closest && e.target.closest('button, input, .goal-pager-icon')) { cardSwipeX = null; return; }
+      if(e.target.closest && e.target.closest('button, input, .goal-pager-icon, .goal-featured-list')) { cardSwipeX = null; return; }
       cardSwipeX = e.touches[0].clientX; cardSwipeY = e.touches[0].clientY;
     }, { passive: true });
     card.addEventListener('touchend', (e) => {
@@ -5461,6 +5480,33 @@ function renderCalendarScreen(){
           miniAvatars.appendChild(av);
         });
         row.appendChild(miniAvatars);
+      }
+      if(item.event && !item.isBirthday){
+        const myPart = (item.event.participants||[]).find(p => p.uid === state.user.uid);
+        if(myPart && myPart.status === 'pending' && item.event.owner_uid !== state.user.uid){
+          const inlineActions = el('div','calendar-day-simple-actions');
+          const acceptBtn = el('button','btn icon-only-btn','✓');
+          acceptBtn.title = 'Принять';
+          acceptBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const doAccept = async () => {
+              try{ await respondToCalendarEvent(item.event, 'confirmed'); invalidateCalendarCache(); renderCalendarPreservingScroll(); }
+              catch(err){ console.error('accept event failed', err); showToast('Не удалось принять: ' + err.message); }
+            };
+            if(hasCalendarConflict(item.start, item.end, item.event.id)){
+              showConfirmModal('У вас уже есть событие в это же время. Всё равно принять?', doAccept, 'Всё равно принять');
+            } else { doAccept(); }
+          };
+          const declineBtn = el('button','btn ghost icon-only-btn','✕');
+          declineBtn.title = 'Отклонить';
+          declineBtn.onclick = async (e) => {
+            e.stopPropagation();
+            try{ await respondToCalendarEvent(item.event, 'declined'); invalidateCalendarCache(); renderCalendarPreservingScroll(); }
+            catch(err){ console.error('decline event failed', err); showToast('Не удалось отклонить: ' + err.message); }
+          };
+          inlineActions.appendChild(acceptBtn); inlineActions.appendChild(declineBtn);
+          row.appendChild(inlineActions);
+        }
       }
       row.onclick = () => openDayDetail(selDay.year, selDay.month, selDay.day, [item]);
       dayPanelItems.appendChild(row);
