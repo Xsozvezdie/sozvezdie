@@ -11478,13 +11478,16 @@ function buildChatPanel(container){
         } else if(result.dataUrl.length > MAX_UPLOAD_CHARS){
           showToast('Запись слишком длинная для отправки — попробуй короче или тише качеством');
         } else if(constraints.video){
-          // проверяем на этом же устройстве, что видео реально проигрывается — иначе не отправляем вслепую
-          const playable = await testVideoPlayable(result.dataUrl);
-          if(!playable.ok){
-            showToast('Это устройство не смогло воспроизвести свою же запись (код ' + playable.code + ') — формат видео здесь не поддерживается, отправка отменена');
-          } else {
-            await onFinish(result.dataUrl, transcript);
-          }
+          // Раньше здесь была жёсткая блокировка отправки, если локальная проверка
+          // "проигрывается ли своя же запись" не проходила — но эта проверка оказалась
+          // ненадёжной на некоторых устройствах (ложно считала нормальные записи
+          // "неподдерживаемыми"). Теперь только логируем результат для отладки, но не
+          // мешаем отправке — настоящая проверка это то, проигрывается ли видео у
+          // ПОЛУЧАТЕЛЯ, когда файл уже лежит в хранилище, а не локальный blob-тест.
+          testVideoPlayable(result.dataUrl).then(playable => {
+            if(!playable.ok) console.warn('local playability check failed (ignored):', playable.code);
+          });
+          await onFinish(result.dataUrl, transcript);
         } else {
           await onFinish(result.dataUrl, transcript);
         }
