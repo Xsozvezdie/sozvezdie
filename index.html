@@ -779,6 +779,17 @@
   }
   .record-cancel-hint.armed{ background: #e6453a; color: #fff; }
   .record-cancel-btn{ margin-left: 4px; color: #e6453a; }
+  .record-lock-hint{
+    position: fixed; z-index: 3000; background: var(--bg-soft); color: var(--ink-dim);
+    padding: 6px 12px; border-radius: 14px; font-size: 12.5px; white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25); pointer-events: none;
+  }
+  .record-control-bar{
+    position: fixed; z-index: 3000; display: flex; align-items: center; gap: 6px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  }
+  .record-control-bar .icon-only-btn{ width: 34px; height: 34px; font-size: 15px; }
   .blocked-chat-bar{
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 10px 12px; background: rgba(230,69,58,0.12); border-radius: 12px; font-size: 13px;
@@ -8344,13 +8355,19 @@ function recordMedia(constraints, maxSeconds, onTick, recorderOptions, onStreamR
       clearInterval(tickTimer);
       if(recorder.state !== 'inactive') recorder.stop();
     }
+    // Пауза/возобновление — та же самая запись продолжается тем же файлом (не через
+    // склейку кусков), просто MediaRecorder временно перестаёт писать.
+    function pause(){ if(recorder.state === 'recording') recorder.pause(); }
+    function resume(){ if(recorder.state === 'paused') recorder.resume(); }
+    function isPaused(){ return recorder.state === 'paused'; }
     const tickTimer = setInterval(() => {
+      if(recorder.state !== 'recording') return; // на паузе время не идёт
       seconds += 1;
       if(onTick) onTick(seconds);
       if(seconds >= maxSeconds) stop();
     }, 1000);
     recorder.start();
-    return { stop, finished, stream };
+    return { stop, finished, stream, pause, resume, isPaused };
   });
 }
 
@@ -11383,7 +11400,11 @@ function buildChatPanel(container){
           cancelHint.style.left = (rect.left - 160) + 'px';
           cancelHint.style.top = (rect.top - 6) + 'px';
         }
-        maxTimer = setTimeout(() => { if(active) finish(); }, maxSeconds*1000 + 300);
+        // Настоящее ограничение по длительности уже учитывает паузу внутри самой записи
+        // (см. recordMedia) — этот таймер только подстраховка на случай, если что-то
+        // зависло; делаем его гораздо более щедрым, чтобы не обрезать запись раньше
+        // времени из-за долгой паузы.
+        maxTimer = setTimeout(() => { if(active) finish(); }, maxSeconds*1000*10 + 300);
       }catch(e){
         console.error('recording start failed', e);
         showToast('Микрофон/камера недоступны: ' + (e.name || e.message || 'нет доступа'));
@@ -11401,6 +11422,7 @@ function buildChatPanel(container){
       if(previewBackdrop){ previewBackdrop.remove(); previewBackdrop = null; }
       if(opts.transcribe) stopTranscription();
       cleanupCancelHint();
+      cleanupLockUi();
       btn.classList.remove('recording');
       btn.innerHTML = icon;
       showToast('Запись отменена');
@@ -11415,6 +11437,7 @@ function buildChatPanel(container){
       if(previewEl){ previewEl.remove(); previewEl = null; }
       if(previewBackdrop){ previewBackdrop.remove(); previewBackdrop = null; }
       cleanupCancelHint();
+      cleanupLockUi();
       const transcript = opts.transcribe ? stopTranscription() : '';
       try{
         const result = await rec.finished;
@@ -11457,12 +11480,90 @@ function buildChatPanel(container){
       cancelBtnEl.onclick = (e) => { e.stopPropagation(); e.preventDefault(); cancel(); };
     }
 
+    // "Замок" — для видеокружочков (и вообще где opts.lockable): смахнув вверх во время
+    // удержания, можно отпустить палец, не останавливая запись — дальше управление идёт
+    // через отдельную панель (пауза/переключить камеру/отправить/удалить), как в Телеграме.
+    let locked = false;
+    let lockHint = null;
+    let controlBar = null;
+    let startY = 0;
+    let currentFacing = (constraints.video && constraints.video.facingMode) || 'user';
+    const LOCK_THRESHOLD = 60;
+
+    function cleanupLockUi(){
+      if(lockHint){ lockHint.remove(); lockHint = null; }
+      if(controlBar){ controlBar.remove(); controlBar = null; }
+      locked = false;
+    }
+
+    function buildControlBar(){
+      const bar = el('div','record-control-bar');
+      const trashBtn = el('button','btn ghost icon-only-btn','🗑');
+      trashBtn.title = 'Удалить запись';
+      trashBtn.onclick = (e) => { e.stopPropagation(); e.preventDefault(); cancel(); };
+      bar.appendChild(trashBtn);
+
+      const pauseBtn = el('button','btn ghost icon-only-btn','⏸');
+      pauseBtn.title = 'Пауза';
+      pauseBtn.onclick = (e) => {
+        e.stopPropagation(); e.preventDefault();
+        if(!active) return;
+        if(active.isPaused()){ active.resume(); pauseBtn.textContent = '⏸'; pauseBtn.title = 'Пауза'; }
+        else { active.pause(); pauseBtn.textContent = '▶'; pauseBtn.title = 'Продолжить'; }
+      };
+      bar.appendChild(pauseBtn);
+
+      if(opts.cameraSwitchable){
+        const flipBtn = el('button','btn ghost icon-only-btn','🔄');
+        flipBtn.title = 'Переключить камеру';
+        flipBtn.onclick = async (e) => {
+          e.stopPropagation(); e.preventDefault();
+          if(!active || !active.stream) return;
+          const oldTrack = active.stream.getVideoTracks()[0];
+          const newFacing = currentFacing === 'user' ? 'environment' : 'user';
+          try{
+            const vc = (typeof constraints.video === 'object') ? constraints.video : {};
+            const newStream = await navigator.mediaDevices.getUserMedia({ video: { ...vc, facingMode: newFacing } });
+            const newTrack = newStream.getVideoTracks()[0];
+            if(oldTrack){ active.stream.removeTrack(oldTrack); oldTrack.stop(); }
+            active.stream.addTrack(newTrack);
+            currentFacing = newFacing;
+            if(previewEl) previewEl.srcObject = active.stream;
+          }catch(err){
+            console.error('camera switch failed', err);
+            showToast('Не удалось переключить камеру');
+          }
+        };
+        bar.appendChild(flipBtn);
+      }
+
+      const sendBtn = el('button','btn icon-only-btn','✓');
+      sendBtn.title = 'Отправить';
+      sendBtn.onclick = (e) => { e.stopPropagation(); e.preventDefault(); finish(); };
+      bar.appendChild(sendBtn);
+      return bar;
+    }
+
     let touchPendingStart = null;
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      startX = e.clientX;
+      startX = e.clientX; startY = e.clientY;
       if(e.pointerType === 'mouse'){
-        if(active) finish(); else { begin().then(() => { if(active && cancelBtnEl) cancelBtnEl.style.display = ''; }); }
+        if(active){ finish(); }
+        else {
+          begin().then(() => {
+            if(!active) return;
+            if(cancelBtnEl) cancelBtnEl.style.display = '';
+            if(opts.lockable){
+              locked = true;
+              controlBar = buildControlBar();
+              document.body.appendChild(controlBar);
+              const rect = btn.getBoundingClientRect();
+              controlBar.style.left = (rect.left - 120) + 'px';
+              controlBar.style.top = (rect.top - 54) + 'px';
+            }
+          });
+        }
       } else if(opts.onQuickTap){
         // На телефоне: ждём чуть-чуть, чтобы отличить короткий тап (переключить режим
         // голосовое/видео-кружок) от удержания (начать запись).
@@ -11472,8 +11573,28 @@ function buildChatPanel(container){
       }
     });
     btn.addEventListener('pointermove', (e) => {
-      if(!active || e.pointerType === 'mouse' || !opts.cancelable) return;
+      if(!active || e.pointerType === 'mouse' || locked) return;
       const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if(opts.lockable && dy < -LOCK_THRESHOLD && Math.abs(dy) > Math.abs(dx)){
+        locked = true;
+        if(lockHint){ lockHint.remove(); lockHint = null; }
+        cleanupCancelHint();
+        controlBar = buildControlBar();
+        document.body.appendChild(controlBar);
+        const rect = btn.getBoundingClientRect();
+        controlBar.style.left = (rect.left - 120) + 'px';
+        controlBar.style.top = (rect.top - 54) + 'px';
+        return;
+      }
+      if(opts.lockable && !lockHint && dy < 0){
+        lockHint = el('div','record-lock-hint','↑ смахни, чтобы зафиксировать');
+        document.body.appendChild(lockHint);
+        const rect = btn.getBoundingClientRect();
+        lockHint.style.left = (rect.left - 90) + 'px';
+        lockHint.style.top = (rect.top - 60) + 'px';
+      }
+      if(!opts.cancelable) return;
       if(dx < -CANCEL_THRESHOLD && !cancelPending){
         cancelPending = true;
         if(cancelHint){ cancelHint.textContent = 'Отпусти, чтобы отменить'; cancelHint.classList.add('armed'); }
@@ -11490,16 +11611,22 @@ function buildChatPanel(container){
         if(opts.onQuickTap) opts.onQuickTap();
         return;
       }
+      if(locked) return; // палец можно отпускать — запись продолжается, управление через панель
+      if(lockHint){ lockHint.remove(); lockHint = null; }
       if(cancelPending) cancel(); else finish();
     });
     btn.addEventListener('pointerleave', (e) => {
       if(e.pointerType === 'mouse') return;
       if(touchPendingStart){ clearTimeout(touchPendingStart); touchPendingStart = null; return; }
+      if(locked) return;
+      if(lockHint){ lockHint.remove(); lockHint = null; }
       if(active){ if(cancelPending) cancel(); else finish(); }
     });
     btn.addEventListener('pointercancel', (e) => {
       if(e.pointerType === 'mouse') return;
       if(touchPendingStart){ clearTimeout(touchPendingStart); touchPendingStart = null; return; }
+      if(locked) return;
+      if(lockHint){ lockHint.remove(); lockHint = null; }
       if(active) cancel();
     });
     if(!cancelBtnEl) return btn;
@@ -11521,9 +11648,11 @@ function buildChatPanel(container){
     recorderOptions: { audioBitsPerSecond: 12000 },
     onQuickTap: () => { chatMediaMode = 'video'; refreshComposeActionSlot(); },
   });
-  const videoCircleBtn = makeRecordButton(CHAT_ICONS.video, { video: { width: {ideal: 240}, height: {ideal: 240}, facingMode: 'user' }, audio: true }, 20, doSendVideo, {
-    title: 'На телефоне — зажми; на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 20 сек)',
+  const videoCircleBtn = makeRecordButton(CHAT_ICONS.video, { video: { width: {ideal: 240}, height: {ideal: 240}, facingMode: 'user' }, audio: true }, 60, doSendVideo, {
+    title: 'На телефоне — зажми (смахни вверх, чтобы зафиксировать и отпустить); на компьютере — клик, чтобы начать, и ещё клик, чтобы отправить (до 1 минуты)',
     livePreview: true,
+    lockable: true,
+    cameraSwitchable: true,
     recorderOptions: videoMime ? { mimeType: videoMime, videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 },
     onQuickTap: () => { chatMediaMode = 'voice'; refreshComposeActionSlot(); },
   });
