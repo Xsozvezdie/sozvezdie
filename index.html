@@ -1961,14 +1961,30 @@ const supabaseConfig = {
 
 let sb = null;
 let supabaseReady = false;
-try{
-  if(supabaseConfig.url && supabaseConfig.anonKey){
+function initSupabaseClient(attemptsLeft, isRetry){
+  try{
+    if(!supabaseConfig.url || !supabaseConfig.anonKey) return;
+    if(!window.supabase){
+      // Библиотека Supabase грузится отдельным файлом с CDN при каждом запуске (не лежит
+      // внутри этого файла) — на самой первой, "холодной" загрузке после установки
+      // приложения она иногда не успевает подгрузиться вовремя. Пробуем ещё раз чуть позже,
+      // прежде чем сдаваться.
+      if(attemptsLeft > 0){ setTimeout(() => initSupabaseClient(attemptsLeft - 1, true), 400); return; }
+      console.error('Supabase library failed to load from CDN after retries');
+      return;
+    }
     sb = window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey);
     supabaseReady = true;
+    // Если библиотека появилась только со второй попытки (сработал retry, значит первая
+    // отрисовка экрана уже могла показать ошибку "база данных не подключена") — обновляем
+    // экран. Этот код всегда выполняется отложенно через setTimeout, поэтому к этому
+    // моменту остальной скрипт уже точно выполнился и render/state существуют.
+    if(isRetry && typeof render === 'function') render();
+  }catch(e){
+    console.error('Supabase init failed', e);
   }
-}catch(e){
-  console.error('Supabase init failed', e);
 }
+initSupabaseClient(8, false);
 
 // В приложении на телефоне, пока оно свёрнуто (в фоне), таймеры JS могут не тикать —
 // из-за этого встроенное автопродление токена Supabase иногда не успевает сработать, и
