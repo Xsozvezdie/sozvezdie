@@ -1970,6 +1970,21 @@ try{
   console.error('Supabase init failed', e);
 }
 
+// В приложении на телефоне, пока оно свёрнуто (в фоне), таймеры JS могут не тикать —
+// из-за этого встроенное автопродление токена Supabase иногда не успевает сработать, и
+// после долгого простоя сессия "протухает" (JWT expired), ломая вообще всё сразу. При
+// возврате из фона явно "будим" автопродление и сразу же освежаем сессию.
+if(supabaseReady && window.Capacitor?.Plugins?.App){
+  window.Capacitor.Plugins.App.addListener('appStateChange', ({ isActive }) => {
+    if(isActive){
+      sb.auth.startAutoRefresh();
+      sb.auth.refreshSession().catch(e => console.error('session refresh on resume failed', e));
+    } else {
+      sb.auth.stopAutoRefresh();
+    }
+  });
+}
+
 // Логины у нас без email, но Firebase Auth умеет только email+пароль,
 // поэтому превращаем ник в служебный псевдо-адрес — пользователь его не видит.
 function hashUsername(name){
@@ -7137,15 +7152,12 @@ async function listFriends(){
 // именно это и было вероятной причиной, что видео-кружочки не проигрывались на части устройств.
 async function uploadMediaToStorage(dataUrl, kind){
   if(!supabaseReady) throw backendNotConfiguredError();
-  const commaIdx = dataUrl.indexOf(',');
-  const header = dataUrl.slice(0, commaIdx);
-  const base64 = dataUrl.slice(commaIdx + 1);
-  const mimeMatch = header.match(/data:(.*?);base64/);
-  const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
-  const bin = atob(base64);
-  const bytes = new Uint8Array(bin.length);
-  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
-  const blob = new Blob([bytes], { type: mime });
+  // Раньше здесь был ручной разбор через atob() — на некоторых устройствах он мог давать
+  // сбой (см. долгую историю с видео-кружочками). fetch() умеет превращать data-URL в файл
+  // сам, средствами самого браузера, без ручного разбора текста — надёжнее.
+  const resp = await fetch(dataUrl);
+  const blob = await resp.blob();
+  const mime = blob.type || 'application/octet-stream';
   const ext = (mime.split('/')[1] || 'bin').split(';')[0].split('+')[0];
   const path = `${state.user.uid}/${kind}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
   const { error } = await sb.storage.from('media').upload(path, blob, { contentType: mime });
@@ -9884,7 +9896,8 @@ function renderChatHeaderStatus(){
 
 function buildVoicePlayer(voiceData, transcript, waveform){
   const wrap = el('div','');
-  const audio = new Audio(dataUrlToObjectUrl(voiceData));
+  const audio = new Audio();
+  dataUrlToObjectUrl(voiceData).then(url => { audio.src = url; });
   const row = el('div','voice-bubble');
   const playBtn = el('div','voice-play','▶');
 
@@ -10216,32 +10229,27 @@ async function openForwardPickerMulti(messageIds){
 // Пробуем реально проиграть записанное видео на этом же устройстве — если браузер сам не может
 // декодировать то, что записал, лучше сказать об этом сразу, чем отправить нерабочий файл собеседнику.
 function testVideoPlayable(dataUrl){
-  return new Promise((resolve) => {
-    const url = dataUrlToObjectUrl(dataUrl);
+  return new Promise(async (resolve) => {
+    const url = await dataUrlToObjectUrl(dataUrl);
     const vid = document.createElement('video');
     vid.muted = true; vid.playsInline = true; vid.preload = 'auto';
     vid.style.cssText = 'position:fixed; left:-9999px; top:-9999px; width:2px; height:2px; opacity:0;';
     document.body.appendChild(vid);
     const timeout = setTimeout(() => { cleanup(); resolve({ ok:false, code:'timeout' }); }, 15000);
-    function cleanup(){ clearTimeout(timeout); URL.revokeObjectURL(url); vid.remove(); }
+    function cleanup(){ clearTimeout(timeout); if(url && url.startsWith('blob:')) URL.revokeObjectURL(url); vid.remove(); }
     vid.addEventListener('loadeddata', () => { cleanup(); resolve({ ok:true }); }, { once:true });
     vid.addEventListener('error', () => { const code = vid.error ? vid.error.code : '?'; cleanup(); resolve({ ok:false, code }); }, { once:true });
     vid.src = url;
   });
 }
 
-function dataUrlToObjectUrl(dataUrl){
+async function dataUrlToObjectUrl(dataUrl){
   if(!dataUrl || !dataUrl.startsWith('data:')) return dataUrl; // уже обычная ссылка (например, из Storage) — декодировать нечего
   try{
-    const commaIdx = dataUrl.indexOf(',');
-    const header = dataUrl.slice(0, commaIdx);
-    const base64 = dataUrl.slice(commaIdx + 1);
-    const mimeMatch = header.match(/data:(.*?);base64/);
-    const mime = mimeMatch ? mimeMatch[1] : '';
-    const bin = atob(base64);
-    const bytes = new Uint8Array(bin.length);
-    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
-    const blob = new Blob([bytes], { type: mime });
+    // Раньше здесь был ручной разбор через atob(), который на некоторых устройствах давал
+    // сбой — fetch() умеет превращать data-URL в файл сам, средствами браузера, надёжнее.
+    const resp = await fetch(dataUrl);
+    const blob = await resp.blob();
     return URL.createObjectURL(blob);
   }catch(e){
     console.error('dataUrlToObjectUrl failed', e);
@@ -10446,7 +10454,7 @@ function renderChatMessages(){
     if(m.videoData){
       const circleWrap = el('div','video-circle-wrap');
       const vid = document.createElement('video');
-      vid.src = dataUrlToObjectUrl(m.videoData);
+      dataUrlToObjectUrl(m.videoData).then(url => { vid.src = url; });
       vid.className = 'chat-video-circle';
       vid.loop = true; vid.muted = false; vid.playsInline = true; vid.preload = 'auto';
       const playOverlay = el('div','video-circle-play','▶');
