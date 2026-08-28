@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/core@latest/dist/capacitor.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
 
@@ -8396,9 +8397,16 @@ function recordMedia(constraints, maxSeconds, onTick, recorderOptions, onStreamR
     let seconds = 0;
     recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
     const finished = new Promise((resolve, reject) => {
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(chunks, { type: recorder.mimeType || (constraints.video ? 'video/webm' : 'audio/webm') });
+        let blob = new Blob(chunks, { type: recorder.mimeType || (constraints.video ? 'video/webm' : 'audio/webm') });
+        // MediaRecorder не записывает длительность в заголовок файла — некоторые
+        // устройства из-за этого отказываются проигрывать видео, когда оно загружено по
+        // прямой ссылке (а не как временный локальный файл). Дописываем длительность.
+        if(constraints.video && window.ysFixWebmDuration){
+          try{ blob = await window.ysFixWebmDuration(blob, seconds * 1000); }
+          catch(e){ console.error('fix webm duration failed', e); }
+        }
         const reader = new FileReader();
         reader.onload = () => resolve({ dataUrl: reader.result, seconds, sizeBytes: blob.size });
         reader.onerror = reject;
