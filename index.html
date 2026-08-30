@@ -7578,12 +7578,19 @@ async function refreshNotificationCounts(){
 function listenToMessages(chatId, callback){
   // Ограничиваем последними 80 сообщениями — раньше при каждом открытии чата
   // перезагружалась вся история целиком, из-за чего открытие ощущалось медленным.
+  let lastSnapshot = null;
   async function refetch(){
     const { data, error } = await sb.from('messages').select('*').eq('chat_id', chatId)
       .order('ts', { ascending: false }).limit(80);
     if(error){ console.error('chat listen failed', error); return; }
     const mapped = (data||[]).map(mapMessageRow).reverse();
     chatMessagesCache[chatId] = mapped;
+    // Не перерисовываем список заново, если сообщения на самом деле не поменялись —
+    // иначе видео/аудио внутри пересобирались бы с нуля на каждый тик подстраховочного
+    // опроса (каждые 5 секунд), даже когда ничего нового не приходило.
+    const snapshot = JSON.stringify(mapped);
+    if(snapshot === lastSnapshot) return;
+    lastSnapshot = snapshot;
     callback(mapped);
   }
   // Если чат уже открывали раньше в этой сессии — отдаём кэш немедленно,
