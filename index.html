@@ -8400,12 +8400,18 @@ function recordMedia(constraints, maxSeconds, onTick, recorderOptions, onStreamR
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         let blob = new Blob(chunks, { type: recorder.mimeType || (constraints.video ? 'video/webm' : 'audio/webm') });
+        const originalType = blob.type;
         // MediaRecorder не записывает длительность в заголовок файла — некоторые
         // устройства из-за этого отказываются проигрывать видео, когда оно загружено по
         // прямой ссылке (а не как временный локальный файл). Дописываем длительность.
         if(constraints.video && window.ysFixWebmDuration){
-          try{ blob = await window.ysFixWebmDuration(blob, seconds * 1000); }
-          catch(e){ console.error('fix webm duration failed', e); }
+          try{
+            const fixed = await window.ysFixWebmDuration(blob, seconds * 1000);
+            // На всякий случай явно возвращаем исходный тип файла — если библиотека при
+            // пересборке его потеряла, сервер мог бы отдавать файл без понятного заголовка,
+            // и видео отказалось бы открываться по прямой ссылке даже с верной длительностью.
+            blob = fixed.type ? fixed : new Blob([fixed], { type: originalType });
+          }catch(e){ console.error('fix webm duration failed', e); }
         }
         const reader = new FileReader();
         reader.onload = () => resolve({ dataUrl: reader.result, seconds, sizeBytes: blob.size });
